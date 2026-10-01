@@ -1353,6 +1353,7 @@ impl<'r> Importer<'r> {
             assets: std::mem::take(&mut self.assets),
             hyperlinks: vec![],
             bookmarks: vec![],
+            user_words: vec![],
             next_id: self.next_id,
         };
         Ok(d)

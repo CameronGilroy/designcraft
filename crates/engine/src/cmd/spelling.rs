@@ -1,0 +1,190 @@
+//! Edit → Spelling: check spelling against the bundled US English word list (the public-domain
+//! Moby list used for hyphenation) plus the document's user dictionary; suggestions by edit distance.
+
+use designcraft_compose::hyphen::Dictionary;
+use designcraft_doc::StoryId;
+use serde_json::{Value, json};
+
+use super::{CommandSpec, bad, cmd, has_doc, str_param};
+use crate::{Result, Session};
+
+pub fn specs() -> Vec<CommandSpec> {
+    vec![
+        cmd!(query "spelling.check", "Check Spelling…", ["Edit", "Spelling"], Some("Cmd+I"),
+            "{story?, suggestions?: true} → [{story, start, end, word, suggestions}]", has_doc, check),
+        cmd!("spelling.addWord", "Add to Dictionary", ["Edit", "Spelling"], None, "{word}", has_doc, |s, p| {
+            let w = str_param(p, "word").ok_or_else(|| bad("spelling.addWord", "missing word"))?.to_lowercase();
+            s.edit(|d, _| {
+                if !d.user_words.contains(&w) {
+                    d.user_words.push(w.clone());
+                }
+                Ok(Value::Null)
+            })
+        }),
+        cmd!("spelling.change", "Change", [], None, "{story, start, end, to}", has_doc, |s, p| {
+            let sid = StoryId(p.get("story").and_then(Value::as_u64).ok_or_else(|| bad("spelling.change", "missing story"))?);
+            let (a, b) = (p.get("start").and_then(Value::as_u64).unwrap_or(0) as usize, p.get("end").and_then(Value::as_u64).unwrap_or(0) as usize);
+            let to = str_param(p, "to").unwrap_or("").to_string();
+            s.edit(|d, _| {
+                let st = d.story_mut(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+                st.replace(a.min(st.len())..b.min(st.len()), &to);
+                Ok(Value::Null)
+            })
+        }),
+    ]
+}
+
+/// Is `w` (lowercase) a known word, allowing common inflections of dictionary stems?
+pub fn known(dict: &Dictionary, user: &[String], w: &str) -> bool {
+    if w.len() <= 1 || dict.get(w).is_some() || user.iter().any(|u| u == w) {
+        return true;
+    }
+    let w = w.trim_end_matches("'s").trim_end_matches("’s");
+    if dict.get(w).is_some() {
+        return true;
+    }
+    let stems: [(&str, &[&str]); 9] = [
+        ("ies", &["y"]),
+        ("es", &["", "e"]),
+        ("s", &[""]),
+        ("ed", &["", "e"]),
+        ("ing", &["", "e"]),
+        ("ly", &[""]),
+        ("er", &["", "e"]),
+        ("est", &["", "e"]),
+        ("ness", &[""]),
+    ];
+    for (suf, adds) in stems {
+        if let Some(base) = w.strip_suffix(suf) {
+            for add in adds {
+                let cand = format!("{base}{add}");
+                if cand.len() > 1 && dict.get(&cand).is_some() {
+                    return true;
+                }
+                // Doubled consonant: "stopped" → "stop".
+                if let Some(c) = base.chars().last()
+                    && base.len() > 2
+                    && base.ends_with(&format!("{c}{c}"))
+                    && dict.get(&base[..base.len() - c.len_utf8()]).is_some()
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Up to 6 suggestions at edit distance 1, ranked: transpositions, replacements, deletions, insertions.
+pub fn suggest(dict: &Dictionary, w: &str) -> Vec<String> {
+    let chars: Vec<char> = w.chars().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |c: Vec<char>| {
+        let c: String = c.into_iter().collect();
+        if c != w && !out.contains(&c) && dict.get(&c).is_some() {
+            out.push(c);
+        }
+    };
+    for i in 0..chars.len().saturating_sub(1) {
+        let mut c = chars.clone();
+        c.swap(i, i + 1);
+        push(c);
+    }
+    for i in 0..chars.len() {
+        for l in 'a'..='z' {
+            let mut c = chars.clone();
+            c[i] = l;
+            push(c);
+        }
+    }
+    for i in 0..chars.len() {
+        let mut c = chars.clone();
+        c.remove(i);
+        push(c);
+    }
+    for i in 0..=chars.len() {
+        for l in 'a'..='z' {
+            let mut c = chars.clone();
+            c.insert(i, l);
+            push(c);
+        }
+    }
+    out.truncate(6);
+    out
+}
+
+fn check(s: &mut Session, p: &Value) -> Result<Value> {
+    let st = s.doc()?;
+    let d = &st.doc;
+    let dict = Dictionary::en_us();
+    let want_sugg = p.get("suggestions").and_then(Value::as_bool).unwrap_or(true);
+    let stories: Vec<StoryId> = match p.get("story").and_then(Value::as_u64) {
+        Some(id) => vec![StoryId(id)],
+        None => d.stories.keys().copied().collect(),
+    };
+    let mut out = Vec::new();
+    for sid in stories {
+        let Some(story) = d.story(sid) else { continue };
+        let text = &story.text;
+        let mut i = 0;
+        let bytes: Vec<(usize, char)> = text.char_indices().collect();
+        while i < bytes.len() {
+            if !bytes[i].1.is_alphabetic() {
+                i += 1;
+                continue;
+            }
+            let start = bytes[i].0;
+            let mut j = i;
+            while j < bytes.len()
+                && (bytes[j].1.is_alphabetic()
+                    || ((bytes[j].1 == '\'' || bytes[j].1 == '’') && j + 1 < bytes.len() && bytes[j + 1].1.is_alphabetic()))
+            {
+                j += 1;
+            }
+            let end = bytes.get(j).map(|b| b.0).unwrap_or(text.len());
+            let word = &text[start..end];
+            let lower = word.to_lowercase();
+            // Skip words with digits around them and all-caps acronyms.
+            let acronym = word.chars().all(|c| c.is_uppercase()) && word.chars().count() <= 5;
+            if !acronym && !known(dict, &d.user_words, &lower) {
+                let sugg = if want_sugg { suggest(dict, &lower) } else { vec![] };
+                out.push(json!({"story": sid.0, "start": start, "end": end, "word": word, "suggestions": sugg}));
+            }
+            i = j.max(i + 1);
+        }
+    }
+    Ok(Value::Array(out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_words_and_suggestions() {
+        let d = Dictionary::en_us();
+        if d.is_empty() {
+            return; // data not bundled in this build
+        }
+        for w in ["typography", "pages", "composed", "arranging", "quickly", "layouts", "stopped"] {
+            assert!(known(d, &[], w), "{w}");
+        }
+        assert!(!known(d, &[], "typograpy"));
+        assert!(suggest(d, "typograpy").contains(&"typography".to_string()));
+        assert!(known(d, &["designcraft".into()], "designcraft"));
+    }
+
+    #[test]
+    fn check_finds_misspellings() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("frame.create", &json!({"rect": [36, 36, 300, 200], "content": "text", "text": "Thw quick brown fox jumpd over the NASA dog."}))
+            .unwrap();
+        let r = s.execute("spelling.check", &json!({})).unwrap();
+        let words: Vec<&str> = r.as_array().unwrap().iter().map(|m| m["word"].as_str().unwrap()).collect();
+        assert_eq!(words, vec!["Thw", "jumpd"]);
+        assert!(r[0]["suggestions"].as_array().unwrap().iter().any(|v| v == "the"));
+        s.execute("spelling.addWord", &json!({"word": "jumpd"})).unwrap();
+        assert_eq!(s.execute("spelling.check", &json!({})).unwrap().as_array().unwrap().len(), 1);
+    }
+}

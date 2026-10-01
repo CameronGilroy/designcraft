@@ -232,6 +232,9 @@ pub struct Document {
     /// PDF bookmarks (Window → Interactive → Bookmarks).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bookmarks: Vec<Bookmark>,
+    /// Words added to the document's user dictionary (spelling).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub user_words: Vec<String>,
     pub next_id: u64,
 }
 

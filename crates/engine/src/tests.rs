@@ -241,6 +241,18 @@ fn hyperlinks_and_bookmarks_reach_the_pdf() {
     assert_eq!(back.bookmarks.len(), 2);
 }
 
+#[test]
+fn step_and_repeat_grid() {
+    let mut s = session();
+    s.execute("frame.create", &json!({"rect": [36, 36, 66, 66], "content": "unassigned"})).unwrap();
+    let r = s.execute("edit.stepAndRepeat", &json!({"rows": 3, "columns": 4, "dx": 40, "dy": 40})).unwrap();
+    assert_eq!(r["created"], 11);
+    assert_eq!(s.doc().unwrap().doc.spreads[0].items.len(), 12);
+    let last = s.doc().unwrap().doc.spreads[0].items.last().unwrap().bounds();
+    assert_eq!(last.x0, 36.0 + 3.0 * 40.0);
+    assert_eq!(last.y0, 36.0 + 2.0 * 40.0);
+}
+
 /// Unicode text per page, through hayro's interpreter (ToUnicode / ActualText).
 fn pdf_text(bytes: &[u8]) -> Vec<String> {
     use hayro_interpret::font::Glyph;
