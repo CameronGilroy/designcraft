@@ -211,7 +211,8 @@ impl Story {
     /// Apply `f` to the character format of every run intersecting `range` (splitting runs at the
     /// range boundaries). With an empty range nothing changes (callers set typing formats instead).
     pub fn format_chars(&mut self, range: std::ops::Range<usize>, mut f: impl FnMut(&mut CharFormat)) {
-        let (a, b) = (range.start.min(self.text.len()), range.end.min(self.text.len()));
+        let a = floor_char_boundary(&self.text, range.start);
+        let b = floor_char_boundary(&self.text, range.end);
         if a >= b {
             return;
         }

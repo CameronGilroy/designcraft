@@ -1,0 +1,262 @@
+//! Spreads, pages, margins, columns, guides; parent ("master") spreads; sections.
+
+use std::sync::Arc;
+
+use designcraft_geom::Rect;
+use serde::{Deserialize, Serialize};
+
+use crate::attrs::NumberStyle;
+use crate::ids::{ItemId, PageId, SpreadId};
+use crate::item::Item;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Margins {
+    pub top: f64,
+    pub bottom: f64,
+    /// Inside (facing pages) / left.
+    pub inside: f64,
+    /// Outside (facing pages) / right.
+    pub outside: f64,
+}
+
+impl Margins {
+    pub fn uniform(v: f64) -> Self {
+        Margins { top: v, bottom: v, inside: v, outside: v }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Columns {
+    pub count: u32,
+    pub gutter: f64,
+    /// Custom column positions (after dragging column guides); `None` = evenly spaced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub positions: Option<Vec<f64>>,
+}
+
+impl Default for Columns {
+    fn default() -> Self {
+        Columns { count: 1, gutter: 12.0, positions: None }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Orientation {
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Guide {
+    pub orientation: Orientation,
+    /// Spread coordinate (x for vertical guides, y for horizontal).
+    pub position: f64,
+    /// Spread guides cross the whole pasteboard; page guides only their page.
+    #[serde(default)]
+    pub spread: bool,
+    #[serde(default)]
+    pub locked: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PageSide {
+    #[default]
+    Single,
+    Left,
+    Right,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Page {
+    pub id: PageId,
+    pub width: f64,
+    pub height: f64,
+    /// Position of the page's left edge in spread coordinates (top is y = 0).
+    pub x: f64,
+    pub margins: Margins,
+    pub columns: Columns,
+    /// Applied parent spread (`None` = [None]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SpreadId>,
+    #[serde(default)]
+    pub side: PageSide,
+    /// Parent items overridden on this page (hidden from the parent rendering).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overridden: Vec<ItemId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guides: Vec<Guide>,
+    /// Show parent items on this page.
+    #[serde(default = "yes")]
+    pub show_parent_items: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Page {
+    pub fn bounds(&self) -> Rect {
+        Rect::new(self.x, 0.0, self.x + self.width, self.height)
+    }
+    /// Left and right margins resolved for the page side (inside is at the spine).
+    pub fn left_right_margins(&self) -> (f64, f64) {
+        match self.side {
+            PageSide::Left => (self.margins.outside, self.margins.inside),
+            _ => (self.margins.inside, self.margins.outside),
+        }
+    }
+    /// The live area inside the margins.
+    pub fn margin_rect(&self) -> Rect {
+        let (l, r) = self.left_right_margins();
+        let b = self.bounds();
+        Rect::new(b.x0 + l, b.y0 + self.margins.top, (b.x1 - r).max(b.x0 + l), (b.y1 - self.margins.bottom).max(b.y0 + self.margins.top))
+    }
+    /// Column rects within the margins.
+    pub fn column_rects(&self) -> Vec<Rect> {
+        let m = self.margin_rect();
+        column_rects(m, self.columns.count.max(1), self.columns.gutter)
+    }
+}
+
+/// Split `area` into `n` equal columns separated by `gutter`.
+pub fn column_rects(area: Rect, n: u32, gutter: f64) -> Vec<Rect> {
+    let n = n.max(1) as usize;
+    let w = ((area.width() - gutter * (n as f64 - 1.0)) / n as f64).max(0.0);
+    (0..n).map(|i| Rect::new(area.x0 + i as f64 * (w + gutter), area.y0, area.x0 + i as f64 * (w + gutter) + w, area.y1)).collect()
+}
+
+/// Parent spread metadata.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParentInfo {
+    /// `A`, `B`…
+    pub prefix: String,
+    /// `Parent`.
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub based_on: Option<SpreadId>,
+}
+
+impl ParentInfo {
+    pub fn label(&self) -> String {
+        format!("{}-{}", self.prefix, self.name)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Spread {
+    pub id: SpreadId,
+    pub pages: Vec<Page>,
+    /// Items in z-order (last = front). Coordinates are spread space.
+    pub items: Vec<Arc<Item>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<ParentInfo>,
+    #[serde(default = "yes")]
+    pub allow_shuffle: bool,
+}
+
+impl Spread {
+    /// Union of the page rects.
+    pub fn bounds(&self) -> Rect {
+        self.pages.iter().map(Page::bounds).reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO)
+    }
+    /// x of the spine (between left and right pages) or the page centre for single pages.
+    pub fn spine_x(&self) -> f64 {
+        match self.pages.iter().position(|p| p.side == PageSide::Right) {
+            Some(i) => self.pages[i].x,
+            None => self.bounds().center().x,
+        }
+    }
+    /// Index of the page under spread x (nearest page for the pasteboard).
+    pub fn page_at_x(&self, x: f64) -> Option<usize> {
+        if self.pages.is_empty() {
+            return None;
+        }
+        self.pages
+            .iter()
+            .position(|p| x >= p.x && x < p.x + p.width)
+            .or_else(|| if x < self.pages[0].x { Some(0) } else { Some(self.pages.len() - 1) })
+    }
+    /// Lay the pages out left to right with no gaps, starting at x = 0.
+    pub fn relayout(&mut self) {
+        let mut x = 0.0;
+        for p in &mut self.pages {
+            p.x = x;
+            x += p.width;
+        }
+    }
+}
+
+/// A numbering section starting at a document page.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Section {
+    /// Absolute index of the first page of the section.
+    pub start: usize,
+    /// Start numbering at (None = continue from the previous section).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_number: Option<u32>,
+    #[serde(default)]
+    pub style: NumberStyle,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub prefix: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub marker: String,
+    #[serde(default)]
+    pub include_prefix: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn page(side: PageSide, x: f64) -> Page {
+        Page {
+            id: PageId(1),
+            width: 612.0,
+            height: 792.0,
+            x,
+            margins: Margins { top: 36.0, bottom: 36.0, inside: 54.0, outside: 36.0 },
+            columns: Columns { count: 2, gutter: 12.0, positions: None },
+            parent: None,
+            side,
+            overridden: vec![],
+            guides: vec![],
+            show_parent_items: true,
+        }
+    }
+
+    #[test]
+    fn margins_mirror_on_left_pages() {
+        let l = page(PageSide::Left, 0.0);
+        let r = page(PageSide::Right, 612.0);
+        assert_eq!(l.margin_rect(), Rect::new(36.0, 36.0, 558.0, 756.0));
+        assert_eq!(r.margin_rect(), Rect::new(666.0, 36.0, 1188.0, 756.0));
+    }
+
+    #[test]
+    fn columns_divide_live_area() {
+        let p = page(PageSide::Single, 0.0);
+        let cols = p.column_rects();
+        assert_eq!(cols.len(), 2);
+        let total: f64 = cols.iter().map(|c| c.width()).sum::<f64>() + 12.0;
+        assert!((total - p.margin_rect().width()).abs() < 1e-9);
+        assert!((cols[1].x0 - cols[0].x1 - 12.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn spread_spine_and_hit() {
+        let s = Spread { id: SpreadId(1), pages: vec![page(PageSide::Left, 0.0), page(PageSide::Right, 612.0)], items: vec![], parent: None, allow_shuffle: true };
+        assert_eq!(s.spine_x(), 612.0);
+        assert_eq!(s.page_at_x(700.0), Some(1));
+        assert_eq!(s.page_at_x(-50.0), Some(0));
+        assert_eq!(s.page_at_x(5000.0), Some(1));
+    }
+}
