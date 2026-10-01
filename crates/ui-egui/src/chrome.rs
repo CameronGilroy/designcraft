@@ -8,68 +8,69 @@ use serde_json::json;
 use crate::panels::{self, SelInfo};
 use crate::theme::{Tokens, semibold};
 use crate::widgets::{caption, measure, number};
-use crate::{DesignApp, ScreenMode, icons};
+use crate::{DesignApp, icons};
 
 pub fn app_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let left = if app.integrated_titlebar { 78 } else { 8 };
-    egui::Panel::top("app_bar")
-        .exact_size(36.0)
-        .frame(egui::Frame::NONE.fill(t.app_bar).inner_margin(egui::Margin { left, right: 10, top: 0, bottom: 0 }))
+    // 36 pt bar + 7 pt lower band (InDesign 2026), then a 1 pt border.
+    let resp = egui::Panel::top("app_bar")
+        .exact_size(43.0)
+        .frame(egui::Frame::NONE.fill(t.app_bar).inner_margin(egui::Margin { left, right: 10, top: 0, bottom: 7 }))
         .show(ui, |ui| {
+            let full = ui.max_rect();
             ui.horizontal_centered(|ui| {
-                // Brand mark: our own "Dc" tile.
-                let (r, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
-                ui.painter().rect_filled(r, 5.0, Color32::from_rgb(214, 44, 104));
-                ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, "Dc", semibold(12.5), Color32::WHITE);
-                ui.add_space(4.0);
                 if icons::button(ui, "home", 24.0, app.session.active().is_none(), "Home").clicked() {
                     app.session_home();
                 }
-                ui.add_space(4.0);
-                ui.style_mut().visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
-                ui.style_mut().visuals.widgets.inactive.bg_stroke = Stroke::NONE;
-                ui.style_mut().visuals.widgets.hovered.bg_stroke = Stroke::NONE;
-                ui.style_mut().spacing.button_padding = vec2(7.0, 3.0);
-                crate::menus::menu_bar(app, ui);
+                ui.add_space(6.0);
+                if !app.native_menu {
+                    ui.style_mut().visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+                    ui.style_mut().visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+                    ui.style_mut().visuals.widgets.hovered.bg_stroke = Stroke::NONE;
+                    ui.style_mut().spacing.button_padding = vec2(7.0, 3.0);
+                    crate::menus::menu_bar(app, ui);
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(4.0);
-                    icons::button(ui, "search", 22.0, false, "Search");
-                    ui.menu_button(egui::RichText::new("Essentials ▾").color(t.text), |ui| {
-                        for w in ["Essentials", "Advanced", "Book", "Digital Publishing", "Printing and Proofing", "Typography"] {
-                            if ui.button(w).clicked() {
-                                ui.close();
-                            }
-                        }
-                    });
-                    if ui
-                        .add(egui::Button::new(egui::RichText::new("Share").color(Color32::WHITE)).fill(t.accent_strong).corner_radius(12.0))
-                        .clicked()
-                    {
-                        app.status("Sharing is not part of DesignCraft — export a PDF or package instead.");
-                    }
+                    // Search field.
+                    let (r, _) = ui.allocate_exact_size(vec2(125.0, 18.0), Sense::click());
+                    ui.painter().rect(r, 1.0, t.input, Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
+                    icons::paint(ui.painter(), egui::Rect::from_min_size(r.min + vec2(3.0, 2.0), vec2(14.0, 14.0)), "search", t.icon);
+                    ui.painter().text(r.min + vec2(20.0, 9.0), egui::Align2::LEFT_CENTER, "Search", egui::FontId::proportional(11.0), t.text_dim);
                     ui.add_space(8.0);
-                    // Screen mode.
-                    let mode = app.ui.screen_mode;
-                    for (m, icon, tip) in [(ScreenMode::Preview, "screen-preview", "Preview (W)"), (ScreenMode::Normal, "screen-normal", "Normal")] {
-                        if icons::button(ui, icon, 22.0, mode == m, tip).clicked() {
-                            app.ui.screen_mode = m;
-                        }
-                    }
-                    ui.add_space(6.0);
-                    // Zoom dropdown.
-                    let z = app.view().map(|v| v.zoom).unwrap_or(1.0);
-                    ui.menu_button(egui::RichText::new(format!("{:.0}% ▾", z * 100.0)).color(t.text), |ui| {
-                        for p in [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0] {
-                            if ui.button(format!("{:.0}%", p * 100.0)).clicked() {
-                                let _ = app.run("view.zoom", json!({"zoom": p}));
+                    ui.menu_button(egui::RichText::new("Essentials ▾").font(semibold(11.5)).color(t.text), |ui| {
+                        for w in
+                            ["Essentials", "Advanced", "Book", "Digital Publishing", "Interactive for PDF", "Printing and Proofing", "Typography"]
+                        {
+                            if ui.button(w).clicked() {
+                                let _ = app.run("window.workspace", json!({"name": w}));
                                 ui.close();
                             }
                         }
                     });
+                    ui.add_space(6.0);
+                    if icons::button(ui, "share", 22.0, false, "Share").clicked() {
+                        app.status("Export a PDF, IDML or package to share — no cloud account needed.");
+                    }
                 });
             });
+            // Centred title.
+            let title = match app.session.active() {
+                Some(d) => format!("DesignCraft — {}", d.title()),
+                None => "DesignCraft".to_string(),
+            };
+            ui.painter().text(
+                egui::pos2(full.center().x, full.min.y + 18.0),
+                egui::Align2::CENTER_CENTER,
+                title,
+                egui::FontId::proportional(11.5),
+                t.text,
+            );
         });
+    let r = resp.response.rect;
+    ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(r.min.x, r.max.y - 7.0), r.max), 0.0, t.pasteboard);
+    ui.painter().line_segment([egui::pos2(r.min.x, r.max.y), egui::pos2(r.max.x, r.max.y)], Stroke::new(1.0, t.border));
 }
 
 impl DesignApp {
@@ -88,7 +89,7 @@ fn vsep(ui: &mut egui::Ui) {
 pub fn control_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::top("control_bar")
-        .exact_size(64.0)
+        .exact_size(59.0)
         .frame(
             egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin { left: 8, right: 8, top: 5, bottom: 3 }).stroke(Stroke::new(1.0, t.divider)),
         )
@@ -350,8 +351,9 @@ fn control_text(app: &mut DesignApp, ui: &mut egui::Ui) {
 
 pub fn doc_tabs(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
-    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
-    ui.painter().rect_filled(bar, 0.0, t.panel_darker);
+    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
+    ui.painter().rect_filled(bar, 0.0, t.tab_strip);
+    ui.painter().line_segment([bar.left_bottom(), bar.right_bottom()], Stroke::new(1.0, t.border));
     let mut x = bar.min.x;
     let active = app.session.active_index();
     let zoom = app.view().map(|v| v.zoom).unwrap_or(1.0);
@@ -360,20 +362,13 @@ pub fn doc_tabs(app: &mut DesignApp, ui: &mut egui::Ui) {
     let titles: Vec<(String, bool)> = app.session.documents().iter().map(|d| (d.title(), d.is_dirty())).collect();
     for (i, (title, dirty)) in titles.iter().enumerate() {
         let is_active = Some(i) == active;
-        let label = if is_active {
-            format!("{}{} @ {:.0}%", if *dirty { "*" } else { "" }, title, zoom * 100.0)
-        } else {
-            format!("{}{}", if *dirty { "*" } else { "" }, title)
-        };
-        let galley = ui.painter().layout_no_wrap(label, egui::FontId::proportional(12.0), if is_active { t.text_strong } else { t.text_dim });
-        let w = galley.size().x + 44.0;
-        let r = egui::Rect::from_min_size(egui::pos2(x, bar.min.y), vec2(w, 26.0));
+        let label = format!("{}{} @ {:.0}%", if *dirty { "*" } else { "" }, title, zoom * 100.0);
+        let galley = ui.painter().layout_no_wrap(label, semibold(11.5), if is_active { t.text_strong } else { t.text_dim });
+        let w = (galley.size().x + 44.0).max(if is_active { 210.0 } else { 150.0 });
+        let r = egui::Rect::from_min_size(egui::pos2(x, bar.min.y), vec2(w, 28.0));
         let resp = ui.interact(r, ui.id().with(("doctab", i)), Sense::click());
-        ui.painter().rect_filled(r, 0.0, if is_active { t.pasteboard } else { t.tab_inactive });
-        if is_active {
-            ui.painter().line_segment([r.left_top(), r.right_top()], Stroke::new(2.0, t.accent));
-        }
-        let cr = egui::Rect::from_center_size(egui::pos2(r.min.x + 13.0, r.center().y), vec2(14.0, 14.0));
+        ui.painter().rect_filled(r, 0.0, if is_active { t.panel } else { t.tab_strip });
+        let cr = egui::Rect::from_center_size(egui::pos2(r.min.x + 18.0, r.center().y), vec2(14.0, 14.0));
         let cresp = ui.interact(cr, ui.id().with(("docclose", i)), Sense::click());
         ui.painter().text(
             cr.center(),
@@ -382,8 +377,8 @@ pub fn doc_tabs(app: &mut DesignApp, ui: &mut egui::Ui) {
             egui::FontId::proportional(14.0),
             if cresp.hovered() { t.text_strong } else { t.text_dim },
         );
-        ui.painter().galley(egui::pos2(r.min.x + 26.0, r.center().y - galley.size().y / 2.0), galley, Color32::WHITE);
-        ui.painter().line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, t.divider));
+        ui.painter().galley(egui::pos2(r.min.x + 32.0, r.center().y - galley.size().y / 2.0), galley, Color32::WHITE);
+        ui.painter().line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, t.border));
         if cresp.clicked() {
             close = Some(i);
         } else if resp.clicked() {
@@ -400,28 +395,41 @@ pub fn doc_tabs(app: &mut DesignApp, ui: &mut egui::Ui) {
 
 pub fn status_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
-    egui::Panel::bottom("status_bar")
-        .exact_size(24.0)
-        .frame(egui::Frame::NONE.fill(t.panel_darker).inner_margin(egui::Margin::symmetric(8, 0)))
+    let resp = egui::Panel::bottom("status_bar")
+        .exact_size(17.0)
+        .frame(egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::symmetric(8, 0)))
         .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
             ui.horizontal_centered(|ui| {
+                let small = egui::FontId::proportional(10.5);
                 if app.session.active().is_none() {
-                    ui.label(egui::RichText::new(&app.ui.status).size(11.5).color(t.text_dim));
+                    ui.label(egui::RichText::new(&app.ui.status).font(small).color(t.text_dim));
                     return;
                 }
                 let z = app.view().map(|v| v.zoom).unwrap_or(1.0);
-                ui.label(egui::RichText::new(format!("{:.0}%", z * 100.0)).size(11.5));
+                ui.menu_button(egui::RichText::new(format!("{:.2}% ▾", z * 100.0)).font(small.clone()), |ui| {
+                    for p in [0.05, 0.125, 0.25, 0.5, 0.75, 1.0, 2.0, 4.0, 8.0, 16.0] {
+                        if ui.button(format!("{}%", p * 100.0)).clicked() {
+                            let _ = app.run("view.zoom", json!({"zoom": p}));
+                            ui.close();
+                        }
+                    }
+                });
                 ui.add_space(8.0);
                 let n = app.session.active().map(|d| d.doc.page_count()).unwrap_or(1);
                 let cur = crate::canvas::current_page(app).unwrap_or(0);
-                if icons::button(ui, "first", 16.0, false, "First Spread").clicked() {
+                if icons::button(ui, "first", 14.0, false, "First Spread").clicked() {
                     crate::canvas::go_to_page(app, 0);
                 }
-                if icons::button(ui, "prev", 16.0, false, "Previous Spread").clicked() {
+                if icons::button(ui, "prev", 14.0, false, "Previous Spread").clicked() {
                     crate::canvas::go_to_page(app, cur.saturating_sub(1));
                 }
                 let name = app.session.active().map(|d| d.doc.page_name(cur)).unwrap_or_default();
-                ui.menu_button(egui::RichText::new(format!(" {name} ▾ ")).size(11.5), |ui| {
+                let (fr, fresp) = ui.allocate_exact_size(vec2(80.0, 14.0), Sense::click());
+                ui.painter().rect(fr, 0.0, t.input, Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
+                ui.painter().text(fr.left_center() + vec2(5.0, 0.0), egui::Align2::LEFT_CENTER, &name, small.clone(), t.text);
+                ui.painter().text(fr.right_center() - vec2(5.0, 0.0), egui::Align2::RIGHT_CENTER, "▾", small.clone(), t.text);
+                egui::Popup::menu(&fresp).show(|ui| {
                     let names: Vec<String> = app.session.active().map(|d| (0..n).map(|i| d.doc.page_name(i)).collect()).unwrap_or_default();
                     egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                         for (i, nm) in names.iter().enumerate() {
@@ -432,40 +440,37 @@ pub fn status_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
                         }
                     });
                 });
-                if icons::button(ui, "next", 16.0, false, "Next Spread").clicked() {
+                if icons::button(ui, "next", 14.0, false, "Next Spread").clicked() {
                     crate::canvas::go_to_page(app, (cur + 1).min(n - 1));
                 }
-                if icons::button(ui, "last", 16.0, false, "Last Spread").clicked() {
+                if icons::button(ui, "last", 14.0, false, "Last Spread").clicked() {
                     crate::canvas::go_to_page(app, n - 1);
                 }
-                ui.add_space(14.0);
-                // Preflight indicator: overset text is an error.
+                ui.add_space(12.0);
+                ui.label(egui::RichText::new("[Basic] (working) ▾").font(small.clone()));
+                ui.add_space(8.0);
+                // Preflight: overset text is an error.
                 let errors = panels::preflight_errors(app);
-                let (r, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
+                let (r, _) = ui.allocate_exact_size(vec2(9.0, 9.0), Sense::hover());
                 ui.painter().circle_filled(
                     r.center(),
-                    4.5,
-                    if errors == 0 { Color32::from_rgb(60, 190, 90) } else { Color32::from_rgb(230, 50, 50) },
+                    4.0,
+                    if errors == 0 { Color32::from_rgb(60, 200, 90) } else { Color32::from_rgb(235, 50, 50) },
                 );
                 ui.label(
                     egui::RichText::new(if errors == 0 {
-                        "No errors".to_string()
+                        "No errors ▾".to_string()
                     } else {
-                        format!("{errors} error{}", if errors == 1 { "" } else { "s" })
+                        format!("{errors} error{} ▾", if errors == 1 { "" } else { "s" })
                     })
-                    .size(11.5),
+                    .font(small.clone()),
                 );
-                ui.add_space(14.0);
-                ui.label(egui::RichText::new(&app.ui.status).size(11.5).color(t.text_dim));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{:.1} ms render · {:.0} fps", app.perf.render_ms, app.perf.fps))
-                            .size(10.5)
-                            .color(t.text_disabled),
-                    );
-                });
+                ui.add_space(12.0);
+                ui.label(egui::RichText::new(&app.ui.status).font(small).color(t.text_dim));
             });
         });
+    let r = resp.response.rect;
+    ui.painter().line_segment([r.left_top(), r.right_top()], Stroke::new(1.0, t.border));
 }
 
 pub fn start_screen(app: &mut DesignApp, ui: &mut egui::Ui) {

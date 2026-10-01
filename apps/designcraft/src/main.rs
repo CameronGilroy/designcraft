@@ -7,14 +7,25 @@
 //! See `designcraft_ui_egui::control` for the methods.
 
 mod control_server;
+#[cfg(target_os = "macos")]
+mod native_menu;
 
 use designcraft_engine::Session;
 use designcraft_ui_egui::{DesignApp, Services};
 
-struct App(DesignApp);
+struct App(DesignApp, #[cfg(target_os = "macos")] Option<native_menu::NativeMenu>);
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(target_os = "macos")]
+        {
+            if self.1.is_none() && std::env::var_os("DESIGNCRAFT_NO_NATIVE_MENU").is_none() {
+                self.1 = Some(native_menu::NativeMenu::install(&mut self.0));
+            }
+            if let Some(m) = &mut self.1 {
+                m.poll(&mut self.0);
+            }
+        }
         self.0.logic(ctx);
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
@@ -129,7 +140,11 @@ fn main() -> eframe::Result {
                     eprintln!("designcraft: {f}: {e}");
                 }
             }
-            Ok(Box::new(App(app)))
+            Ok(Box::new(App(
+                app,
+                #[cfg(target_os = "macos")]
+                None,
+            )))
         }),
     )
 }

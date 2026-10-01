@@ -142,10 +142,10 @@ impl Default for DocSettings {
             baseline_grid: BaselineGrid::default(),
             grid: DocumentGrid::default(),
             pasteboard: (72.0, 72.0),
-            margin_color: [255, 0, 255],
-            column_color: [148, 112, 255],
-            bleed_color: [255, 0, 0],
-            slug_color: [60, 120, 255],
+            margin_color: [255, 56, 255],
+            column_color: [166, 40, 255],
+            bleed_color: [255, 72, 103],
+            slug_color: [100, 188, 221],
             keyboard_increment: 1.0,
         }
     }
@@ -176,7 +176,7 @@ fn yes() -> bool {
 
 /// InDesign's layer colour sequence (names are the conventional colour names).
 pub const LAYER_COLORS: &[(&str, [u8; 3])] = &[
-    ("Light Blue", [79, 153, 255]),
+    ("Light Blue", [43, 155, 255]),
     ("Red", [255, 0, 0]),
     ("Green", [79, 255, 79]),
     ("Blue", [0, 0, 255]),

@@ -8,12 +8,12 @@ use serde_json::json;
 use crate::theme::Tokens;
 use crate::{DesignApp, icons};
 
-const BTN: f32 = 26.0;
+const BTN: f32 = 24.0;
 
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let cols = if app.ui.tools_double_column { 2 } else { 1 };
-    let width = 10.0 + BTN * cols as f32 + 4.0 * (cols as f32 - 1.0) + 10.0;
+    let width = 8.0 + BTN * cols as f32 + 4.0 * (cols as f32 - 1.0) + 8.0;
     egui::Panel::left("tools").exact_size(width).resizable(false).frame(egui::Frame::NONE.fill(t.panel).stroke(Stroke::new(1.0, t.divider))).show(
         ui,
         |ui| {
@@ -53,7 +53,7 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
                     }
                     Some(_) => {
                         ui.horizontal(|ui| {
-                            ui.add_space(10.0);
+                            ui.add_space(8.0);
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for _ in 0..cols {
                                 let Some(Some(gi)) = row_items.get(i).copied() else { break };
@@ -64,7 +64,7 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
                                     Some(s) => format!("{} ({s})", shown.label),
                                     None => shown.label.to_string(),
                                 };
-                                let resp = icons::button(ui, shown.icon, BTN, active, &tip);
+                                let resp = tool_button(ui, shown.icon, active, &tip);
                                 if g.len() > 1 {
                                     // Flyout triangle.
                                     let r = resp.rect;
@@ -209,4 +209,18 @@ fn fill_stroke_proxy(app: &mut DesignApp, ui: &mut egui::Ui, width: f32) {
             }
         }
     });
+}
+
+/// A Tools-panel button: 24 pt pitch; the active tool sits in a 28×20 pt `#303030` well with a rim.
+fn tool_button(ui: &mut egui::Ui, icon: &str, active: bool, tip: &str) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(BTN, BTN), Sense::click());
+    if active {
+        let well = egui::Rect::from_center_size(r.center(), egui::vec2(28.0, 20.0));
+        ui.painter().rect(well, 2.0, t.well, Stroke::new(1.0, t.well_rim), StrokeKind::Outside);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(egui::Rect::from_center_size(r.center(), egui::vec2(28.0, 20.0)), 2.0, t.hover);
+    }
+    icons::paint(ui.painter(), egui::Rect::from_center_size(r.center(), egui::vec2(17.0, 17.0)), icon, if active { t.text_strong } else { t.icon });
+    resp.on_hover_text(tip)
 }

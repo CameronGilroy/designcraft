@@ -15,7 +15,7 @@ pub fn measure(ui: &mut Ui, id: &str, value: Option<f64>, unit: Unit, width: f32
     let mut buf: String =
         ui.data(|d| d.get_temp::<String>(key)).unwrap_or_else(|| value.map(|v| format_measure_prec(v, unit, 3)).unwrap_or_default());
     let r = ui.add_sized(
-        [width, 19.0],
+        [width, 21.0],
         egui::TextEdit::singleline(&mut buf).font(egui::FontId::proportional(12.0)).background_color(t.input).margin(egui::Margin::symmetric(4, 1)),
     );
     let mut out = None;
@@ -46,7 +46,7 @@ pub fn number(ui: &mut Ui, id: &str, value: Option<f64>, suffix: &str, width: f3
     };
     let mut buf: String = ui.data(|d| d.get_temp::<String>(key)).unwrap_or_else(|| value.map(show).unwrap_or_default());
     let r = ui.add_sized(
-        [width, 19.0],
+        [width, 21.0],
         egui::TextEdit::singleline(&mut buf).font(egui::FontId::proportional(12.0)).background_color(t.input).margin(egui::Margin::symmetric(4, 1)),
     );
     let mut out = None;
@@ -73,33 +73,22 @@ pub fn caption(ui: &mut Ui, s: &str) {
     ui.label(egui::RichText::new(s).size(11.5).color(t.text_dim));
 }
 
-/// Panel section header with a disclosure triangle. Returns open state.
-pub fn section(ui: &mut Ui, title: &str, default_open: bool) -> bool {
+/// Panel section header (InDesign 2026: regular-weight white title, no disclosure chevron; a
+/// 1.5 pt rule separates sections). Returns whether to show the section body (always true).
+pub fn section(ui: &mut Ui, title: &str, _default_open: bool) -> bool {
     let t = Tokens::get(ui.ctx());
-    let id = ui.id().with(("section", title));
-    let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(default_open);
-    ui.add_space(4.0);
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
-    if resp.clicked() {
-        open = !open;
-        ui.data_mut(|d| d.insert_temp(id, open));
-    }
-    let p = ui.painter();
-    crate::icons::paint(
-        p,
-        egui::Rect::from_min_size(r.min + vec2(0.0, 3.0), vec2(14.0, 14.0)),
-        if open { "chevron-down" } else { "chevron-right" },
-        t.text_dim,
-    );
-    p.text(r.min + vec2(17.0, 10.0), egui::Align2::LEFT_CENTER, title, crate::theme::semibold(12.0), t.text_strong);
-    open
+    ui.add_space(6.0);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
+    ui.painter().text(r.left_center(), egui::Align2::LEFT_CENTER, title, egui::FontId::proportional(11.5), t.text_strong);
+    true
 }
 
 pub fn divider(ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let r = ui.available_rect_before_wrap();
-    ui.painter().line_segment([egui::pos2(r.min.x, r.min.y + 2.0), egui::pos2(r.max.x, r.min.y + 2.0)], Stroke::new(1.0, t.divider));
-    ui.add_space(5.0);
+    ui.painter()
+        .line_segment([egui::pos2(r.min.x - 10.0, r.min.y + 4.0), egui::pos2(r.max.x + 10.0, r.min.y + 4.0)], Stroke::new(1.5, t.section_divider));
+    ui.add_space(8.0);
 }
 
 /// A swatch chip (colour square, [None] slash, gradient ramp).

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::{DesignApp, ScreenMode, View, theme::Tokens};
 
-pub const RULER: f32 = 17.0;
+pub const RULER: f32 = 15.0;
 
 /// Canvas ↔ screen transform.
 #[derive(Clone, Copy, Debug)]
@@ -170,10 +170,10 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let preview = matches!(app.ui.screen_mode, ScreenMode::Preview | ScreenMode::Presentation);
     let bg = if app.ui.screen_mode == ScreenMode::Presentation { Color32::BLACK } else { t.pasteboard };
     painter.rect_filled(rect, 0.0, bg);
-    // Page shadows.
+    // Page shadow: a hard 1.5 pt black offset on the right and bottom (InDesign 2026).
     for slot in &layout.slots {
         let r = xf.rect(slot.bounds);
-        painter.rect_filled(r.translate(vec2(3.0, 3.0)), 0.0, Color32::from_black_alpha(110));
+        painter.rect_filled(r.translate(vec2(1.5, 1.5)), 0.0, Color32::BLACK);
     }
     // Rendered content.
     render_texture(app, ui.ctx(), rect, &xf, &layout, preview);
@@ -192,6 +192,10 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
         } else {
             painter.image(tex.id(), rect, uv, Color32::WHITE);
         }
+    }
+    let hair = 1.0 / ui.ctx().pixels_per_point();
+    for slot in &layout.slots {
+        painter.rect_stroke(xf.rect(slot.bounds), 0.0, Stroke::new(hair, Color32::from_rgb(0x4a, 0x4a, 0x4a)), StrokeKind::Outside);
     }
     if !preview {
         draw_guides(app, &painter, &xf, &doc, &layout, &t);
@@ -279,7 +283,7 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
             let r = if last.side == PageSide::Right || last.side == PageSide::Single { b[3] } else { b[2] };
             let sb = sp.bounds() + off;
             let br = DRect::new(sb.x0 - l, sb.y0 - b[0], sb.x1 + r, sb.y1 + b[1]);
-            painter.rect_stroke(xf.rect(br), 0.0, Stroke::new(1.0, c32(s.bleed_color)), StrokeKind::Middle);
+            painter.rect_stroke(xf.rect(br), 0.0, Stroke::new(hair(painter), c32(s.bleed_color)), StrokeKind::Middle);
         }
         for p in &sp.pages {
             let pr = p.bounds() + off;
@@ -293,18 +297,18 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
                 while y < p.height {
                     let a = xf.to_screen(Point::new(pr.x0, pr.y0 + y));
                     let bb = xf.to_screen(Point::new(pr.x1, pr.y0 + y));
-                    painter.line_segment([a, bb], Stroke::new(1.0, c32(g.color).gamma_multiply(0.8)));
+                    painter.line_segment([a, bb], Stroke::new(hair(painter), c32(g.color).gamma_multiply(0.8)));
                     y += g.increment.max(1.0);
                 }
             }
             // Margins (magenta) and columns (violet).
             let m = p.margin_rect() + off;
-            painter.rect_stroke(xf.rect(m), 0.0, Stroke::new(1.0, c32(s.margin_color)), StrokeKind::Middle);
+            painter.rect_stroke(xf.rect(m), 0.0, Stroke::new(hair(painter), c32(s.margin_color)), StrokeKind::Middle);
             let cols = p.column_rects();
             if cols.len() > 1 {
                 for (i, c) in cols.iter().enumerate() {
                     let c = *c + off;
-                    let col = Stroke::new(1.0, c32(s.column_color));
+                    let col = Stroke::new(hair(painter), c32(s.column_color));
                     if i > 0 {
                         painter.line_segment([xf.to_screen(Point::new(c.x0, c.y0)), xf.to_screen(Point::new(c.x0, c.y1))], col);
                     }
@@ -318,7 +322,7 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
                     designcraft_doc::Orientation::Horizontal => (Point::new(pr.x0, g.position + off.y), Point::new(pr.x1, g.position + off.y)),
                     designcraft_doc::Orientation::Vertical => (Point::new(g.position + off.x, pr.y0), Point::new(g.position + off.x, pr.y1)),
                 };
-                painter.line_segment([xf.to_screen(a), xf.to_screen(bb)], Stroke::new(1.0, Color32::from_rgb(74, 227, 255)));
+                painter.line_segment([xf.to_screen(a), xf.to_screen(bb)], Stroke::new(hair(painter), Color32::from_rgb(74, 227, 255)));
             }
         }
     }
@@ -383,7 +387,7 @@ fn draw_frames(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
                     let col = doc.layer(it.layer).map(|l| c32(l.color)).unwrap_or(Color32::LIGHT_BLUE);
                     for poly in path_screen(it, xf, a * Affine::translate((dx, 0.0))) {
                         for w in poly.windows(2) {
-                            dashed(painter, w[0], w[1], Stroke::new(1.0, col.gamma_multiply(0.8)), 2.0, 2.0);
+                            dashed(painter, w[0], w[1], Stroke::new(hair(painter), col.gamma_multiply(0.8)), 2.0, 2.0);
                         }
                     }
                 }
@@ -410,7 +414,7 @@ fn draw_item_edges(painter: &egui::Painter, xf: &Xf, doc: &Document, it: &Item, 
     let show = it.stroke.is_none() || matches!(it.content, Content::Text(_) | Content::Graphic(_));
     if show {
         for poly in path_screen(it, xf, a) {
-            painter.add(egui::Shape::line(poly, Stroke::new(1.0, col.gamma_multiply(0.75))));
+            painter.add(egui::Shape::line(poly, Stroke::new(hair(painter), col.gamma_multiply(0.75))));
         }
     }
     // Empty graphic frame: the X.
@@ -418,8 +422,8 @@ fn draw_item_edges(painter: &egui::Painter, xf: &Xf, doc: &Document, it: &Item, 
         let r = it.inner_bounds();
         let m = a * it.xf;
         let p = |x: f64, y: f64| xf.to_screen(m * Point::new(x, y));
-        painter.line_segment([p(r.x0, r.y0), p(r.x1, r.y1)], Stroke::new(1.0, col.gamma_multiply(0.75)));
-        painter.line_segment([p(r.x1, r.y0), p(r.x0, r.y1)], Stroke::new(1.0, col.gamma_multiply(0.75)));
+        painter.line_segment([p(r.x0, r.y0), p(r.x1, r.y1)], Stroke::new(hair(painter), col.gamma_multiply(0.75)));
+        painter.line_segment([p(r.x1, r.y0), p(r.x0, r.y1)], Stroke::new(hair(painter), col.gamma_multiply(0.75)));
     }
 }
 
@@ -441,6 +445,10 @@ fn draw_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Docum
         color = layer_color(doc, it);
         for poly in path_screen(it, xf, a) {
             painter.add(egui::Shape::line(poly, Stroke::new(1.0, color)));
+        }
+        if sel.items.len() == 1 && sel.text.is_none() {
+            // InDesign draws a 1 pt bounding box around the selection.
+            painter.rect_stroke(xf.rect(a.transform_rect_bbox(it.bounds())), 0.0, Stroke::new(1.0, color), StrokeKind::Middle);
         }
         let b = xf.rect(a.transform_rect_bbox(it.bounds()));
         union = Some(union.map_or(b, |u| u.union(b)));
@@ -485,11 +493,20 @@ fn draw_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Docum
         if sel.items.len() > 1 {
             painter.rect_stroke(u, 0.0, Stroke::new(1.0, color), StrokeKind::Middle);
         }
-        let hs = 6.0;
+        let hs = 6.5;
+        // Centre point and the live-corner widget.
+        painter.rect_filled(Rect::from_center_size(u.center(), vec2(3.5, 3.5)), 0.0, color);
+        if sel.items.len() == 1
+            && doc.item(sel.items[0]).is_some_and(|i| matches!(i.shape, designcraft_doc::Shape::Rectangle) && i.children().is_empty())
+        {
+            let lc = Rect::from_center_size(pos2(u.max.x, u.min.y + 11.5), vec2(6.0, 6.0));
+            painter.rect_filled(lc, 0.0, Color32::from_rgb(0xff, 0xe5, 0x00));
+            painter.rect_stroke(lc, 0.0, Stroke::new(1.0, color), StrokeKind::Inside);
+        }
         for h in designcraft_tools::select::handles(DRect::new(u.min.x as f64, u.min.y as f64, u.max.x as f64, u.max.y as f64)) {
             let r = Rect::from_center_size(pos2(h.x as f32, h.y as f32), vec2(hs, hs));
             painter.rect_filled(r, 0.0, Color32::WHITE);
-            painter.rect_stroke(r, 0.0, Stroke::new(1.0, color), StrokeKind::Inside);
+            painter.rect_stroke(r, 0.0, Stroke::new(hair(painter), color), StrokeKind::Inside);
         }
         // Content grabber on graphic frames.
         if sel.items.len() == 1 && doc.item(sel.items[0]).is_some_and(|i| matches!(i.content, Content::Graphic(_))) {
@@ -537,16 +554,18 @@ fn draw_ports(
     let is_last = pos + 1 == story.frames.len();
     let cs = app.session.cache.get(doc, sid, None);
     let overset = is_last && cs.is_overset();
-    let s = 8.0;
+    let s = 8.5;
     let _ = layout;
     let r = it.inner_bounds();
     let m = a * it.xf;
-    let inp = xf.to_screen(m * Point::new(r.x0 + 12.0, r.y0));
-    let outp = xf.to_screen(m * Point::new(r.x1 - 12.0, r.y1));
+    // In port on the left edge below the top-left corner; out port on the right edge above the
+    // bottom-right corner (screen-space offsets).
+    let inp = xf.to_screen(m * Point::new(r.x0, r.y0)) + vec2(0.0, 14.5);
+    let outp = xf.to_screen(m * Point::new(r.x1, r.y1)) - vec2(0.0, 12.0);
     for (c, has_link, is_out) in [(inp, pos > 0, false), (outp, !is_last, true)] {
         let pr = Rect::from_center_size(c, vec2(s, s));
         painter.rect_filled(pr, 0.0, Color32::WHITE);
-        painter.rect_stroke(pr, 0.0, Stroke::new(1.0, color), StrokeKind::Inside);
+        painter.rect_stroke(pr, 0.0, Stroke::new(hair(painter), color), StrokeKind::Inside);
         if is_out && overset {
             let red = Color32::from_rgb(230, 20, 20);
             painter.line_segment([c - vec2(2.5, 0.0), c + vec2(2.5, 0.0)], Stroke::new(1.5, red));
@@ -662,8 +681,8 @@ fn draw_rulers(app: &DesignApp, ui: &egui::Ui, full: Rect, rect: Rect, xf: &Xf, 
     painter.rect_filled(top, 0.0, t.ruler);
     painter.rect_filled(left, 0.0, t.ruler);
     painter.rect_filled(Rect::from_min_max(full.min, rect.min), 0.0, t.ruler);
-    painter.line_segment([pos2(rect.min.x, rect.min.y - 0.5), pos2(full.max.x, rect.min.y - 0.5)], Stroke::new(1.0, t.divider));
-    painter.line_segment([pos2(rect.min.x - 0.5, rect.min.y), pos2(rect.min.x - 0.5, full.max.y)], Stroke::new(1.0, t.divider));
+    painter.line_segment([pos2(rect.min.x, rect.min.y - 0.25), pos2(full.max.x, rect.min.y - 0.25)], Stroke::new(0.5, t.ruler_tick));
+    painter.line_segment([pos2(rect.min.x - 0.25, rect.min.y), pos2(rect.min.x - 0.25, full.max.y)], Stroke::new(0.5, t.ruler_tick));
     // Zero-point crosshair box.
     let zc = Rect::from_min_max(full.min, rect.min).center();
     painter.line_segment([zc - vec2(4.0, 0.0), zc + vec2(4.0, 0.0)], Stroke::new(1.0, t.ruler_tick));
@@ -695,7 +714,7 @@ fn draw_rulers(app: &DesignApp, ui: &egui::Ui, full: Rect, rect: Rect, xf: &Xf, 
             painter.line_segment([pos2(sx, top.max.y - len), pos2(sx, top.max.y)], tick);
             if s == 0 {
                 let v = unit.from_pt(x);
-                painter.text(pos2(sx + 2.0, top.min.y + 1.0), egui::Align2::LEFT_TOP, fmt_tick(v), font.clone(), t.ruler_tick);
+                painter.text(pos2(sx + 2.0, top.min.y + 1.0), egui::Align2::LEFT_TOP, fmt_tick(v), font.clone(), t.ruler_text);
             }
         }
         k += 1;
@@ -721,7 +740,7 @@ fn draw_rulers(app: &DesignApp, ui: &egui::Ui, full: Rect, rect: Rect, xf: &Xf, 
                 // Stacked digits like InDesign's vertical ruler.
                 let label = fmt_tick(unit.from_pt(y));
                 for (j, ch) in label.chars().enumerate() {
-                    painter.text(pos2(left.min.x + 3.0, sy + 2.0 + j as f32 * 8.5), egui::Align2::LEFT_TOP, ch, font.clone(), t.ruler_tick);
+                    painter.text(pos2(left.min.x + 3.0, sy + 2.0 + j as f32 * 8.5), egui::Align2::LEFT_TOP, ch, font.clone(), t.ruler_text);
                 }
             }
         }
@@ -913,4 +932,9 @@ pub fn selected_text(app: &DesignApp) -> Option<String> {
         return None;
     }
     Some(s.replace(designcraft_doc::story::FORCED_LINE_BREAK, "\n"))
+}
+
+/// One device pixel, the width InDesign uses for guides and frame edges.
+fn hair(painter: &egui::Painter) -> f32 {
+    1.0 / painter.ctx().pixels_per_point()
 }

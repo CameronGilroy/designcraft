@@ -78,8 +78,8 @@ fn arrow(pen: &Pen, hollow: bool) {
 pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
     let mut pen = Pen { p, r, c, w: 1.3 };
     match name {
-        "tool-selection" => arrow(&pen, false),
-        "tool-direct" => arrow(&pen, true),
+        "tool-selection" => arrow(&pen, true),
+        "tool-direct" => arrow(&pen, false),
         "tool-page" => {
             pen.closed(&[(5.0, 3.0), (12.0, 3.0), (15.0, 6.0), (15.0, 17.0), (5.0, 17.0)]);
             pen.line(&[(12.0, 3.0), (12.0, 6.0), (15.0, 6.0)]);

@@ -54,6 +54,7 @@ pub const TOOL_GROUPS: &[&[ToolInfo]] = &[
         t("ellipse", "Ellipse Tool", Some("L"), "tool-ellipse"),
         t("polygon", "Polygon Tool", None, "tool-polygon"),
     ],
+    &[],
     &[t("scissors", "Scissors Tool", Some("C"), "tool-scissors")],
     &[
         t("freeTransform", "Free Transform Tool", Some("E"), "tool-free-transform"),
@@ -65,6 +66,7 @@ pub const TOOL_GROUPS: &[&[ToolInfo]] = &[
         t("gradientSwatch", "Gradient Swatch Tool", Some("G"), "tool-gradient"),
         t("gradientFeather", "Gradient Feather Tool", Some("Shift+G"), "tool-gradient-feather"),
     ],
+    &[],
     &[t("note", "Note Tool", None, "tool-note")],
     &[
         t("colorTheme", "Color Theme Tool", Some("Shift+I"), "tool-color-theme"),

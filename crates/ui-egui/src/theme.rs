@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Brightness {
-    #[default]
     Dark,
+    #[default]
     MediumDark,
     MediumLight,
     Light,
@@ -63,6 +63,17 @@ pub struct Tokens {
     pub tab_inactive: Color32,
     pub button: Color32,
     pub radius: u8,
+    /// 1 pt chrome edges.
+    pub border: Color32,
+    /// Outline of fields and buttons.
+    pub field_border: Color32,
+    /// Active tool / toggle well.
+    pub well: Color32,
+    pub well_rim: Color32,
+    pub ruler_text: Color32,
+    pub section_divider: Color32,
+    /// Panel tab strips, doc-tab bar, dock headers.
+    pub tab_strip: Color32,
 }
 
 fn hex(s: u32) -> Color32 {
@@ -94,26 +105,45 @@ impl Tokens {
             ruler_tick: hex(0x9a9a9a),
             tab_inactive: hex(0x262626),
             button: hex(0x404040),
-            radius: 3,
+            radius: 1,
+            border: hex(0x1e1e1e),
+            field_border: hex(0x5a5a5a),
+            well: hex(0x1b1b1b),
+            well_rim: hex(0x3a3a3a),
+            ruler_text: hex(0xd8d8d8),
+            section_divider: hex(0x282828),
+            tab_strip: hex(0x282828),
         };
         match b {
             Brightness::Dark => dark,
+            // Measured from InDesign 2026 (plan/indesign/11-observed-ui.md §1).
             Brightness::MediumDark => Tokens {
-                app_bar: hex(0x404040),
+                app_bar: hex(0x535353),
                 panel: hex(0x535353),
-                panel_darker: hex(0x454545),
-                input: hex(0x3d3d3d),
-                input_border: hex(0x6a6a6a),
-                divider: hex(0x3a3a3a),
-                text: hex(0xe6e6e6),
-                text_dim: hex(0xbcbcbc),
-                hover: hex(0x626262),
-                tool_active: hex(0x353535),
+                panel_darker: hex(0x424242),
+                input: hex(0x454545),
+                input_border: hex(0x747474),
+                divider: hex(0x4b4b4b),
+                text: hex(0xffffff),
+                text_strong: hex(0xffffff),
+                text_dim: hex(0xb0b0b0),
+                text_disabled: hex(0x8a8a8a),
+                icon: hex(0xc2c2c2),
+                hover: hex(0x606060),
+                tool_active: hex(0x303030),
                 row_selected: hex(0x4a6a92),
-                pasteboard: hex(0x4a4a4a),
-                ruler: hex(0x4c4c4c),
-                tab_inactive: hex(0x454545),
-                button: hex(0x606060),
+                pasteboard: hex(0x5e5e5e),
+                ruler: hex(0x1f1f1f),
+                ruler_tick: hex(0x858585),
+                tab_inactive: hex(0x424242),
+                button: hex(0x535353),
+                border: hex(0x383838),
+                field_border: hex(0x747474),
+                well: hex(0x303030),
+                well_rim: hex(0x565656),
+                ruler_text: hex(0xffffff),
+                section_divider: hex(0x4b4b4b),
+                tab_strip: hex(0x424242),
                 ..dark
             },
             Brightness::MediumLight => Tokens {
@@ -136,7 +166,14 @@ impl Tokens {
                 ruler: hex(0xc0c0c0),
                 ruler_tick: hex(0x3a3a3a),
                 tab_inactive: hex(0xa6a6a6),
-                button: hex(0xcbcbcb),
+                button: hex(0xb8b8b8),
+                border: hex(0x8c8c8c),
+                field_border: hex(0x7a7a7a),
+                well: hex(0x9a9a9a),
+                well_rim: hex(0x8a8a8a),
+                ruler_text: hex(0x1e1e1e),
+                section_divider: hex(0x9c9c9c),
+                tab_strip: hex(0xa6a6a6),
                 ..dark
             },
             Brightness::Light => Tokens {
@@ -159,7 +196,14 @@ impl Tokens {
                 ruler: hex(0xf2f2f2),
                 ruler_tick: hex(0x4a4a4a),
                 tab_inactive: hex(0xdcdcdc),
-                button: hex(0xe6e6e6),
+                button: hex(0xf0f0f0),
+                border: hex(0xc4c4c4),
+                field_border: hex(0xa8a8a8),
+                well: hex(0xcfcfcf),
+                well_rim: hex(0xbdbdbd),
+                ruler_text: hex(0x1e1e1e),
+                section_divider: hex(0xd0d0d0),
+                tab_strip: hex(0xe2e2e2),
                 ..dark
             },
         }
@@ -187,9 +231,9 @@ pub fn semibold(size: f32) -> FontId {
 pub fn apply(ctx: &egui::Context, t: &Tokens) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::NULL, *t));
     let text_styles: std::collections::BTreeMap<TextStyle, FontId> = [
-        (TextStyle::Small, FontId::proportional(10.5)),
-        (TextStyle::Body, FontId::proportional(12.5)),
-        (TextStyle::Button, FontId::proportional(12.5)),
+        (TextStyle::Small, FontId::proportional(10.0)),
+        (TextStyle::Body, FontId::proportional(11.5)),
+        (TextStyle::Button, FontId::proportional(11.5)),
         (TextStyle::Heading, FontId::new(15.0, FontFamily::Name("semibold".into()))),
         (TextStyle::Monospace, FontId::monospace(11.5)),
     ]
@@ -220,16 +264,19 @@ pub fn apply(ctx: &egui::Context, t: &Tokens) {
         w.fg_stroke = Stroke::new(1.0, t.text);
     }
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, t.divider);
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0, t.input_border);
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, t.input_border);
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, t.field_border);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, t.field_border);
+    v.widgets.active.bg_stroke = Stroke::new(1.0, t.field_border);
+    // InDesign buttons are outline-only.
     v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+    v.widgets.inactive.bg_fill = t.input;
     v.popup_shadow = egui::epaint::Shadow { offset: [0, 4], blur: 12, spread: 0, color: Color32::from_black_alpha(90) };
     ctx.set_visuals(v);
     ctx.global_style_mut(|s| {
         s.text_styles = text_styles.clone();
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
         s.spacing.button_padding = egui::vec2(6.0, 2.0);
-        s.spacing.interact_size = egui::vec2(20.0, 20.0);
+        s.spacing.interact_size = egui::vec2(20.0, 21.0);
         s.spacing.menu_margin = egui::Margin::same(4);
         s.animation_time = 0.06;
     });

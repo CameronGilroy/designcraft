@@ -39,6 +39,12 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ),
     ("window.controlBar", "Control", Some("Cmd+Alt+6"), "{}"),
     ("window.toolsDoubleColumn", "Tools: Double Column", None, "{}"),
+    (
+        "window.workspace",
+        "Workspace",
+        None,
+        "{name: Essentials|Advanced|Book|Digital Publishing|Interactive for PDF|Printing and Proofing|Typography}",
+    ),
     ("window.brightness", "Interface Color Theme", None, "{brightness: dark|mediumDark|mediumLight|light}"),
 ];
 
@@ -294,6 +300,19 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "window.controlBar" => flag(&mut app.ui.control_bar),
         "window.toolsDoubleColumn" => flag(&mut app.ui.tools_double_column),
+        "window.workspace" => {
+            let name = p.get("name").and_then(Value::as_str).unwrap_or("Essentials");
+            // Workspaces choose which bars and panels are visible.
+            app.ui.control_bar = matches!(name, "Advanced" | "Typography" | "Printing and Proofing" | "Book");
+            app.ui.dock_tab = if name == "Typography" { "properties".into() } else { app.ui.dock_tab.clone() };
+            app.ui.open_panel = match name {
+                "Typography" => Some("paragraphStyles".into()),
+                "Printing and Proofing" => Some("swatches".into()),
+                _ => None,
+            };
+            app.ui.workspace = name.to_string();
+            Ok(Value::Null)
+        }
         "window.brightness" => {
             let b = p.get("brightness").and_then(Value::as_str).and_then(crate::theme::Brightness::parse).unwrap_or(crate::theme::Brightness::Dark);
             app.ui.brightness = b;
@@ -354,89 +373,132 @@ fn shortcut_text(sc: &str) -> String {
         .collect()
 }
 
-/// The menu bar contents (inside the app bar).
-pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
-    for (menu, entries) in MENUS {
-        ui.menu_button(*menu, |ui| {
-            ui.set_min_width(240.0);
-            menu_entries(app, ui, entries);
-        });
-    }
+/// A menu entry, shared by the in-window menu bar and the native macOS menu.
+#[derive(Clone, Debug)]
+pub enum Item {
+    Sep,
+    Sub(String, Vec<Item>),
+    Cmd { label: String, id: String, params: Value, shortcut: Option<&'static str> },
 }
 
-fn menu_entries(app: &mut DesignApp, ui: &mut egui::Ui, entries: &[&str]) {
+fn cmd_item(id: &str, params: Value) -> Item {
+    let (label, shortcut) = match ui_label(id) {
+        Some((l, sc)) => (l.to_string(), sc),
+        None => match designcraft_engine::find_command(id) {
+            Some(c) => (c.label.to_string(), c.shortcut),
+            None => (id.to_string(), None),
+        },
+    };
+    Item::Cmd { label, id: id.to_string(), params, shortcut }
+}
+
+fn parse_entries(entries: &[&str]) -> Vec<Item> {
+    let mut out = Vec::new();
     let mut i = 0;
     while i < entries.len() {
         let e = entries[i];
         i += 1;
         if e == "-" {
-            ui.separator();
-            continue;
-        }
-        if let Some(name) = e.strip_prefix('>') {
+            out.push(Item::Sep);
+        } else if let Some(name) = e.strip_prefix('>') {
             let start = i;
             while i < entries.len() && entries[i] != "<" {
                 i += 1;
             }
-            let sub = &entries[start..i];
+            let sub = parse_entries(&entries[start..i]);
             i += 1;
-            ui.menu_button(name, |ui| menu_entries(app, ui, sub));
-            continue;
-        }
-        if e == "ui:window.panel" {
-            ui.menu_button("Panels", |ui| {
-                for (id, label, _) in crate::dock::DOCK_TABS.iter().chain(crate::dock::ICON_PANELS) {
-                    if ui.button(*label).clicked() {
-                        let _ = app.run("window.panel", json!({"panel": id}));
-                        ui.close();
-                    }
-                }
-            });
-            continue;
-        }
-        if e == "ui:window.brightness" {
-            ui.menu_button("Interface Color Theme", |ui| {
-                for b in crate::theme::Brightness::ALL {
-                    if ui.radio(app.ui.brightness == b, b.label()).clicked() {
-                        let _ = app.run("window.brightness", json!({"brightness": b.id()}));
-                        ui.close();
-                    }
-                }
-            });
-            continue;
-        }
-        let (kind, id) = e.split_once(':').unwrap_or(("cmd", e));
-        let (label, sc, en) = if kind == "ui" {
-            let (l, sc) = ui_label(id).unwrap_or((id, None));
-            (l.to_string(), sc, app.session.active().is_some() || id.starts_with("app.") || id.starts_with("window."))
+            out.push(Item::Sub(name.to_string(), sub));
+        } else if e == "ui:window.panel" {
+            let items = crate::dock::DOCK_TABS
+                .iter()
+                .chain(crate::dock::ICON_PANELS)
+                .map(|(id, label, _)| Item::Cmd { label: label.to_string(), id: "window.panel".into(), params: json!({"panel": id}), shortcut: None })
+                .collect();
+            out.push(Item::Sub("Panels".into(), items));
+        } else if e == "ui:window.brightness" {
+            let items = crate::theme::Brightness::ALL
+                .iter()
+                .map(|b| Item::Cmd {
+                    label: b.label().to_string(),
+                    id: "window.brightness".into(),
+                    params: json!({"brightness": b.id()}),
+                    shortcut: None,
+                })
+                .collect();
+            out.push(Item::Sub("Interface Color Theme".into(), items));
         } else {
-            match designcraft_engine::find_command(id) {
-                Some(c) => (c.label.to_string(), c.shortcut, enabled(app, id)),
-                None => (id.to_string(), None, false),
-            }
-        };
-        let checked = match id {
-            "view.rulers" => Some(app.ui.rulers),
-            "view.frameEdges" => Some(app.ui.frame_edges),
-            "view.guides" => Some(app.ui.guides),
-            "view.baselineGrid" => Some(app.ui.baseline_grid),
-            "view.textThreads" => Some(app.ui.text_threads),
-            "view.hiddenCharacters" => Some(app.ui.hidden_characters),
-            "window.controlBar" => Some(app.ui.control_bar),
-            _ => None,
-        };
-        let text = match checked {
-            Some(true) => format!("✓ {label}"),
-            Some(false) => format!("   {label}"),
-            None => label,
-        };
-        let mut b = egui::Button::new(text);
-        if let Some(sc) = sc {
-            b = b.shortcut_text(shortcut_text(sc));
+            let (_, id) = e.split_once(':').unwrap_or(("cmd", e));
+            out.push(cmd_item(id, Value::Null));
         }
-        if ui.add_enabled(en, b).clicked() {
-            let _ = app.run(id, json!({}));
-            ui.close();
+    }
+    out
+}
+
+/// The whole menu tree (InDesign order).
+pub fn menu_tree() -> Vec<(&'static str, Vec<Item>)> {
+    MENUS.iter().map(|(m, e)| (*m, parse_entries(e))).collect()
+}
+
+/// Check state of a toggle command (None = not a toggle).
+pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
+    Some(match id {
+        "view.rulers" => app.ui.rulers,
+        "view.frameEdges" => app.ui.frame_edges,
+        "view.guides" => app.ui.guides,
+        "view.baselineGrid" => app.ui.baseline_grid,
+        "view.textThreads" => app.ui.text_threads,
+        "view.hiddenCharacters" => app.ui.hidden_characters,
+        "window.controlBar" => app.ui.control_bar,
+        "window.toolsDoubleColumn" => app.ui.tools_double_column,
+        "view.togglePreview" => app.ui.screen_mode == crate::ScreenMode::Preview,
+        "window.brightness" => params.get("brightness").and_then(Value::as_str) == Some(app.ui.brightness.id()),
+        _ => return None,
+    })
+}
+
+/// Enablement for menu display (UI commands need a document unless they're app/window-level).
+pub fn menu_enabled(app: &DesignApp, id: &str) -> bool {
+    if ui_label(id).is_some() {
+        return app.session.active().is_some() || id.starts_with("app.") || id.starts_with("window.");
+    }
+    enabled(app, id)
+}
+
+/// The menu bar contents (inside the app bar; macOS uses the native menu instead).
+pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
+    for (menu, entries) in menu_tree() {
+        ui.menu_button(menu, |ui| {
+            ui.set_min_width(240.0);
+            menu_items(app, ui, &entries);
+        });
+    }
+}
+
+fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item]) {
+    for it in items {
+        match it {
+            Item::Sep => {
+                ui.separator();
+            }
+            Item::Sub(name, children) => {
+                ui.menu_button(name, |ui| menu_items(app, ui, children));
+            }
+            Item::Cmd { label, id, params, shortcut } => {
+                let text = match checked(app, id, params) {
+                    Some(true) => format!("✓ {label}"),
+                    Some(false) => format!("   {label}"),
+                    None => label.clone(),
+                };
+                let mut b = egui::Button::new(text);
+                if let Some(sc) = shortcut {
+                    b = b.shortcut_text(shortcut_text(sc));
+                }
+                if ui.add_enabled(menu_enabled(app, id), b).clicked() {
+                    let p = if params.is_null() { json!({}) } else { params.clone() };
+                    let _ = app.run(id, p);
+                    ui.close();
+                }
+            }
         }
     }
 }
@@ -505,6 +567,9 @@ pub fn shortcuts(app: &mut DesignApp, ctx: &egui::Context) {
             }
         }
         if let Some(id) = fired {
+            if app.native_shortcuts.contains(id) {
+                continue; // The native menu handles it.
+            }
             let _ = app.run(id, json!({}));
             continue;
         }

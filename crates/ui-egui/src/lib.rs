@@ -75,6 +75,7 @@ pub struct UiState {
     pub open_panel: Option<String>,
     pub dock_expanded: bool,
     pub units: Unit,
+    pub workspace: String,
     #[serde(skip)]
     pub status: String,
     #[serde(skip)]
@@ -88,7 +89,7 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         UiState {
-            brightness: theme::Brightness::Dark,
+            brightness: theme::Brightness::MediumDark,
             screen_mode: ScreenMode::Normal,
             frame_edges: true,
             rulers: true,
@@ -97,12 +98,13 @@ impl Default for UiState {
             document_grid: false,
             text_threads: false,
             hidden_characters: false,
-            control_bar: true,
+            control_bar: false,
             tools_double_column: false,
             dock_tab: "properties".into(),
             open_panel: None,
             dock_expanded: true,
             units: Unit::Picas,
+            workspace: "Essentials".into(),
             status: String::new(),
             dialog: None,
             palette: None,
@@ -159,6 +161,10 @@ pub struct DesignApp {
     pub restyle: bool,
     fonts_ready: bool,
     pub integrated_titlebar: bool,
+    /// The host installed a native menu bar (macOS): don't draw menus in the window.
+    pub native_menu: bool,
+    /// Shortcuts the native menu handles (skip them in the egui shortcut handler).
+    pub native_shortcuts: std::collections::HashSet<String>,
     last_time: f64,
 }
 
@@ -184,6 +190,8 @@ impl DesignApp {
             restyle: false,
             fonts_ready: false,
             integrated_titlebar: false,
+            native_menu: false,
+            native_shortcuts: Default::default(),
             last_time: 0.0,
         }
     }
