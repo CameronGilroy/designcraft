@@ -1,33 +1,97 @@
+<p align="center">
+  <a href="https://getartcraft.com/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/brand/artcraft-logo-white.svg">
+      <img alt="ArtCraft" src="docs/brand/artcraft-logo.svg" width="200">
+    </picture>
+  </a>
+</p>
+
 <h1 align="center">DesignCraft</h1>
 
 <p align="center">
-  <b>Page layout and publishing, rebuilt in pure Rust.</b><br>
-  A fast, open-source, clean-room take on the Adobe InDesign workflow — native on macOS, Windows and Linux, and in the browser via WebAssembly.<br>
+  <b>Page layout and publishing, rebuilt in pure Rust.</b>
+</p>
+
+<p align="center">
+  A fast, open-source, clean-room take on the Adobe InDesign workflow. It runs natively on macOS,
+  Windows and Linux, and in the browser via WebAssembly.<br>
   <i>By the ArtCraft team.</i>
 </p>
 
 <p align="center">
-  <img src="docs/images/ui-spread.png" alt="DesignCraft showing a magazine spread: a threaded three-column story is selected with its in/out ports and thread line, the Control panel shows its position in picas and the Properties panel its text frame options" width="100%">
-  <br><sub><b>Quarterly — Spring Issue</b>: threaded three-column body text, a wrapped pull quote, parent-page folios, all set by DesignCraft's own paragraph composer.</sub>
+  <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-4d7a0a?style=flat-square&logo=rust&logoColor=white">
+  <img alt="Runs on macOS, Windows, Linux and the web" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20Web-7bb51c?style=flat-square">
+  <img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-4d7a0a?style=flat-square">
+  <img alt="Agent-drivable over MCP" src="https://img.shields.io/badge/agents-MCP-7bb51c?style=flat-square">
 </p>
+
+<p align="center">
+  <a href="https://discord.gg/artcraft"><img alt="Join the ArtCraft community on Discord" src="https://img.shields.io/badge/Join%20us%20on%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" height="40"></a>
+</p>
+
+<p align="center">
+  <a href="https://getartcraft.com/apps/designcraft"><b>DesignCraft on getartcraft.com</b></a> ·
+  <a href="https://getartcraft.com/">ArtCraft</a> ·
+  <a href="https://getartcraft.com/apps">All Crafting Apps</a>
+</p>
+
+<br>
+
+<p align="center">
+  <img src="docs/images/ui-spread.png" alt="DesignCraft showing a magazine spread: a threaded three-column story is selected with its in/out ports and thread line, the Control panel shows its position in picas and the Properties panel its text frame options" width="100%">
+  <br><sub><b>Quarterly, Spring Issue</b>: threaded three-column body text, a wrapped pull quote and parent-page folios, all set by DesignCraft's own paragraph composer.</sub>
+</p>
+
+> [!NOTE]
+> **ArtCraft is a community of artists from all walks of life.** Painters, photographers,
+> filmmakers, illustrators, designers, animators, hobbyists, and people who picked up a pencil
+> last week. If you make things, you're one of us. **[Come say hi on Discord](https://discord.gg/artcraft).**
+
+<p align="center">
+  <a href="#the-sample-magazine">The sample magazine</a> ·
+  <a href="#why-designcraft">Why DesignCraft</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#web">Web</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#the-crafting-apps">The Crafting Apps</a> ·
+  <a href="#license">License</a>
+</p>
+
+## The sample magazine
+
+Every page below was laid out by DesignCraft from code (`crates/engine/src/sample.rs`) and exported
+by its own renderer. Try it yourself with `File → New → Sample Document`, or start the app with
+`--sample`.
 
 <table>
 <tr>
-<td width="33%" valign="top"><img src="docs/images/page-cover.png" alt="Magazine cover with a generated dusk landscape and a large serif headline" width="100%"><p align="center"><sub>Cover: full-bleed graphic frame, display type</sub></p></td>
-<td width="33%" valign="top"><img src="docs/images/page-2.png" alt="Feature opener with kicker, headline, deck, photo, caption and two-column justified text" width="100%"><p align="center"><sub>Styles: kicker rule, headline, deck, justified body</sub></p></td>
-<td width="33%" valign="top"><img src="docs/images/page-3.png" alt="Three-column page with text wrapping around a shaded pull quote" width="100%"><p align="center"><sub>Threading, columns and text wrap</sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/page-cover.png" alt="Magazine cover for The Spring Issue, No. 01: a dusk landscape of layered purple hills under a large pale sun, with the white serif headline The Quiet Art of Layout and an italic deck below" width="100%"><p align="center"><sub><b>Cover.</b> A full-bleed graphic frame, display type and an italic deck.</sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/page-2.png" alt="Feature opener titled Notes on the Grid, with an orange FEATURE · DESIGN kicker over a rule, an italic deck, a wide landscape picture with a small caption, and two columns of justified body text above a QUARTERLY folio" width="100%"><p align="center"><sub><b>Styles.</b> Kicker rule, headline, deck, caption and justified two-column body.</sub></p></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/page-3.png" alt="Three-column page of justified, hyphenated body text that wraps around a shaded pull quote reading The best layouts disappear. What remains is the story., with a gradient rule and SPRING ISSUE folio at the foot" width="100%"><p align="center"><sub><b>Threading, columns and text wrap.</b> One story flows through three columns and around the pull quote.</sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/page-4.png" alt="Coming Next page titled Color, Ink and Paper on a plum background, with four swatch circles labeled Ink Plum, Sunset, C=100 M=0 Y=0 K=0 and Paper Warm, above a short paragraph of body text" width="100%"><p align="center"><sub><b>Swatches.</b> Named colors and a CMYK process swatch, laid out as a palette.</sub></p></td>
 </tr>
 </table>
 
-Every page above was laid out by DesignCraft from code (`crates/engine/src/sample.rs`) and exported by its own renderer — try it with `File → New → Sample Document` or `--sample`.
+## Why DesignCraft
 
-### Why DesignCraft
-
-- **Familiar.** InDesign's layout, tools, menus, panels and shortcuts: spreads and parent pages, frames and threaded stories, the Control panel, paragraph and character styles, swatches, text wrap… you already know how to use it.
-- **Beautiful type.** A Knuth–Plass paragraph composer (plus single-line), dictionary hyphenation (public-domain Moby word list + our own trained patterns), word/letter/glyph-scaling justification, keeps, optical margin alignment, columns, baseline grid, tabs, rules and shading — identical line breaks on screen and in PDF.
-- **Fast.** Multithreaded SIMD rendering (vello_cpu), copy-on-write documents with O(1) undo snapshots, cached composition.
-- **Open.** A documented native format, IDML import/export, PNG export, and PDF on the roadmap — no subscription, no licence server, no telemetry.
-- **Agent-native.** Every menu item, tool gesture, panel control and dialog is drivable over a JSON control channel and an **MCP server**, so Claude and other agents can lay out and edit documents like a designer.
+- **Familiar.** InDesign's layout, tools, menus, panels and shortcuts: spreads and parent pages,
+  frames and threaded stories, the Control panel, paragraph and character styles, swatches, text
+  wrap and more. If you know InDesign, you already know how to use it.
+- **Beautiful type.** A Knuth–Plass paragraph composer (plus single-line), dictionary hyphenation
+  (the public-domain Moby word list plus our own trained patterns), word, letter and glyph-scaling
+  justification, keeps, optical margin alignment, columns, baseline grid, tabs, rules and shading.
+  Line breaks are identical on screen and in PDF.
+- **Fast.** Multithreaded SIMD rendering (vello_cpu), copy-on-write documents with O(1) undo
+  snapshots, and cached composition.
+- **Open.** A documented native format, IDML import and export, PNG export, and PDF on the roadmap.
+  No subscription, no licence server, no telemetry.
+- **Agent-native.** Every menu item, tool gesture, panel control and dialog can be driven over a
+  JSON control channel and an **MCP server**, so Claude and other agents can lay out and edit
+  documents like a designer. See [`docs/control-protocol.md`](docs/control-protocol.md) and
+  [`docs/mcp.md`](docs/mcp.md).
 - **Everywhere.** One Rust codebase for desktop and the web.
 
 ## Quick start
@@ -41,7 +105,8 @@ cargo run --release -p designcraft-cli -- commands         # list every command
 cargo xtask ci                                             # fmt, clippy, tests, assets, layering, wasm
 ```
 
-Drive a running app: send JSON lines to `127.0.0.1:7979` — see [`docs/control-protocol.md`](docs/control-protocol.md).
+To drive a running app, send JSON lines to `127.0.0.1:7979`. The protocol is described in
+[`docs/control-protocol.md`](docs/control-protocol.md).
 
 ### Web
 
@@ -50,11 +115,15 @@ cd apps/designcraft-web && trunk build --release          # → dist/web (serve 
 cd apps/designcraft-web && trunk serve --release          # http://127.0.0.1:8767
 ```
 
-Needs [trunk](https://trunkrs.dev) and the `wasm32-unknown-unknown` target. The same app runs through eframe's web runner on WebGPU, falling back to WebGL2 (`?webgl` forces it; `?sample` opens the sample magazine). Open and Place use the browser's file picker (dropping files works too); Save and Export download the file. The web build has no control channel.
+You need [trunk](https://trunkrs.dev) and the `wasm32-unknown-unknown` target. The same app runs
+through eframe's web runner on WebGPU, falling back to WebGL2 (`?webgl` forces it; `?sample` opens
+the sample magazine). Open and Place use the browser's file picker, and dropping files works too.
+Save and Export download the file. The web build has no control channel.
 
 ## Architecture
 
-An engine-first Cargo workspace with enforced layering (`cargo xtask layers`); the egui frontend is a separate crate, so the UI can be swapped without touching the engine.
+DesignCraft is an engine-first Cargo workspace with enforced layering (`cargo xtask layers`). The
+egui frontend is a separate crate, so the UI can be swapped without touching the engine.
 
 | Layer | Crates |
 |---|---|
@@ -67,41 +136,61 @@ An engine-first Cargo workspace with enforced layering (`cargo xtask layers`); t
 | L6 | `ui-egui` (InDesign-style UI, control channel) |
 | L7 | `apps/designcraft`, `apps/designcraft-cli`, `apps/designcraft-web` |
 
-Status and milestones: **[ROADMAP.md](ROADMAP.md)**. Contributor and agent rules (clean-room, asset policy, quality gates): [`AGENTS.md`](AGENTS.md). Every bundled asset is listed with its licence in [`ASSETS.md`](ASSETS.md).
+- **Status and milestones:** [ROADMAP.md](ROADMAP.md)
+- **Contributor and agent rules** (clean-room, asset policy, quality gates): [`AGENTS.md`](AGENTS.md)
+- **Bundled assets:** every one is listed with its licence in [`ASSETS.md`](ASSETS.md)
 
-## Crafting Apps
+## The Crafting Apps
 
-Open-source, pure-Rust, clean-room creative tools — each engine-first, cross-platform, WASM-ready and fully agent-drivable.
+DesignCraft is one of the **Crafting Apps**: free, open-source creative tools from the
+[ArtCraft](https://getartcraft.com/) team, each written from scratch in Rust and each able to
+stand on its own.
 
-<table>
-<tr>
-  <td align="center" width="20%"><a href="https://github.com/storytold/photocraft"><b>PhotoCraft</b></a></td>
-  <td>Layered raster image editor in the spirit of <b>Photoshop</b> — high-bit-depth pipeline, adjustment layers, brushes, PSD round-trip.</td>
-</tr>
-<tr>
-  <td align="center"><a href="https://github.com/storytold/drawcraft"><b>DrawCraft</b></a></td>
-  <td>Vector illustration in the spirit of <b>Illustrator</b> — Pen, Pathfinder, live effects, type, SVG/PDF.</td>
-</tr>
-<tr>
-  <td align="center"><a href="https://github.com/storytold/designcraft"><b>DesignCraft</b></a></td>
-  <td>Page layout in the spirit of <b>InDesign</b> — spreads, threaded stories, styles, a Knuth–Plass composer. <i>(you are here)</i></td>
-</tr>
-<tr>
-  <td align="center"><a href="https://github.com/storytold/filmcraft"><b>FilmCraft</b></a></td>
-  <td>Non-linear video editor in the spirit of <b>Premiere Pro</b> — timeline editing, effects, and export.</td>
-</tr>
-<tr>
-  <td align="center"><a href="https://github.com/storytold/lightcraft"><b>LightCraft</b></a></td>
-  <td>Photo library and non-destructive raw developer in the spirit of <b>Lightroom</b> — local-first catalog, wide-gamut float pipeline.</td>
-</tr>
-<tr>
-  <td align="center"><a href="https://github.com/storytold/printcraft"><b>PrintCraft</b></a></td>
-  <td>PDF viewer and editor in the spirit of <b>Acrobat</b> — rendering, forms, annotations, and document tools.</td>
-</tr>
-</table>
+| App | What it's for | Code | Learn more |
+|---|---|---|---|
+| <img src="https://img.shields.io/badge/PhotoCraft-2f7bf5?style=for-the-badge" alt="PhotoCraft" height="24"> | Image editing: layers, masks, type and real PSD files | [GitHub](https://github.com/storytold/photocraft) | [getartcraft.com](https://getartcraft.com/apps/photocraft) |
+| <img src="https://img.shields.io/badge/VectorCraft-e8573f?style=for-the-badge" alt="VectorCraft" height="24"> | Vector illustration (formerly DrawCraft) | [GitHub](https://github.com/storytold/vectorcraft) | [getartcraft.com](https://getartcraft.com/apps/drawcraft) |
+| <img src="https://img.shields.io/badge/FilmCraft-8b5cf6?style=for-the-badge" alt="FilmCraft" height="24"> | Video editing, color and sound | [GitHub](https://github.com/storytold/filmcraft) | [getartcraft.com](https://getartcraft.com/apps/filmcraft) |
+| <img src="https://img.shields.io/badge/LightCraft-f2a516?style=for-the-badge" alt="LightCraft" height="24"> | Photo library and raw development | [GitHub](https://github.com/storytold/lightcraft) | [getartcraft.com](https://getartcraft.com/apps/lightcraft) |
+| <img src="https://img.shields.io/badge/PrintCraft-12a58a?style=for-the-badge" alt="PrintCraft" height="24"> | Reading, organizing and protecting PDFs | [GitHub](https://github.com/storytold/printcraft) | [getartcraft.com](https://getartcraft.com/apps/printcraft) |
+| <img src="https://img.shields.io/badge/EffectCraft-e0368f?style=for-the-badge" alt="EffectCraft" height="24"> | Motion graphics and visual effects | [GitHub](https://github.com/storytold/effectcraft) | [getartcraft.com](https://getartcraft.com/apps/effectcraft) |
+| <img src="https://img.shields.io/badge/DesignCraft-7bb51c?style=for-the-badge" alt="DesignCraft" height="24"> | Page layout and publishing · **you are here** | [GitHub](https://github.com/storytold/designcraft) | [getartcraft.com](https://getartcraft.com/apps/designcraft) |
+
+And [**ArtCraft**](https://getartcraft.com/) itself, our AI image and video studio for artists who want real control.
+
+<br>
+
+<p align="center">
+  <a href="https://discord.gg/artcraft"><img alt="Join the ArtCraft community on Discord" src="https://img.shields.io/badge/Join%20us%20on%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" height="40"></a>
+</p>
+
+<h3 align="center">Come make things with us</h3>
+
+<p align="center">
+  Our Discord is where artists of every kind hang out: people who paint, shoot, draw, cut film,
+  set type, and people still figuring out what they like to make. Share what you're working on,
+  ask for help, tell us what's broken, or tell us what you wish these tools could do.
+  Whatever your medium and however long you've been at it, you're welcome here.
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/artcraft"><b>discord.gg/artcraft</b></a> ·
+  <a href="https://getartcraft.com/">getartcraft.com</a> ·
+  <a href="https://getartcraft.com/apps">The Crafting Apps</a> ·
+  <a href="https://getartcraft.com/apps/designcraft">DesignCraft</a>
+</p>
 
 ## License
 
-MIT OR Apache-2.0. Bundled fonts are OFL; all icons are drawn in code and are original. Per-asset attribution: [`ASSETS.md`](ASSETS.md) (see also [`NOTICE`](NOTICE)).
+MIT OR Apache-2.0 ([`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APACHE)). Bundled fonts
+are OFL; all icons are drawn in code and are original. Per-asset attribution is in
+[`ASSETS.md`](ASSETS.md) (see also [`NOTICE`](NOTICE)).
 
 <sub>DesignCraft is an independent project and is not affiliated with or endorsed by Adobe. "Adobe", "InDesign", "Illustrator", "Photoshop", "Premiere Pro", "Lightroom" and "Acrobat" are trademarks of Adobe Inc., used here only to describe compatibility and workflow familiarity.</sub>
+
+<br>
+
+<p align="center">
+  <a href="https://getartcraft.com/"><img alt="ArtCraft" src="docs/brand/artcraft-mark.svg" width="28"></a><br>
+  <sub>Made by the <a href="https://getartcraft.com/">ArtCraft</a> team and community.</sub>
+</p>
