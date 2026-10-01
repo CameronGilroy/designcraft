@@ -569,3 +569,25 @@ fn tabs_without_stops_use_default_half_inch() {
     let b = l.glyphs.iter().find(|g| g.byte == 2).expect("B");
     assert!((b.x - 36.0).abs() < 0.5, "B at {}", b.x);
 }
+
+#[test]
+fn tab_leaders_fill_the_gap() {
+    let mut doc = designcraft_doc::Document::new(&designcraft_doc::build::NewDocument::default());
+    let lid = doc.default_layer();
+    let pf = designcraft_doc::ParaFormat {
+        para: designcraft_doc::ParaAttrs {
+            tabs: Some(vec![designcraft_doc::TabStop { position: 200.0, align: TabAlign::Right, leader: ".".into(), align_on: String::new() }]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let (_, sid) =
+        doc.add_text_frame(designcraft_doc::SpreadRef::Doc(0), designcraft_geom::Rect::new(0.0, 0.0, 300.0, 100.0), lid, "Intro\t12", pf).unwrap();
+    let cs = crate::compose_story(&doc, sid, &Default::default());
+    let line = &cs.frames[0].lines[0];
+    let dots: Vec<&crate::PlacedGlyph> = line.glyphs.iter().filter(|g| g.len == 0 && g.visible).collect();
+    assert!(dots.len() > 20, "{} leader glyphs", dots.len());
+    let last_dot = dots.iter().map(|g| g.x).fold(0.0, f64::max);
+    let num_x = line.glyphs.iter().find(|g| g.byte == 6).unwrap().x;
+    assert!(last_dot < num_x, "leaders stop before the page number");
+}

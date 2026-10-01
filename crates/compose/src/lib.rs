@@ -902,10 +902,16 @@ fn layout_line(
     let measure = x1 - x0;
     let mut x = 0.0;
     let mut i = 0;
+    let mut leaders: Vec<(usize, String)> = Vec::new();
     while i < line.len() {
         if line[i].ch == '\t' {
             let abs = x0 + x - tab_origin;
             let stop = pp.tabs.iter().find(|t| t.position > abs + 0.01).cloned();
+            if let Some(t) = &stop
+                && !t.leader.is_empty()
+            {
+                leaders.push((i, t.leader.clone()));
+            }
             let (pos, align) = match &stop {
                 Some(t) => (t.position, t.align),
                 None => (((abs / DEFAULT_TAB).floor() + 1.0) * DEFAULT_TAB, TabAlign::Left),
@@ -1024,10 +1030,52 @@ fn layout_line(
             p.adv *= scale[i];
         }
         p.adv += add[i];
+        let leader = leaders.iter().find(|(k, _)| *k == i).map(|(_, l)| l.as_str());
+        let (tab_x, tab_w) = (x, p.adv);
         x += p.adv;
         out.push(p);
+        if let Some(l) = leader {
+            tab_leader(g, l, tab_x, tab_w, tab_origin, &mut out);
+        }
     }
     (out, x, ratio)
+}
+
+/// Fill a tab's gap with repeats of its leader, on a grid shared by all lines (so dots align).
+fn tab_leader(tab: &Glyph, leader: &str, x: f64, w: f64, origin: f64, out: &mut Vec<PlacedGlyph>) {
+    let glyphs: Vec<(u32, f64)> = leader
+        .chars()
+        .map(|c| {
+            let gid = designcraft_fonts::first_glyph(&tab.face, &[c]);
+            (gid, tab.face.advance(gid) * tab.sx)
+        })
+        .collect();
+    let pw: f64 = glyphs.iter().map(|g| g.1).sum();
+    if pw <= 0.01 || w < pw {
+        return;
+    }
+    let mut at = origin + ((x - origin) / pw).ceil() * pw;
+    let end = x + w;
+    let mut n = 0;
+    while at + pw <= end + 0.01 && n < 2000 {
+        for &(gid, adv) in &glyphs {
+            out.push(PlacedGlyph {
+                face: tab.face.clone(),
+                gid,
+                x: at,
+                y: -tab.shift + tab.dy,
+                adv: 0.0,
+                sx: tab.sx,
+                sy: tab.sy,
+                style: tab.style,
+                byte: tab.byte,
+                len: 0,
+                visible: true,
+            });
+            at += adv;
+        }
+        n += 1;
+    }
 }
 
 /// Share `extra` points among word spaces, letter gaps and glyph scaling (see [`layout_line`]).

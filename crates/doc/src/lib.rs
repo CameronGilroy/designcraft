@@ -235,6 +235,9 @@ pub struct Document {
     /// Words added to the document's user dictionary (spelling).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_words: Vec<String>,
+    /// The generated table of contents (Layout → Table of Contents), kept for Update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toc: Option<Toc>,
     pub next_id: u64,
 }
 
@@ -263,6 +266,30 @@ pub struct Hyperlink {
     pub name: String,
     pub source: HyperlinkSource,
     pub dest: HyperlinkDest,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TocEntry {
+    /// Paragraph style whose paragraphs are listed.
+    pub style: String,
+    /// 1-based nesting level.
+    #[serde(default = "one")]
+    pub level: u8,
+}
+
+fn one() -> u8 {
+    1
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Toc {
+    pub story: StoryId,
+    pub title: String,
+    pub entries: Vec<TocEntry>,
+    #[serde(default)]
+    pub page_numbers: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

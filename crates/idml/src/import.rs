@@ -1354,6 +1354,7 @@ impl<'r> Importer<'r> {
             hyperlinks: vec![],
             bookmarks: vec![],
             user_words: vec![],
+            toc: None,
             next_id: self.next_id,
         };
         Ok(d)
