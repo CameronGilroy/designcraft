@@ -14,8 +14,9 @@ mod cache;
 pub mod hyphen;
 pub mod shape;
 
+use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use designcraft_doc::{
     Align, Composer, Document, FirstBaseline, GridAlign, ItemId, ParaProps, SpanColumns, StartParagraph, Story, StoryId, TabAlign, TextFrameOptions,
@@ -246,8 +247,22 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
     let cols: Vec<Vec<Rect>> = frames.iter().map(FrameSpec::columns).collect();
     let mut cur = Cursor { fi: 0, col: 0, last_baseline: None, last_descent: 0.0, pending: 0.0 };
     let para_ranges = story.para_ranges();
+    let np = para_ranges.len();
     let mut list_counter: u32 = 0;
-    'paras: for (pi, prange) in para_ranges.iter().enumerate() {
+    // Keep options: paragraphs are re-laid from a snapshot when a keep is violated, either forced
+    // into the next column or with a cap on the lines set before moving on (widow control).
+    let mut snaps: Vec<Snapshot> = Vec::with_capacity(np);
+    let mut info: Vec<ParaInfo> = Vec::with_capacity(np);
+    let mut force_col = vec![false; np];
+    let mut line_cap: Vec<Option<usize>> = vec![None; np];
+    let mut restores = 0usize;
+    let mut pi = 0;
+    'paras: while pi < np {
+        let prange = para_ranges[pi].clone();
+        let snap = Snapshot::take(&out, &cur, list_counter);
+        snaps.truncate(pi);
+        snaps.push(snap);
+        info.truncate(pi);
         let pf = &story.paras[pi];
         let (pp, base_chars) = doc.styles.resolve_para(pf);
         // Bullets & numbering: generated prefix (shaped as its own glyphs, mapped to the paragraph start).
@@ -269,23 +284,19 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             }
             designcraft_doc::ListType::None => list_counter = 0,
         }
-        let glyphs = sp.glyphs;
+        let mut glyphs = sp.glyphs;
+        apply_desired_spacing(&mut glyphs, &pp);
         let hyph_after = hyphenation_points(&story.text, &glyphs, &pp);
         let base_size = base_chars.size;
         let base_leading = match base_chars.leading {
             designcraft_doc::Leading::Auto => base_size * pp.auto_leading,
             designcraft_doc::Leading::Points(v) => v,
         };
-        let spacing = Spacing {
-            justify: pp.align.is_justified(),
-            word_min: pp.word_space_min,
-            word_desired: pp.word_space_desired,
-            word_max: pp.word_space_max,
-            hyphen_penalty: 50.0 + 450.0 * pp.hyph_weight,
-            hyphen_limit: pp.hyph_limit,
-            ragged_stretch: base_size * 2.0,
-        };
+        let spacing = spacing_for(&pp, base_size);
         // Paragraph start options.
+        if force_col[pi] {
+            cur.next_column(&cols);
+        }
         if cur.last_baseline.is_some() {
             match pp.start_paragraph {
                 StartParagraph::NextColumn => cur.next_column(&cols),
@@ -296,9 +307,13 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         if cur.last_baseline.is_some() {
             cur.pending += pp.space_before;
         }
+        let at_top = cur.last_baseline.is_none();
+        let start_at = (cur.fi, cur.col);
         // Rule above / shading track the paragraph's first line.
         let mut g0 = 0usize;
         let mut line_no = 0usize;
+        // Paragraph line number of the first line in the current column.
+        let mut col_first_line = 0usize;
         let has_tabs = glyphs.iter().any(|g| g.ch == '\t');
         let mut first_line_rect: Option<(usize, f64, f64, f64)> = None; // frame, baseline, ascent, x-span
         loop {
@@ -327,6 +342,8 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             let rest_h = &hyph_after[g0..];
             let breaks: Vec<Break> = if pp.composer == Composer::SingleLine || has_tabs || rest.len() > 4000 {
                 breaker::greedy(rest, rest_h, &spacing, &width)
+            } else if pp.balance_ragged && !spacing.justify {
+                breaker::balanced(rest, rest_h, &spacing, &width)
             } else {
                 breaker::knuth_plass(rest, rest_h, &spacing, &width)
             };
@@ -365,20 +382,54 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                         }
                     }
                 }
-                let fits = baseline + desc <= col.y1 + 0.01;
+                let capped = line_cap[pi] == Some(line_no) && line_no > col_first_line;
+                let fits = baseline + desc <= col.y1 + 0.01 && !capped;
                 if !fits {
+                    if !capped {
+                        let ctx = KeepCtx {
+                            pi,
+                            line_no,
+                            in_col: line_no - col_first_line,
+                            started_here: col_first_line == 0,
+                            at_top,
+                            remaining: breaks.len() - k,
+                            here: (cur.fi, cur.col),
+                        };
+                        let action = if restores < 4 * np + 64 { keep_violation(&ctx, &pp, &info, &force_col, &line_cap) } else { None };
+                        if let Some(action) = action {
+                            restores += 1;
+                            let j = match action {
+                                KeepAction::Force(j) => {
+                                    force_col[j] = true;
+                                    j
+                                }
+                                KeepAction::Cap(j, n) => {
+                                    line_cap[j] = Some(n);
+                                    j
+                                }
+                            };
+                            for k in j + 1..np {
+                                force_col[k] = false;
+                                line_cap[k] = None;
+                            }
+                            snaps[j].restore(&mut out, &mut cur, &mut list_counter);
+                            pi = j;
+                            continue 'paras;
+                        }
+                    }
                     // Next column / frame; re-break the rest of the paragraph there.
                     g0 = s;
                     cur.next_column(&cols);
+                    col_first_line = line_no;
                     moved = true;
-                    let _ = k;
                     break;
                 }
                 let ind_l = pp.left_indent + if line_no == 0 { pp.first_line_indent } else { 0.0 };
                 let lx0 = x0 + ind_l;
                 let lx1 = x1 - pp.right_indent;
                 let last = k + 1 == breaks.len();
-                let (placed, end_x, ratio) = layout_line(&glyphs, s, e, b.hyphen, lx0, lx1, col.x0, &pp, last, b.forced && !last, f.left_page);
+                let (placed, end_x, ratio) =
+                    layout_line(&glyphs, s, e, b.hyphen, lx0, lx1, col.x0, &pp, &spacing, last, b.forced && !last, f.left_page);
                 let range_end = if last { prange.end } else { glyphs.get(g0 + b.next).map(|g| g.byte).unwrap_or(prange.end) };
                 let range_start = glyphs.get(s).map(|g| g.byte).unwrap_or(prange.start).min(range_end);
                 let range_start = if line_no == 0 { prange.start } else { range_start };
@@ -411,8 +462,14 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 if b.forced && e < glyphs.len() + 1 {
                     let brk = glyphs.get(g0 + b.next.saturating_sub(1)).map(|g| g.ch);
                     match brk {
-                        Some(story::COLUMN_BREAK) => cur.next_column(&cols),
-                        Some(story::FRAME_BREAK) | Some(story::PAGE_BREAK) => cur.next_frame(),
+                        Some(story::COLUMN_BREAK) => {
+                            cur.next_column(&cols);
+                            col_first_line = line_no;
+                        }
+                        Some(story::FRAME_BREAK) | Some(story::PAGE_BREAK) => {
+                            cur.next_frame();
+                            col_first_line = line_no;
+                        }
                         _ => {}
                     }
                 }
@@ -421,6 +478,18 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 break;
             }
         }
+        info.push(ParaInfo {
+            start: start_at,
+            at_top,
+            end: (cur.fi, cur.col),
+            lines: line_no,
+            lines_in_end_col: line_no - col_first_line,
+            keep_with_next: pp.keep_with_next,
+            keep_together: pp.keep_lines_together,
+            keep_all: pp.keep_all_lines,
+            keep_first: pp.keep_first as usize,
+            keep_last: pp.keep_last as usize,
+        });
         // Rules and shading for the paragraph.
         if let Some((fi, bl, asc, _)) = first_line_rect {
             let ft = &mut out.frames[fi];
@@ -458,6 +527,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             ft.decos.push(Deco { rect: Rect::new(x0 + r.left_indent, y, x1 - r.right_indent, y + r.weight), color: r.color.clone(), tint: r.tint });
         }
         cur.pending += pp.space_after;
+        pi += 1;
     }
     // Ranges, content heights and vertical justification.
     for (fi, ft) in out.frames.iter_mut().enumerate() {
@@ -485,10 +555,185 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
     out
 }
 
+/// Breaker parameters from the paragraph's settings.
+fn spacing_for(pp: &ParaProps, base_size: f64) -> Spacing {
+    Spacing {
+        justify: pp.align.is_justified(),
+        word_min: pp.word_space_min,
+        word_desired: pp.word_space_desired,
+        word_max: pp.word_space_max,
+        letter_min: pp.letter_space_min.min(pp.letter_space_desired),
+        letter_desired: pp.letter_space_desired,
+        letter_max: pp.letter_space_max.max(pp.letter_space_desired),
+        glyph_min: pp.glyph_scale_min.min(pp.glyph_scale_desired).max(0.01),
+        glyph_desired: pp.glyph_scale_desired.max(0.01),
+        glyph_max: pp.glyph_scale_max.max(pp.glyph_scale_desired),
+        hyphen_penalty: 50.0 + 450.0 * pp.hyph_weight,
+        hyphen_limit: pp.hyph_limit,
+        ragged_stretch: base_size * 2.0,
+        hyph_zone: if pp.align.is_justified() { 0.0 } else { pp.hyph_zone },
+        optical: pp.optical_margin,
+    }
+}
+
+/// Desired word spacing, letter spacing and glyph scaling apply to every line (any alignment).
+fn apply_desired_spacing(glyphs: &mut [Glyph], pp: &ParaProps) {
+    let ws = pp.word_space_desired;
+    let ls = pp.letter_space_desired;
+    let gs = pp.glyph_scale_desired.max(0.01);
+    if (ws - 1.0).abs() < 1e-9 && ls.abs() < 1e-9 && (gs - 1.0).abs() < 1e-9 {
+        return;
+    }
+    for g in glyphs {
+        if g.ch == ' ' {
+            g.adv += g.space * (ws - 1.0);
+        } else if !g.is_space() && g.adv > 0.0 {
+            g.adv = g.adv * gs + ls * g.space;
+            g.sx *= gs;
+            g.dx *= gs;
+        }
+    }
+}
+
+/// Lengths of the composed output and the cursor before a paragraph (keep resolution re-lays
+/// paragraphs from here). Only the cursor's frame and later ones can change afterwards.
+struct Snapshot {
+    cur: Cursor,
+    list_counter: u32,
+    lines: usize,
+    decos: usize,
+}
+
+impl Snapshot {
+    fn take(out: &ComposedStory, cur: &Cursor, list_counter: u32) -> Snapshot {
+        let (lines, decos) = out.frames.get(cur.fi).map_or((0, 0), |f| (f.lines.len(), f.decos.len()));
+        Snapshot { cur: cur.clone(), list_counter, lines, decos }
+    }
+    fn restore(&self, out: &mut ComposedStory, cur: &mut Cursor, list_counter: &mut u32) {
+        let fi = self.cur.fi;
+        for (i, f) in out.frames.iter_mut().enumerate().skip(fi) {
+            let (l, d) = if i == fi { (self.lines, self.decos) } else { (0, 0) };
+            f.lines.truncate(l);
+            f.decos.truncate(d);
+        }
+        *cur = self.cur.clone();
+        *list_counter = self.list_counter;
+        out.overset_at = None;
+    }
+}
+
+/// Where a placed paragraph sits (for keep resolution).
+#[derive(Clone, Debug)]
+struct ParaInfo {
+    start: (usize, usize),
+    /// Started at the top of a column (moving it can't help).
+    at_top: bool,
+    end: (usize, usize),
+    lines: usize,
+    lines_in_end_col: usize,
+    keep_with_next: u32,
+    keep_together: bool,
+    keep_all: bool,
+    keep_first: usize,
+    keep_last: usize,
+}
+
+/// The paragraph being placed when a line doesn't fit its column.
+struct KeepCtx {
+    pi: usize,
+    /// Paragraph line number of the line that doesn't fit.
+    line_no: usize,
+    /// Lines of this paragraph already in the column.
+    in_col: usize,
+    /// The paragraph started in this column.
+    started_here: bool,
+    at_top: bool,
+    /// Lines left to set, including the one that doesn't fit.
+    remaining: usize,
+    here: (usize, usize),
+}
+
+enum KeepAction {
+    /// Re-lay from paragraph `j`, starting it in the next column.
+    Force(usize),
+    /// Re-lay from paragraph `j`, moving to the next column after `n` of its lines.
+    Cap(usize, usize),
+}
+
+/// Keep Options (plan: typography §8): keep with next, keep all lines together, keep first/last
+/// lines. Returns how to re-lay, or None to just continue in the next column (also when a keep
+/// can't be satisfied, e.g. a paragraph already at the top of a column).
+fn keep_violation(ctx: &KeepCtx, pp: &ParaProps, info: &[ParaInfo], force_col: &[bool], line_cap: &[Option<usize>]) -> Option<KeepAction> {
+    // The first paragraph of the chain of keep-with-next paragraphs ending in `pi` that sit in this column.
+    let chain_start = |pi: usize| {
+        let mut j = pi;
+        while j > 0 {
+            let p = &info[j - 1];
+            let starts_here = if j == ctx.pi { ctx.started_here } else { info[j].start == ctx.here };
+            if p.keep_with_next > 0 && p.end == ctx.here && starts_here {
+                j -= 1;
+            } else {
+                break;
+            }
+        }
+        j
+    };
+    let force = |j: usize| -> Option<KeepAction> {
+        let top = if j == ctx.pi { ctx.at_top } else { info[j].at_top };
+        let starts_here = if j == ctx.pi { ctx.started_here } else { info[j].start == ctx.here };
+        (!(force_col[j] || top && starts_here)).then_some(KeepAction::Force(j))
+    };
+    let total_lines = ctx.line_no + ctx.remaining;
+    // Keep with next: the previous paragraph's last line must share a column with our first lines.
+    if ctx.started_here && ctx.pi > 0 {
+        let prev = &info[ctx.pi - 1];
+        let need = (prev.keep_with_next as usize).min(total_lines);
+        if prev.keep_with_next > 0 && prev.end == ctx.here && ctx.line_no < need {
+            let j = chain_start(ctx.pi);
+            if j == ctx.pi - 1 && prev.lines_in_end_col > 1 && !(prev.keep_together && prev.keep_all) && line_cap[j].is_none() {
+                // Move only the previous paragraph's last lines (respecting its widow control).
+                let keep_last = if prev.keep_together { prev.keep_last.max(1) } else { 1 };
+                let stay = prev.lines_in_end_col.saturating_sub(keep_last);
+                let min_stay = if prev.start == ctx.here { if prev.keep_together { prev.keep_first.max(1) } else { 1 } } else { 1 };
+                if stay >= min_stay {
+                    return Some(KeepAction::Cap(j, prev.lines - keep_last));
+                }
+            }
+            if let Some(a) = force(j) {
+                return Some(a);
+            }
+        }
+    }
+    if !pp.keep_lines_together || ctx.in_col == 0 {
+        return None;
+    }
+    if pp.keep_all_lines {
+        return if ctx.started_here { force(chain_start(ctx.pi)) } else { None };
+    }
+    // Orphan control: at least `keep_first` lines at the bottom of the column.
+    if ctx.started_here && ctx.in_col < (pp.keep_first as usize).max(1) {
+        return force(chain_start(ctx.pi));
+    }
+    // Widow control: at least `keep_last` lines at the top of the next column.
+    let keep_last = (pp.keep_last as usize).max(1);
+    if ctx.remaining < keep_last {
+        let need = keep_last - ctx.remaining;
+        let min_stay = if ctx.started_here { (pp.keep_first as usize).max(1) } else { 1 };
+        if ctx.in_col >= need + min_stay && line_cap[ctx.pi].is_none() {
+            return Some(KeepAction::Cap(ctx.pi, ctx.line_no - need));
+        }
+        if ctx.started_here {
+            return force(chain_start(ctx.pi));
+        }
+    }
+    None
+}
+
 fn ft_prev_end(overset: &Option<usize>, len: usize) -> usize {
     overset.unwrap_or(len)
 }
 
+#[derive(Clone)]
 struct Cursor {
     fi: usize,
     col: usize,
@@ -620,6 +865,10 @@ fn estimate_slots(f: &FrameSpec, col: Rect, first: f64, lead: f64, size: f64, gl
 }
 
 /// Position glyphs `s..e` within `[x0, x1]`; returns (glyphs, end x, word-space ratio).
+///
+/// Justified lines distribute the difference to the measure in priority order: word spaces up to
+/// their limit, then letter spacing, then glyph scaling, and anything left over to the word spaces
+/// (an H&J violation). With optical margin alignment, edge punctuation hangs outside `[x0, x1]`.
 #[allow(clippy::too_many_arguments)]
 fn layout_line(
     glyphs: &[Glyph],
@@ -630,6 +879,7 @@ fn layout_line(
     x1: f64,
     tab_origin: f64,
     pp: &ParaProps,
+    sp: &Spacing,
     last: bool,
     forced_mid: bool,
     left_page: bool,
@@ -673,10 +923,20 @@ fn layout_line(
         x += line[i].adv;
         i += 1;
     }
+    let has_tab = line.iter().any(|g| g.ch == '\t' || g.ch == story::RIGHT_INDENT_TAB);
+    // Optical margin alignment: the measure grows by the hang of the edge glyphs.
+    let (mut x0, mut measure) = (x0, measure);
+    if sp.optical && !has_tab {
+        let first = line.iter().find(|g| g.adv > 0.0 && !g.is_space());
+        let lastg = line.iter().rev().find(|g| g.adv > 0.0 && !g.is_space());
+        let hl = first.map_or(0.0, |g| breaker::hang(g.ch).0 * g.adv);
+        let hr = lastg.map_or(0.0, |g| breaker::hang(g.ch).1 * g.adv);
+        x0 -= hl;
+        measure += hl + hr;
+    }
     let natural: f64 = line.iter().map(|g| g.adv).sum();
     let extra = measure - natural;
     let spaces: Vec<usize> = line.iter().enumerate().filter(|(_, g)| g.is_space() && !g.no_break).map(|(i, _)| i).collect();
-    let has_tab = line.iter().any(|g| g.ch == '\t' || g.ch == story::RIGHT_INDENT_TAB);
     let align = match pp.align {
         Align::TowardsSpine => {
             if left_page {
@@ -695,26 +955,22 @@ fn layout_line(
         a => a,
     };
     let justify_this = align.is_justified() && (!last || align == Align::FullyJustified || forced_mid) && !has_tab;
-    let mut per_space = 0.0;
+    // A justified paragraph's last line may have been composed with shrunk spaces: shrink it too.
+    let squeeze_last = align.is_justified() && !justify_this && !has_tab && extra < 0.0 && !spaces.is_empty();
+    // Extra advance per glyph (word spaces and letter gaps) and horizontal scale per glyph.
+    let mut add = vec![0.0; line.len()];
+    let mut scale = vec![1.0; line.len()];
     let mut offset = 0.0;
-    let mut ratio = 1.0;
-    if justify_this && !spaces.is_empty() {
-        per_space = extra / spaces.len() as f64;
-        let space_w: f64 = spaces.iter().map(|&i| line[i].adv).sum::<f64>() / spaces.len() as f64;
-        ratio = if space_w > 0.0 { (space_w + per_space) / space_w * pp.word_space_desired } else { 1.0 };
+    if (justify_this || squeeze_last) && !spaces.is_empty() {
+        distribute(&line, &spaces, extra, sp, &mut add, &mut scale);
     } else if justify_this && spaces.is_empty() && line.len() > 1 && !last {
         // Single word: Single Word Justification.
         match pp.single_word_justify {
             Align::FullyJustified => {
-                let gaps = (line.len() - 1) as f64;
-                let per = extra / gaps;
-                let mut x = x0;
-                let mut out = Vec::with_capacity(line.len());
-                for (i, g) in line.iter().enumerate() {
-                    out.push(place(g, x));
-                    x += g.adv + if i + 1 < line.len() { per } else { 0.0 };
+                let per = extra / (line.len() - 1) as f64;
+                for a in &mut add[..line.len() - 1] {
+                    *a = per;
                 }
-                return (out, x, 1.0);
             }
             Align::Center => offset = extra / 2.0,
             Align::Right => offset = extra,
@@ -738,19 +994,103 @@ fn layout_line(
             offset = 0.0;
         }
     }
+    // Word-space ratio actually used (vs the space width), for H&J highlighting.
+    let mut ratio_sum = 0.0;
+    let mut ratio_n = 0usize;
+    for &i in &spaces {
+        let g = &line[i];
+        if g.ch == ' ' && g.space > 0.0 {
+            ratio_sum += (g.adv + add[i]) / g.space;
+            ratio_n += 1;
+        }
+    }
+    let ratio = if ratio_n > 0 { ratio_sum / ratio_n as f64 } else { 1.0 };
     let mut out = Vec::with_capacity(line.len());
     let mut x = x0 + offset;
     for (i, g) in line.iter().enumerate() {
-        out.push(place(g, x));
-        x += g.adv;
-        if per_space != 0.0 && spaces.binary_search(&i).is_ok() {
-            x += per_space;
-            if let Some(p) = out.last_mut() {
-                p.adv += per_space;
+        let mut p = place(g, x);
+        if scale[i] != 1.0 {
+            p.sx *= scale[i];
+            p.x = x + g.dx * scale[i];
+            p.adv *= scale[i];
+        }
+        p.adv += add[i];
+        x += p.adv;
+        out.push(p);
+    }
+    (out, x, ratio)
+}
+
+/// Share `extra` points among word spaces, letter gaps and glyph scaling (see [`layout_line`]).
+fn distribute(line: &[Glyph], spaces: &[usize], extra: f64, sp: &Spacing, add: &mut [f64], scale: &mut [f64]) {
+    let stretch = extra >= 0.0;
+    let word: Vec<f64> = spaces
+        .iter()
+        .map(|&i| {
+            let g = &line[i];
+            if g.ch != ' ' {
+                0.0
+            } else if stretch {
+                g.space * (sp.word_max - sp.word_desired).max(0.0)
+            } else {
+                g.space * (sp.word_desired - sp.word_min).max(0.0)
+            }
+        })
+        .collect();
+    // Letter gaps: between visible glyphs (not after the line's last glyph).
+    let last_box = line.iter().rposition(|g| !g.is_space() && g.adv > 0.0).unwrap_or(0);
+    let is_box = |i: usize, g: &Glyph| i < last_box && !g.is_space() && g.adv > 0.0;
+    let letter: Vec<f64> = line
+        .iter()
+        .enumerate()
+        .map(|(i, g)| {
+            if !is_box(i, g) {
+                0.0
+            } else if stretch {
+                g.space * (sp.letter_max - sp.letter_desired).max(0.0)
+            } else {
+                g.space * (sp.letter_desired - sp.letter_min).max(0.0)
+            }
+        })
+        .collect();
+    let glyph: Vec<f64> = line
+        .iter()
+        .map(|g| {
+            if g.is_space() || g.adv <= 0.0 {
+                0.0
+            } else {
+                let natural = g.adv / sp.glyph_desired.max(0.01);
+                natural * if stretch { (sp.glyph_max - sp.glyph_desired).max(0.0) } else { (sp.glyph_desired - sp.glyph_min).max(0.0) }
+            }
+        })
+        .collect();
+    let (yw, yl, yg) = (word.iter().sum::<f64>(), letter.iter().sum::<f64>(), glyph.iter().sum::<f64>());
+    let mut rem = extra.abs();
+    let tw = rem.min(yw);
+    rem -= tw;
+    let tl = rem.min(yl);
+    rem -= tl;
+    let tg = rem.min(yg);
+    rem -= tg;
+    let sign = if stretch { 1.0 } else { -1.0 };
+    for (k, &i) in spaces.iter().enumerate() {
+        let share = if yw > 1e-9 { tw * word[k] / yw } else { 0.0 };
+        // Left over beyond every limit: shared equally by the word spaces.
+        add[i] += sign * (share + rem / spaces.len() as f64);
+    }
+    if yl > 1e-9 && tl > 0.0 {
+        for (i, l) in letter.iter().enumerate() {
+            add[i] += sign * tl * l / yl;
+        }
+    }
+    if yg > 1e-9 && tg > 0.0 {
+        for (i, gcap) in glyph.iter().enumerate() {
+            if *gcap > 0.0 {
+                let w = line[i].adv;
+                scale[i] = (w + sign * tg * gcap / yg) / w;
             }
         }
     }
-    (out, x, ratio)
 }
 
 fn place(g: &Glyph, x: f64) -> PlacedGlyph {
@@ -802,7 +1142,10 @@ fn prepend_label(
     *glyphs = pre;
 }
 
-/// Mark glyphs after which a hyphen may be inserted.
+type LimitsKey = (usize, usize, usize, bool);
+
+/// Mark glyphs after which a hyphen may be inserted (dictionary/pattern points within the
+/// paragraph's limits; words with discretionary hyphens break only there).
 fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps) -> Vec<bool> {
     let mut out = vec![false; glyphs.len()];
     if !pp.hyphenate {
@@ -814,6 +1157,24 @@ fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps) -> Vec<bool>
         before_last: pp.hyph_before_last as usize,
         capitalized: pp.hyph_capitalized,
     };
+    // Words repeat a lot: remember their points per set of limits.
+    static CACHE: Mutex<Vec<(LimitsKey, HashMap<Box<str>, Box<[usize]>>)>> = Mutex::new(Vec::new());
+    let key = (lim.min_word, lim.after_first, lim.before_last, lim.capitalized);
+    let mut guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let idx = match guard.iter().position(|e| e.0 == key) {
+        Some(i) => i,
+        None => {
+            if guard.len() > 32 {
+                guard.clear();
+            }
+            guard.push((key, HashMap::new()));
+            guard.len() - 1
+        }
+    };
+    let cache = &mut guard[idx].1;
+    if cache.len() > 100_000 {
+        cache.clear();
+    }
     let mut i = 0;
     while i < glyphs.len() {
         if !glyphs[i].is_letter() || glyphs[i].len == 0 {
@@ -821,17 +1182,19 @@ fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps) -> Vec<bool>
             continue;
         }
         let mut j = i;
-        while j < glyphs.len() && (glyphs[j].is_letter() || glyphs[j].len == 0) && !glyphs[j].no_break {
+        while j < glyphs.len() && (glyphs[j].is_letter() || glyphs[j].len == 0 || glyphs[j].ch == shape::SOFT_HYPHEN) && !glyphs[j].no_break {
             j += 1;
         }
+        // A discretionary hyphen in a word (or right before it) replaces automatic hyphenation.
+        let discretionary = glyphs[i..j].iter().any(|g| g.ch == shape::SOFT_HYPHEN) || (i > 0 && glyphs[i - 1].ch == shape::SOFT_HYPHEN);
         let (a, b) = (glyphs[i].byte, glyphs[j - 1].byte + glyphs[j - 1].len);
-        if b > a && b <= text.len() && text.is_char_boundary(a) && text.is_char_boundary(b) {
+        if !discretionary && b > a && b <= text.len() && text.is_char_boundary(a) && text.is_char_boundary(b) {
             let word = &text[a..b];
             // Do not hyphenate the paragraph's last word unless allowed.
             let is_last_word = !pp.hyph_last_word && glyphs[j..].iter().all(|g| !g.is_letter());
             if !is_last_word {
-                let pts = hyphen::hyphen_points(word, &lim);
-                for p in pts {
+                let pts = cache.entry(word.into()).or_insert_with(|| hyphen::hyphen_points(word, &lim).into_boxed_slice());
+                for &p in pts.iter() {
                     // char index p → byte → glyph whose cluster ends at that byte.
                     let byte = a + word.char_indices().nth(p).map(|(bi, _)| bi).unwrap_or(word.len());
                     if let Some(k) = (i..j).find(|&k| glyphs[k].byte + glyphs[k].len == byte && glyphs[k].len > 0) {

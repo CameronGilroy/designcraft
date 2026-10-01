@@ -8,6 +8,8 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 
 | Asset | Author | Source | Licence | Notes |
 |---|---|---|---|---|
+| `assets/hyphenation/en-us.dic` | Grady Ward (Moby Hyphenator II word list); converted by DesignCraft contributors | https://www.gutenberg.org/ebooks/3204 (file `https://www.gutenberg.org/files/3204/files/mhyph.txt`, SHA-256 `eeb30474c86b8af3469035ec1a0913e35905325ca885290db9dfed9881e230ac`) | Public Domain ("Public Domain material by grant from the author, January, 2001"; Project Gutenberg: "Public domain in the USA") | ~165k words with break points, front-coded + deflate; regenerate with `cargo run --release -p designcraft-compose --example hyphgen -- mhyph.txt assets/hyphenation` |
+| `assets/hyphenation/en-us.pat` | DesignCraft contributors (generated) | trained from `en-us.dic`'s source list by `crates/compose/src/hyphen/patgen.rs` (`examples/hyphgen.rs`) | Public Domain (CC0-1.0) | Our own Liang hyphenation patterns (no TeX/hyph-utf8 patterns used) |
 | `assets/fonts/Inter-Medium.ttf` | Rasmus Andersson / The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`assets/fonts/OFL-Inter.txt`) | Open-source typeface |
 | `assets/fonts/Inter-Regular.ttf` | Rasmus Andersson / The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`assets/fonts/OFL-Inter.txt`) | Open-source typeface |
 | `assets/fonts/Inter-SemiBold.ttf` | Rasmus Andersson / The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`assets/fonts/OFL-Inter.txt`) | Open-source typeface |
