@@ -17,11 +17,13 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Hyperlinks (text or frames → URL / e-mail / page) and bookmarks, exported as PDF link annotations and outline.
 - EPUB 3 (reflowable) export: stories in reading order, CSS from paragraph/character styles, images, navigation (`file.exportEpub`, CLI `--export x.epub`).
 - Data Merge (CSV or JSON rows, `<<Field>>` placeholders), spell checking (public-domain Moby list + document dictionary, suggestions), Step and Repeat (count or grid), snippets, object styles, Numbering & Section Options.
-- ~170 commands, all reachable through the JSON control channel; headless CLI rendering to PNG.
+- Table of contents (generate/update, dot leaders) and text variables (running headers, last page number, chapter number, file name, dates, custom) resolved per page.
+- Soft effects: blurred drop shadow, inner shadow, outer glow, basic feather.
+- ~200 commands, all reachable through the JSON control channel; headless CLI rendering to PNG.
 - MCP server (`designcraft-cli mcp [--connect PORT]`, docs/mcp.md): headless engine or the running app; commands, batch, document/story inspection, page renders as images, window screenshots, pointer/keyboard/dialog input.
 - Web build (`apps/designcraft-web`, trunk): the same UI on WebGPU with a WebGL2 fallback; open/place via the browser file picker or drag-and-drop, save/export as downloads.
 
-**Next (in order):** table/cell styles, text rotation in cells · TOC, text variables, footnotes · PDF/X-4 output intent, tagged PDF · Links panel + relink · UI for Data Merge/spelling/hyperlinks.
+**Next (in order):** footnotes, cross-references, index · table/cell styles, text rotation in cells · PDF/X-4 output intent, tagged PDF · Links panel + relink · UI for Data Merge/spelling/hyperlinks.
 
 ## Milestones
 
@@ -34,9 +36,9 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 | M4 | Color & effects | started |
 | M5 | Graphics & links | started |
 | M6 | Files & export (native, IDML, PDF, PNG/JPEG) | in progress (IDML ✅, PDF export) |
-| M7 | Long documents (sections, TOC, index, footnotes, books) | started (sections, hyperlinks, bookmarks) |
+| M7 | Long documents (sections, TOC, index, footnotes, books) | in progress (sections, TOC, text variables/running heads, hyperlinks, bookmarks) |
 | M8 | Tables | ✅ core (table/cell styles, rotation, diagonal lines pending) |
-| M9 | Performance (MT composition, tiles) | |
+| M9 | Performance (MT composition, tiles) | in progress (glyph path cache, culling, parallel compose 6.7× faster, perf harness) |
 | M10 | Find/Change, spelling, Preflight | in progress (Find/Change ✅, spelling ✅, Preflight) |
 | M11 | Layout power features (liquid/alternate layouts, data merge) | started (data merge, step & repeat, snippets) |
 | M12 | Interactive & digital (EPUB, HTML, interactive PDF) | started (EPUB, PDF links/bookmarks) |
