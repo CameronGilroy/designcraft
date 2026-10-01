@@ -16,13 +16,13 @@ pub mod shape;
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use designcraft_doc::{
     Align, Composer, Document, FirstBaseline, GridAlign, ItemId, ParaProps, SpanColumns, StartParagraph, Story, StoryId, TabAlign, TextFrameOptions,
     VerticalJustification, WrapMode, story,
 };
-use designcraft_fonts::{FontDb, FontFace};
+use designcraft_fonts::FontDb;
 use designcraft_geom::{Point, Rect};
 
 use crate::breaker::{Break, Spacing};
@@ -46,7 +46,7 @@ pub struct RunStyle {
 /// A positioned glyph. `x` is absolute in frame inner space; `y` is relative to the line baseline.
 #[derive(Clone, Debug)]
 pub struct PlacedGlyph {
-    pub face: Arc<FontFace>,
+    pub face: designcraft_fonts::FaceRef,
     pub gid: u32,
     pub x: f64,
     pub y: f64,

@@ -8,7 +8,7 @@
 
 mod fontdb;
 
-pub use fontdb::{FALLBACK_FAMILY, FontDb, FontFace};
+pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace};
 pub use harfrust::Feature;
 use harfrust::{Direction, ShapeOptions, Tag, UnicodeBuffer};
 pub use kurbo::BezPath;
