@@ -104,3 +104,69 @@ fn every_command_has_metadata() {
     }
     assert!(command_specs().len() > 60);
 }
+
+/// Unicode text per page, through hayro's interpreter (ToUnicode / ActualText).
+fn pdf_text(bytes: &[u8]) -> Vec<String> {
+    use hayro_interpret::font::Glyph;
+    use hayro_interpret::{
+        BlendMode, ClipPath, Context, Device, GlyphDrawMode, Image, InterpreterCache, InterpreterSettings, Paint, PathDrawMode, SoftMask,
+        interpret_page,
+    };
+    struct Ex(String);
+    impl Device<'_> for Ex {
+        fn set_soft_mask(&mut self, _: Option<SoftMask<'_>>) {}
+        fn set_blend_mode(&mut self, _: BlendMode) {}
+        fn draw_path(&mut self, _: &kurbo::BezPath, _: kurbo::Affine, _: &Paint<'_>, _: &PathDrawMode) {}
+        fn push_clip_path(&mut self, _: &ClipPath) {}
+        fn push_transparency_group(&mut self, _: f32, _: Option<SoftMask<'_>>, _: BlendMode) {}
+        fn draw_glyph(&mut self, g: &Glyph<'_>, _: kurbo::Affine, _: kurbo::Affine, _: &Paint<'_>, _: &GlyphDrawMode) {
+            match g.as_unicode() {
+                Some(hayro_cmap::BfString::Char(c)) => self.0.push(c),
+                Some(hayro_cmap::BfString::String(s)) => self.0.push_str(&s),
+                None => self.0.push('\u{FFFD}'),
+            }
+        }
+        fn draw_image(&mut self, _: Image<'_, '_>, _: kurbo::Affine) {}
+        fn pop_clip_path(&mut self) {}
+        fn pop_transparency_group(&mut self) {}
+    }
+    let pdf = hayro_syntax::Pdf::new(bytes.to_vec()).expect("valid PDF");
+    let cache = InterpreterCache::new();
+    pdf.pages()
+        .iter()
+        .map(|page| {
+            let mut ctx =
+                Context::new(kurbo::Affine::IDENTITY, kurbo::Rect::new(0.0, 0.0, 1.0, 1.0), &cache, pdf.xref(), InterpreterSettings::default());
+            let mut ex = Ex(String::new());
+            interpret_page(page, &mut ctx, &mut ex);
+            ex.0
+        })
+        .collect()
+}
+
+#[test]
+fn export_pdf_of_the_sample() {
+    let mut s = Session::new();
+    s.execute("file.newSample", &json!({})).unwrap();
+    let r = s.execute("file.exportPdf", &json!({"bleed": true, "marks": true})).unwrap();
+    assert_eq!(r["pages"], 4);
+    let bytes = cmd::base64_decode(r["base64"].as_str().unwrap());
+    assert!(bytes.starts_with(b"%PDF-"));
+    let pdf = hayro_syntax::Pdf::new(bytes.clone()).expect("parse");
+    assert_eq!(pdf.pages().len(), 4);
+    let raw = String::from_utf8_lossy(&bytes);
+    assert!(raw.contains("/FontFile2") || raw.contains("/FontFile3"), "fonts embedded");
+    let text = pdf_text(&bytes);
+    let all: String = text.join("\n");
+    assert!(all.contains("Notes on the Grid"), "{all}");
+    // Page range + spreads + file output.
+    let dir = std::env::temp_dir().join(format!("dc-pdf-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("out.pdf");
+    let r = s.execute("file.exportPdf", &json!({"path": path.to_string_lossy(), "pages": "2-3", "spreads": true})).unwrap();
+    assert_eq!(r["pages"], 1, "pages 2–3 are one spread");
+    assert!(std::fs::read(&path).unwrap().starts_with(b"%PDF-"));
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(s.execute("file.exportPdf", &json!({"pages": "9"})).is_err());
+    assert!(s.execute("file.exportPdf", &json!({"standard": "bogus"})).is_err());
+}

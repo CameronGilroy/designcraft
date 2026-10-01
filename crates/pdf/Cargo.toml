@@ -1,9 +1,9 @@
 [package]
-name = "designcraft-engine"
+name = "designcraft-pdf"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "DesignCraft engine: session, documents, history, selection, command registry, tool hosting"
+description = "DesignCraft PDF export (krilla): real text with embedded font subsets, CMYK/spot colour, bleed and printer's marks"
 
 [lints]
 workspace = true
@@ -14,11 +14,8 @@ designcraft-color = { workspace = true }
 designcraft-doc = { workspace = true }
 designcraft-fonts = { workspace = true }
 designcraft-compose = { workspace = true }
-designcraft-render = { workspace = true }
-designcraft-pdf = { workspace = true }
-designcraft-tools = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+krilla = { workspace = true }
+image = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 

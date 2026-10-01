@@ -1,7 +1,7 @@
 //! Headless DesignCraft.
 //!
 //! ```text
-//! designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT.png|.jpg|.designcraft] [--all-pages DIR]
+//! designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT.png|.jpg|.pdf|.designcraft] [--pdf-options JSON] [--all-pages DIR]
 //! designcraft-cli commands            # list every command (JSON)
 //! designcraft-cli mcp [--connect PORT] # MCP server over stdio
 //! ```
@@ -22,7 +22,7 @@ fn main() -> ExitCode {
         Some("mcp") => report(mcp(&args[1..])),
         _ => {
             eprintln!(
-                "usage: designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT] [--all-pages DIR]\n       designcraft-cli commands\n       designcraft-cli mcp [--connect PORT]"
+                "usage: designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--pdf-options JSON] [--export OUT] [--all-pages DIR]\n       designcraft-cli commands\n       designcraft-cli mcp [--connect PORT]"
             );
             ExitCode::FAILURE
         }
@@ -49,6 +49,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut scale = 1.0f64;
     let mut it = args.iter();
     let mut opened = false;
+    let mut pdf_opts = json!({});
     while let Some(a) = it.next() {
         let mut val = || it.next().cloned().ok_or_else(|| format!("{a} needs a value"));
         match a.as_str() {
@@ -76,9 +77,22 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             "--page" => page = val()?.parse().map_err(|_| "bad --page")?,
             "--scale" => scale = val()?.parse().map_err(|_| "bad --scale")?,
+            "--pdf-options" => {
+                pdf_opts = serde_json::from_str(&val()?).map_err(|e| format!("--pdf-options: {e}"))?;
+            }
             "--export" => {
                 let out = val()?;
-                export(&mut s, &out, page, scale)?;
+                if out.ends_with(".pdf") {
+                    let mut p = pdf_opts.clone();
+                    p["path"] = json!(out);
+                    let r = s.execute("file.exportPdf", &p).map_err(|e| e.to_string())?;
+                    eprintln!("wrote {out} ({} pages, {} bytes)", r["pages"], r["bytes"]);
+                    for w in r["warnings"].as_array().into_iter().flatten() {
+                        eprintln!("warning: {}", w.as_str().unwrap_or_default());
+                    }
+                } else {
+                    export(&mut s, &out, page, scale)?;
+                }
             }
             "--all-pages" => {
                 let dir = val()?;

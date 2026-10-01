@@ -12,6 +12,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.saveDialog", "Save As…", Some("Cmd+Shift+S"), "{}"),
     ("app.save", "Save", Some("Cmd+S"), "{}"),
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
+    ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Command Palette…", Some("Cmd+K"), "{}"),
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "{}"),
     ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "{}"),
@@ -54,6 +55,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "ui:app.placeDialog",
             "-",
+            "ui:app.exportPdf",
             "ui:app.exportPng",
             "-",
             "cmd:layout.documentSetup",
@@ -197,6 +199,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(Value::Null)
         }
         "app.exportPng" => export_png(app, p),
+        "app.exportPdf" => export_pdf(app, p),
         "app.palette" => {
             app.ui.palette = Some(String::new());
             Ok(Value::Null)
@@ -307,6 +310,31 @@ fn export_png(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
     let Some(path) = path else { return Ok(Value::Null) };
     match app.services.write.as_mut() {
         Some(w) => w(&path, &png).map(|_| json!({"path": path, "width": img.width, "height": img.height})),
+        None => Err("no writer".into()),
+    }
+}
+
+/// File › Export PDF…: ask for a path, export through `file.exportPdf` and write the bytes with the
+/// platform writer (a download on the web).
+fn export_pdf(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
+    let st = app.session.active().ok_or("no document")?;
+    let path = match p.get("path").and_then(Value::as_str) {
+        Some(s) => Some(s.to_string()),
+        None => {
+            let name = format!("{}.pdf", st.doc.title);
+            app.services.pick_save.as_mut().and_then(|f| f(&name))
+        }
+    };
+    let Some(path) = path else { return Ok(Value::Null) };
+    let mut params = if p.is_object() { p.clone() } else { json!({}) };
+    if let Some(o) = params.as_object_mut() {
+        o.remove("path");
+        o.entry("bleed").or_insert(json!(true));
+    }
+    let r = app.run("file.exportPdf", params)?;
+    let bytes = designcraft_engine::cmd::base64_decode(r["base64"].as_str().unwrap_or_default());
+    match app.services.write.as_mut() {
+        Some(w) => w(&path, &bytes).map(|_| json!({"path": path, "bytes": bytes.len(), "pages": r["pages"], "warnings": r["warnings"]})),
         None => Err("no writer".into()),
     }
 }
