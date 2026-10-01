@@ -23,7 +23,7 @@ use crate::export::{Exporter, solid_fill, tf, to_path};
 
 /// Private-use characters DesignCraft stores for markers (page numbers, section markers, breaks).
 fn is_marker(c: char) -> bool {
-    ('\u{E000}'..='\u{E0FF}').contains(&c)
+    ('\u{E000}'..='\u{E1FF}').contains(&c)
 }
 
 fn same_run(a: &PlacedGlyph, b: &PlacedGlyph) -> bool {

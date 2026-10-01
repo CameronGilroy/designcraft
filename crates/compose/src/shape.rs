@@ -66,6 +66,8 @@ pub struct ShapedPara {
 pub struct SubstCtx {
     pub page_name: Option<String>,
     pub section_marker: Option<String>,
+    /// Text variable values by index (on the page being composed).
+    pub vars: Arc<Vec<String>>,
 }
 
 pub(crate) struct StyleTable<'a> {
@@ -189,10 +191,21 @@ fn shape_run(
                 | story::PAGE_BREAK
                 | story::INDENT_HERE
                 | story::RIGHT_INDENT_TAB
-        );
+        ) || designcraft_doc::vars::var_index(c).is_some();
         if special {
             flush(seg_start, i, &seg_face, out);
             seg_start = i + c.len_utf8();
+            if let Some(vi) = designcraft_doc::vars::var_index(c) {
+                match sub.vars.get(vi).filter(|v| !v.is_empty()) {
+                    Some(v) => shape_segment(db, text, i..i + c.len_utf8(), Some(v), p, &primary, auto_leading, style, out),
+                    None => {
+                        let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
+                        g.adv = 0.0;
+                        out.push(g);
+                    }
+                }
+                continue;
+            }
             match c {
                 story::PAGE_NUMBER | story::NEXT_PAGE_NUMBER | story::PREV_PAGE_NUMBER | story::SECTION_MARKER => {
                     let s = if c == story::SECTION_MARKER {

@@ -1355,6 +1355,9 @@ impl<'r> Importer<'r> {
             bookmarks: vec![],
             user_words: vec![],
             toc: None,
+            text_variables: designcraft_doc::vars::defaults(),
+            created: designcraft_doc::vars::now(),
+            modified: 0,
             next_id: self.next_id,
         };
         Ok(d)

@@ -73,7 +73,7 @@ pub fn collect(d: &Document, entries: &[TocEntry], skip: Option<StoryId>) -> Vec
             let Some(e) = entries.iter().find(|e| e.style == st.paras[pi].style) else { continue };
             let text: String = st.text[r.clone()]
                 .chars()
-                .filter(|c| !('\u{E000}'..='\u{E0FF}').contains(c))
+                .filter(|c| !('\u{E000}'..='\u{E1FF}').contains(c))
                 .map(|c| if c == '\t' || c == '\u{2028}' { ' ' } else { c })
                 .collect();
             let text = text.trim().to_string();

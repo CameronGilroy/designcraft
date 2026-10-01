@@ -45,7 +45,7 @@ fn esc(s: &str) -> String {
             '<' => o.push_str("&lt;"),
             '>' => o.push_str("&gt;"),
             '"' => o.push_str("&quot;"),
-            '\u{E000}'..='\u{E0FF}' => {}
+            '\u{E000}'..='\u{E1FF}' => {}
             '\u{2028}' => o.push_str("<br/>"),
             '\u{AD}' => o.push_str("&#173;"),
             c => o.push(c),
@@ -221,7 +221,19 @@ pub fn story_html(doc: &Document, sid: StoryId) -> String {
             if a >= b {
                 continue;
             }
-            let t = esc(&st.text[a..b]);
+            let raw = &st.text[a..b];
+            let t = if raw.chars().any(|c| designcraft_doc::vars::var_index(c).is_some()) {
+                let sub: String = raw
+                    .chars()
+                    .map(|c| match designcraft_doc::vars::var_index(c) {
+                        Some(i) => doc.variable_value(i, None).unwrap_or_default(),
+                        None => c.to_string(),
+                    })
+                    .collect();
+                esc(&sub)
+            } else {
+                esc(raw)
+            };
             let cls = if f.style != story::NO_CHAR_STYLE { format!(" class=\"{}\"", slug(&f.style)) } else { String::new() };
             let style = override_css(doc, &f.over);
             let style_attr = if style.is_empty() { String::new() } else { format!(" style=\"{style}\"") };

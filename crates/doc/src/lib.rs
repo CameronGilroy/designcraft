@@ -17,6 +17,7 @@ pub mod page;
 pub mod selection;
 pub mod story;
 pub mod styles;
+pub mod vars;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -125,6 +126,8 @@ pub struct DocSettings {
     pub bleed_color: [u8; 3],
     pub slug_color: [u8; 3],
     pub keyboard_increment: f64,
+    /// Chapter number (Numbering & Section Options › Document Chapter Numbering).
+    pub chapter_number: u32,
 }
 
 impl Default for DocSettings {
@@ -147,6 +150,7 @@ impl Default for DocSettings {
             bleed_color: [255, 72, 103],
             slug_color: [100, 188, 221],
             keyboard_increment: 1.0,
+            chapter_number: 1,
         }
     }
 }
@@ -238,6 +242,14 @@ pub struct Document {
     /// The generated table of contents (Layout → Table of Contents), kept for Update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toc: Option<Toc>,
+    /// Text variable definitions (instances in stories are `vars::var_char(index)`).
+    #[serde(default = "vars::defaults")]
+    pub text_variables: Vec<vars::TextVariable>,
+    /// Creation / last save time (Unix seconds, UTC).
+    #[serde(default)]
+    pub created: i64,
+    #[serde(default)]
+    pub modified: i64,
     pub next_id: u64,
 }
 

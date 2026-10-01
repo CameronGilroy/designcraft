@@ -139,6 +139,9 @@ impl Document {
             bookmarks: vec![],
             user_words: vec![],
             toc: None,
+            text_variables: crate::vars::defaults(),
+            created: crate::vars::now(),
+            modified: 0,
             next_id: 0,
         };
         let lid = LayerId(d.alloc());

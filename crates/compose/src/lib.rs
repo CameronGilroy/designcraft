@@ -13,6 +13,7 @@ pub mod breaker;
 mod cache;
 pub mod hyphen;
 pub mod shape;
+pub mod vars;
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -145,6 +146,8 @@ pub struct FrameSpec {
     pub opts: TextFrameOptions,
     pub exclusions: Vec<Exclusion>,
     pub page_name: Option<String>,
+    /// Absolute document page the frame is on (None on parent pages).
+    pub page: Option<usize>,
     /// Baseline grid in inner space: (first grid line y, increment).
     pub grid: Option<(f64, f64)>,
     /// The frame is on a left page (for towards/away-from-spine alignment).
@@ -172,6 +175,10 @@ impl FrameSpec {
 pub struct ComposeOptions {
     /// Page name for page-number markers when the story is composed for a specific page (parent items).
     pub page_name: Option<String>,
+    /// Absolute page for text variables when composed for a specific page (parent items).
+    pub page: Option<usize>,
+    /// Running-header index (needed when the story contains running-header variables).
+    pub running: Option<std::sync::Arc<vars::RunningIndex>>,
 }
 
 /// Build the frame specs of a story from the document (geometry, wrap, page names, grid).
@@ -203,26 +210,26 @@ pub fn frame_specs(doc: &Document, sid: StoryId) -> Vec<FrameSpec> {
                 exclusions.push(Exclusion { rect: inner, mode: other.wrap.mode });
             }
         }
-        let (page_name, left_page) = match (loc.spread, spread) {
+        let (page_name, page, left_page) = match (loc.spread, spread) {
             (designcraft_doc::SpreadRef::Doc(si), Some(sp)) => {
                 let c = item.bounds().center();
                 let pi = sp.page_at_x(c.x).unwrap_or(0);
                 let abs = doc.first_page_of_spread(si) + pi;
-                (Some(doc.page_name(abs)), sp.pages.get(pi).is_some_and(|p| p.side == designcraft_doc::PageSide::Left))
+                (Some(doc.page_name(abs)), Some(abs), sp.pages.get(pi).is_some_and(|p| p.side == designcraft_doc::PageSide::Left))
             }
             (designcraft_doc::SpreadRef::Parent(pi), Some(sp)) => {
                 let prefix = sp.parent.as_ref().map(|p| p.prefix.clone()).unwrap_or_else(|| "A".into());
                 let _ = pi;
-                (Some(prefix), false)
+                (Some(prefix), None, false)
             }
-            _ => (None, false),
+            _ => (None, None, false),
         };
         let g = &doc.settings.baseline_grid;
         let (inc, start) = tf.options.baseline_grid.unwrap_or((g.increment, g.start));
         // Grid lines are at spread y = start + n·inc (page tops are y = 0); map into inner space (translation only).
         let ty = xf.translation().y;
         let grid = (inc > 0.0).then_some((start - ty, inc));
-        out.push(FrameSpec { id: fid, area: item.text_area(), opts: tf.options.clone(), exclusions, page_name, grid, left_page });
+        out.push(FrameSpec { id: fid, area: item.text_area(), opts: tf.options.clone(), exclusions, page_name, page, grid, left_page });
     }
     out
 }
@@ -257,6 +264,8 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
     let mut line_cap: Vec<Option<usize>> = vec![None; np];
     let mut restores = 0usize;
     let mut pi = 0;
+    let var_story = vars::has_vars(story);
+    let mut var_cache: std::collections::HashMap<Option<usize>, std::sync::Arc<Vec<String>>> = Default::default();
     'paras: while pi < np {
         let prange = para_ranges[pi].clone();
         let snap = Snapshot::take(&out, &cur, list_counter);
@@ -266,9 +275,17 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         let pf = &story.paras[pi];
         let (pp, base_chars) = doc.styles.resolve_para(pf);
         // Bullets & numbering: generated prefix (shaped as its own glyphs, mapped to the paragraph start).
+        let cur_frame = frames.get(cur.fi.min(frames.len().saturating_sub(1)));
+        let var_values = if var_story {
+            let page = opts.page.or_else(|| cur_frame.and_then(|f| f.page));
+            var_cache.entry(page).or_insert_with(|| std::sync::Arc::new(vars::values(doc, page, opts.running.as_deref()))).clone()
+        } else {
+            Default::default()
+        };
         let sub = SubstCtx {
-            page_name: opts.page_name.clone().or_else(|| frames.get(cur.fi.min(frames.len().saturating_sub(1))).and_then(|f| f.page_name.clone())),
+            page_name: opts.page_name.clone().or_else(|| cur_frame.and_then(|f| f.page_name.clone())),
             section_marker: None,
+            vars: var_values,
         };
         let mut table = StyleTable { styles: &mut styles_tab };
         let mut sp = shape::shape_para(db, &doc.styles, story, pi, prange.clone(), &base_chars, pp.auto_leading, &sub, &mut table);

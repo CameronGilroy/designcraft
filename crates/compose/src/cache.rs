@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use designcraft_doc::{Document, Item, Story, StoryId, Styles, WrapMode};
 
+use crate::vars::RunningIndex;
 use crate::{ComposeOptions, ComposedStory};
 
 type Key = (StoryId, Option<String>);
@@ -24,6 +25,24 @@ struct Entry {
 #[derive(Default)]
 pub struct Cache {
     map: Mutex<(HashMap<Key, Entry>, u64)>,
+    /// Running-header index with the document signature it was built for.
+    running: Mutex<Option<(u64, Arc<RunningIndex>)>>,
+}
+
+/// Identity of everything a running header can depend on (stories, spreads, styles, variables).
+fn doc_signature(doc: &Document) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for (id, st) in &doc.stories {
+        (id.0, Arc::as_ptr(st) as usize, st.rev).hash(&mut h);
+    }
+    for sp in &doc.spreads {
+        (Arc::as_ptr(sp) as usize).hash(&mut h);
+    }
+    (Arc::as_ptr(&doc.styles) as usize).hash(&mut h);
+    format!("{:?}", doc.text_variables).hash(&mut h);
+    doc.sections.len().hash(&mut h);
+    h.finish()
 }
 
 impl Cache {
@@ -34,8 +53,21 @@ impl Cache {
     /// The composed story, from cache or freshly composed.
     pub fn get(&self, doc: &Document, sid: StoryId, page_name: Option<&str>) -> Arc<ComposedStory> {
         let Some(story) = doc.stories.get(&sid) else { return Arc::new(ComposedStory { story: sid, ..Default::default() }) };
-        let (sig, keep_items) = signature(doc, story);
+        let (mut sig, keep_items) = signature(doc, story);
         let key = (sid, page_name.map(str::to_string));
+        let with_vars = crate::vars::has_vars(story);
+        let running = with_vars && crate::vars::has_running(doc, story);
+        if with_vars {
+            // Variables depend on the page count, sections and definitions (and running headers on
+            // the whole document).
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            format!("{:?}", doc.text_variables).hash(&mut h);
+            sig.extend([doc.page_count(), h.finish() as usize]);
+            if running {
+                sig.push(doc_signature(doc) as usize);
+            }
+        }
         {
             let mut g = self.map.lock().unwrap_or_else(|e| e.into_inner());
             g.1 += 1;
@@ -47,7 +79,13 @@ impl Cache {
                 return e.out.clone();
             }
         }
-        let out = Arc::new(crate::compose_story(doc, sid, &ComposeOptions { page_name: page_name.map(str::to_string) }));
+        // Parent-page items are composed per page; variables need that page's index.
+        let page = match page_name {
+            Some(n) if with_vars => (0..doc.page_count()).find(|&i| doc.page_name(i) == n),
+            _ => None,
+        };
+        let running = running.then(|| self.running_index(doc));
+        let out = Arc::new(crate::compose_story(doc, sid, &ComposeOptions { page_name: page_name.map(str::to_string), page, running }));
         let mut g = self.map.lock().unwrap_or_else(|e| e.into_inner());
         let stamp = g.1;
         if g.0.len() > 4096 {
@@ -59,6 +97,20 @@ impl Cache {
 
     pub fn clear(&self) {
         self.map.lock().unwrap_or_else(|e| e.into_inner()).0.clear();
+        *self.running.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// The running-header index for `doc` (rebuilt when the document changes).
+    pub fn running_index(&self, doc: &Document) -> Arc<RunningIndex> {
+        let sig = doc_signature(doc);
+        if let Some((s, r)) = &*self.running.lock().unwrap_or_else(|e| e.into_inner())
+            && *s == sig
+        {
+            return r.clone();
+        }
+        let r = Arc::new(RunningIndex::build(doc, &|sid| self.get(doc, sid, None)));
+        *self.running.lock().unwrap_or_else(|e| e.into_inner()) = Some((sig, r.clone()));
+        r
     }
 }
 
