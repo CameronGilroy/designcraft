@@ -14,9 +14,11 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let cols = if app.ui.tools_double_column { 2 } else { 1 };
     let width = 8.0 + BTN * cols as f32 + 4.0 * (cols as f32 - 1.0) + 8.0;
-    egui::Panel::left("tools").exact_size(width).resizable(false).frame(egui::Frame::NONE.fill(t.panel).stroke(Stroke::new(1.0, t.divider))).show(
-        ui,
-        |ui| {
+    let r = egui::Panel::left("tools")
+        .exact_size(width)
+        .resizable(false)
+        .frame(egui::Frame::NONE.fill(t.panel).stroke(Stroke::new(1.0, t.divider)))
+        .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
             ui.add_space(3.0);
             // Collapse chevrons.
@@ -149,8 +151,10 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
             }
             ui.add_space(8.0);
             fill_stroke_proxy(app, ui, width);
-        },
-    );
+        });
+    if std::env::var_os("DESIGNCRAFT_DEBUG_LAYOUT").is_some() {
+        eprintln!("tools panel rect {:?} (wanted width {width}); remaining {:?}", r.response.rect, ui.available_rect_before_wrap());
+    }
 }
 
 /// Fill/stroke proxy squares with default/swap, and apply color / gradient / none.
@@ -186,29 +190,25 @@ fn fill_stroke_proxy(app: &mut DesignApp, ui: &mut egui::Ui, width: f32) {
     if resp.double_clicked() {
         let _ = app.run("window.panel", json!({"panel": "swatches"}));
     }
-    ui.horizontal(|ui| {
-        ui.add_space((width - 3.0 * 18.0 - 8.0) / 2.0);
-        ui.spacing_mut().item_spacing.x = 4.0;
-        for (icon, tip, sw) in
-            [("fill-proxy", "Apply Color (,)", "[Black]"), ("panel-gradient", "Apply Gradient (.)", ""), ("none", "Apply None (/)", "[None]")]
-        {
-            if icons::button(ui, icon, 18.0, false, tip).clicked() && !sw.is_empty() {
+    // Apply Color / Gradient / None, stacked (InDesign 2026 single column).
+    ui.vertical_centered(|ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        for (icon, tip, sw) in [("fill-proxy", "Apply Color (,)", "[Black]"), ("none", "Apply None (/)", "[None]")] {
+            if tool_button(ui, icon, false, tip).clicked() && !sw.is_empty() {
                 let _ = app.run("object.fill", json!({"swatch": sw}));
             }
         }
-    });
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui.add_space((width - 2.0 * 22.0 - 4.0) / 2.0);
-        ui.spacing_mut().item_spacing.x = 4.0;
-        for (m, icon, tip) in
-            [(crate::ScreenMode::Normal, "screen-normal", "Normal (W)"), (crate::ScreenMode::Preview, "screen-preview", "Preview (W)")]
-        {
-            if icons::button(ui, icon, 22.0, app.ui.screen_mode == m, tip).clicked() {
-                app.ui.screen_mode = m;
-            }
+        ui.add_space(4.0);
+        let r = ui.available_rect_before_wrap();
+        ui.painter().line_segment([egui::pos2(r.min.x + 6.0, r.min.y), egui::pos2(r.max.x - 6.0, r.min.y)], Stroke::new(1.0, t.divider));
+        ui.add_space(4.0);
+        let preview = app.ui.screen_mode == crate::ScreenMode::Preview;
+        let tip = if preview { "Preview (W)" } else { "Normal (W)" };
+        if tool_button(ui, if preview { "screen-preview" } else { "screen-normal" }, true, tip).clicked() {
+            app.ui.screen_mode = if preview { crate::ScreenMode::Normal } else { crate::ScreenMode::Preview };
         }
     });
+    let _ = width;
 }
 
 /// A Tools-panel button: 24 pt pitch; the active tool sits in a 28×20 pt `#303030` well with a rim.

@@ -371,12 +371,22 @@ impl DesignApp {
         let t0 = now_ms();
         let t = theme::Tokens::get(&ctx);
         let presenting = self.ui.screen_mode == ScreenMode::Presentation;
+        let dbg = std::env::var_os("DESIGNCRAFT_DEBUG_LAYOUT").is_some();
+        if dbg {
+            eprintln!("root start {:?}", ui.available_rect_before_wrap());
+        }
         if !presenting {
             chrome::app_bar(self, ui);
+            if dbg {
+                eprintln!("after app bar {:?}", ui.available_rect_before_wrap());
+            }
             if self.ui.control_bar && self.session.active().is_some() {
                 chrome::control_bar(self, ui);
             }
             chrome::status_bar(self, ui);
+            if dbg {
+                eprintln!("after status {:?}", ui.available_rect_before_wrap());
+            }
             toolbar::show(self, ui);
             dock::show(self, ui);
         }
