@@ -1,0 +1,22 @@
+[package]
+name = "designcraft-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DesignCraft engine: session, documents, history, selection, command registry, tool hosting"
+
+[lints]
+workspace = true
+
+[dependencies]
+designcraft-geom = { workspace = true }
+designcraft-color = { workspace = true }
+designcraft-doc = { workspace = true }
+designcraft-fonts = { workspace = true }
+designcraft-compose = { workspace = true }
+designcraft-render = { workspace = true }
+designcraft-tools = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

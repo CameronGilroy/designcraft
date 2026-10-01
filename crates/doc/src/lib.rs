@@ -24,7 +24,7 @@ use std::sync::Arc;
 pub use attrs::*;
 pub use designcraft_color as color;
 pub use designcraft_geom as geom;
-pub use edit::{ItemLoc, ItemPath, SpreadRef};
+pub use edit::{ItemLoc, ItemPath, SpreadRef, item_hit as edit_hit};
 pub use ids::*;
 pub use item::*;
 pub use page::*;

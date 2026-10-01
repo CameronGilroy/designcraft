@@ -36,6 +36,9 @@ fn onset_pair(a: char, b: char) -> bool {
 }
 
 /// Common English suffixes that form their own syllable (break before them).
+/// Common English prefixes (break after them).
+const PREFIXES: &[&str] = &["re", "de", "pre", "un", "dis", "con", "com", "inter", "over", "under", "trans", "sub", "super", "anti", "auto"];
+
 const SUFFIXES: &[&str] = &["tion", "sion", "ment", "ness", "less", "ful", "able", "ible", "ing", "ly"];
 
 /// Allowed hyphenation points in `word` as char indices (a hyphen goes before that char).
@@ -61,14 +64,23 @@ pub fn hyphen_points(word: &str, lim: &Limits) -> Vec<usize> {
             let sl = s.chars().count();
             n - i == sl && lower.ends_with(s) && v[..i].iter().any(|x| *x)
         });
+        let prefix_at = PREFIXES.iter().any(|p| p.chars().count() == i && lower.starts_with(p) && n - i >= 4 && c[i..].iter().any(|x| is_vowel(*x)));
         let ok = suffix_at
+            || prefix_at
             || if v[i - 1] && !v[i] {
                 (i + 1 < n && v[i + 1]) || (i + 2 < n && onset_pair(c[i], c[i + 1]) && v[i + 2])
             } else if !v[i - 1] && !v[i] {
-                i >= 2 && v[i - 2] && i + 1 < n && v[i + 1] && !onset_pair(c[i - 1], c[i]) && c[i - 1] != c[i] || (c[i - 1] == c[i] && i >= 2 && v[i - 2])
+                i >= 2 && v[i - 2] && i + 1 < n && v[i + 1] && !onset_pair(c[i - 1], c[i]) && c[i - 1] != c[i]
+                    || (c[i - 1] == c[i] && i >= 2 && v[i - 2])
             } else {
                 false
             };
+        // Both parts need a sounded vowel: a trailing silent `e`, `ed` or `es` doesn't count
+        // ("strai-ned" is wrong, "re-strained" is right).
+        let right: String = c[i..].iter().collect::<String>().to_lowercase();
+        let right_core = right.strip_suffix("ed").or_else(|| right.strip_suffix("es")).or_else(|| right.strip_suffix('e')).unwrap_or(&right);
+        let sounded = right_core.chars().any(is_vowel) && right_core.len() > 1;
+        let ok = ok && sounded && v[..i].iter().any(|x| *x);
         if ok && !out.contains(&i) {
             out.push(i);
         }
@@ -104,6 +116,9 @@ mod tests {
         assert_eq!(h("typography"), "ty-po-gra-phy");
         assert!(h("composition").contains("com-"));
         assert_eq!(h("cat"), "cat");
+        assert!(!h("restrained").contains("-ned"), "{}", h("restrained"));
+        assert!(!h("changed").contains('-'));
+        assert!(h("restrained").starts_with("re-"), "{}", h("restrained"));
         assert_eq!(h("NASA"), "NASA");
     }
 

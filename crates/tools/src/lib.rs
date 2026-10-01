@@ -12,7 +12,7 @@ pub mod catalog;
 mod frame;
 pub mod layout;
 mod nav;
-mod select;
+pub mod select;
 mod text;
 
 use designcraft_compose::Cache;
@@ -160,12 +160,27 @@ impl ToolContext<'_> {
 pub enum Overlay {
     Marquee(Rect),
     /// Preview outline of a frame being drawn.
-    Path { path: BezPath, color: [u8; 3], dashed: bool },
-    Line { a: Point, b: Point, color: [u8; 3], dashed: bool },
+    Path {
+        path: BezPath,
+        color: [u8; 3],
+        dashed: bool,
+    },
+    Line {
+        a: Point,
+        b: Point,
+        color: [u8; 3],
+        dashed: bool,
+    },
     /// Measurement pill near the cursor.
-    Measure { p: Point, text: String },
+    Measure {
+        p: Point,
+        text: String,
+    },
     /// Smart guide line in the smart-guide colour.
-    Guide { a: Point, b: Point },
+    Guide {
+        a: Point,
+        b: Point,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -220,7 +235,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "rectangleFrame" | "ellipseFrame" | "polygonFrame" | "rectangle" | "ellipse" | "polygon" | "line" => Box::new(frame::FrameTool::new(id)),
         "type" => Box::new(text::TypeTool::default()),
         "hand" => Box::new(nav::HandTool::default()),
-        "zoom" => Box::new(nav::ZoomTool::default()),
+        "zoom" => Box::new(nav::ZoomTool),
         other => Box::new(NoopTool(tool_info(other).map(|t| t.id).unwrap_or("selection"))),
     }
 }

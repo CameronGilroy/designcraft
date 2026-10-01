@@ -1,0 +1,176 @@
+//! The command registry. Ids follow InDesign's menu structure.
+
+mod edit;
+mod file;
+mod inspect;
+mod layout;
+mod object;
+mod style;
+pub mod text;
+
+use designcraft_doc::{ItemId, SpreadRef};
+use designcraft_geom::{Point, Rect};
+use serde::Serialize;
+use serde_json::Value;
+
+use crate::{EngineError, Result, Session};
+
+pub type Run = fn(&mut Session, &Value) -> Result<Value>;
+pub type Enabled = fn(&Session) -> std::result::Result<(), String>;
+
+pub struct CommandSpec {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Menu placement, e.g. `["Object", "Arrange"]`. Empty = not in menus.
+    pub menu: &'static [&'static str],
+    pub shortcut: Option<&'static str>,
+    pub params: &'static str,
+    pub enabled: Enabled,
+    pub run: Run,
+    pub journal: bool,
+    /// Record an undo step when the document changes.
+    pub undoable: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CommandInfo {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub menu: Vec<&'static str>,
+    pub shortcut: Option<&'static str>,
+    pub params: &'static str,
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disabled_reason: Option<String>,
+}
+
+impl CommandSpec {
+    pub fn info(&self, s: &Session) -> CommandInfo {
+        let e = (self.enabled)(s);
+        CommandInfo {
+            id: self.id,
+            label: self.label,
+            menu: self.menu.to_vec(),
+            shortcut: self.shortcut,
+            params: self.params,
+            enabled: e.is_ok(),
+            disabled_reason: e.err(),
+        }
+    }
+}
+
+pub fn always(_: &Session) -> std::result::Result<(), String> {
+    Ok(())
+}
+pub fn has_doc(s: &Session) -> std::result::Result<(), String> {
+    s.active().map(|_| ()).ok_or_else(|| "no document open".into())
+}
+pub fn has_selection(s: &Session) -> std::result::Result<(), String> {
+    has_doc(s)?;
+    if s.active().is_some_and(|d| !d.selection.items.is_empty()) { Ok(()) } else { Err("nothing selected".into()) }
+}
+pub fn has_text(s: &Session) -> std::result::Result<(), String> {
+    has_doc(s)?;
+    if s.active().is_some_and(|d| d.selection.text.is_some()) { Ok(()) } else { Err("no text insertion point".into()) }
+}
+pub fn has_text_or_frames(s: &Session) -> std::result::Result<(), String> {
+    has_doc(s)?;
+    if s.active().is_some_and(|d| d.selection.text.is_some() || d.selection.items.iter().any(|i| d.doc.item(*i).is_some_and(|x| x.is_text_frame()))) {
+        Ok(())
+    } else {
+        Err("select text or a text frame".into())
+    }
+}
+
+macro_rules! cmd {
+    ($id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
+        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: true, undoable: true }
+    };
+    (query $id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
+        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: false, undoable: false }
+    };
+    (noundo $id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
+        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: true, undoable: false }
+    };
+}
+pub(crate) use cmd;
+
+pub fn command_specs() -> &'static [CommandSpec] {
+    static SPECS: std::sync::OnceLock<Vec<CommandSpec>> = std::sync::OnceLock::new();
+    SPECS.get_or_init(|| {
+        let mut v = Vec::new();
+        v.extend(file::specs());
+        v.extend(edit::specs());
+        v.extend(object::specs());
+        v.extend(text::specs());
+        v.extend(style::specs());
+        v.extend(layout::specs());
+        v.extend(inspect::specs());
+        v
+    })
+}
+
+pub fn find_command(id: &str) -> Option<&'static CommandSpec> {
+    command_specs().iter().find(|c| c.id == id)
+}
+
+// ---------- param helpers ----------
+
+pub(crate) fn bad(cmd: &str, msg: impl Into<String>) -> EngineError {
+    EngineError::BadParams { cmd: cmd.into(), msg: msg.into() }
+}
+pub(crate) fn f64_or(p: &Value, key: &str, default: f64) -> f64 {
+    p.get(key).and_then(Value::as_f64).unwrap_or(default)
+}
+pub(crate) fn bool_or(p: &Value, key: &str, default: bool) -> bool {
+    p.get(key).and_then(Value::as_bool).unwrap_or(default)
+}
+pub(crate) fn str_param<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
+    p.get(key).and_then(Value::as_str)
+}
+pub(crate) fn id_param(p: &Value, key: &str) -> Option<ItemId> {
+    p.get(key).and_then(Value::as_u64).map(ItemId)
+}
+pub(crate) fn ids_param(p: &Value, key: &str) -> Option<Vec<ItemId>> {
+    p.get(key).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(ItemId).collect())
+}
+pub(crate) fn point_param(p: &Value, key: &str) -> Option<Point> {
+    let a = p.get(key)?.as_array()?;
+    Some(Point::new(a.first()?.as_f64()?, a.get(1)?.as_f64()?))
+}
+pub(crate) fn rect_param(p: &Value, key: &str) -> Option<Rect> {
+    let a = p.get(key)?.as_array()?;
+    let f = |i: usize| a.get(i).and_then(Value::as_f64);
+    Some(Rect::new(f(0)?, f(1)?, f(2)?, f(3)?))
+}
+/// `{"kind":"doc","index":0}`, `0` or absent (= spread 0).
+pub(crate) fn spread_param(p: &Value, key: &str) -> SpreadRef {
+    match p.get(key) {
+        Some(Value::Number(n)) => SpreadRef::Doc(n.as_u64().unwrap_or(0) as usize),
+        Some(v) => serde_json::from_value(v.clone()).unwrap_or(SpreadRef::Doc(0)),
+        None => SpreadRef::Doc(0),
+    }
+}
+
+/// Targets: `ids` / `id` params or the selection.
+pub(crate) fn targets(s: &Session, p: &Value) -> Result<Vec<ItemId>> {
+    if let Some(ids) = ids_param(p, "ids") {
+        return Ok(ids);
+    }
+    if let Some(id) = id_param(p, "id") {
+        return Ok(vec![id]);
+    }
+    Ok(s.doc()?.selection.items.clone())
+}
+
+pub(crate) fn ok() -> Result<Value> {
+    Ok(Value::Null)
+}
+
+pub fn file_bytes(d: &designcraft_doc::Document) -> Vec<u8> {
+    file::to_bytes(d)
+}
+pub fn file_from(b: &[u8]) -> Result<designcraft_doc::Document> {
+    file::from_bytes(b)
+}
+pub use file::{base64_decode, base64_encode};

@@ -25,12 +25,22 @@ pub enum ColorType {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SwatchValue {
     None,
-    Paper { color: Color },
+    Paper {
+        color: Color,
+    },
     Registration,
-    Color { color: Color, color_type: ColorType },
+    Color {
+        color: Color,
+        color_type: ColorType,
+    },
     /// A tint (0..=1) of another colour swatch.
-    Tint { base: String, tint: f32 },
-    Gradient { gradient: Gradient },
+    Tint {
+        base: String,
+        tint: f32,
+    },
+    Gradient {
+        gradient: Gradient,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -147,7 +157,12 @@ mod tests {
     #[test]
     fn resolves_tints_and_specials() {
         let mut s = default_swatches();
-        s.push(Swatch { name: "Half cyan".into(), value: SwatchValue::Tint { base: "C=100 M=0 Y=0 K=0".into(), tint: 0.5 }, locked: false, named: true });
+        s.push(Swatch {
+            name: "Half cyan".into(),
+            value: SwatchValue::Tint { base: "C=100 M=0 Y=0 K=0".into(), tint: 0.5 },
+            locked: false,
+            named: true,
+        });
         assert_eq!(resolve(&s, NONE, 1.0), None);
         assert_eq!(resolve(&s, PAPER, 1.0), Some(Color::WHITE));
         assert_eq!(resolve(&s, BLACK, 0.4), Some(Color::cmyk(0.0, 0.0, 0.0, 0.4)));

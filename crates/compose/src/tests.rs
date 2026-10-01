@@ -134,7 +134,8 @@ fn wrap_pushes_text_aside() {
     let (mut d, sid, _) = doc_with(&[LOREM; 2].join(" "), Rect::new(0.0, 0.0, 300.0, 800.0), ParaAttrs::default());
     let lid = d.default_layer();
     let id = ItemId(d.alloc());
-    let mut it = designcraft_doc::Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(0.0, 0.0, 120.0, 60.0)));
+    let mut it =
+        designcraft_doc::Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(0.0, 0.0, 120.0, 60.0)));
     it.wrap.mode = WrapMode::BoundingBox;
     it.wrap.offsets = [0.0, 0.0, 6.0, 6.0];
     d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
@@ -150,7 +151,11 @@ fn paragraph_composer_is_no_worse_than_greedy() {
     // Sum of squared slack over lines (excluding last) should not exceed the greedy result.
     let measure = 180.0;
     let mk = |c: designcraft_doc::Composer| {
-        let (d, sid, _) = doc_with(&[LOREM; 2].join(" "), Rect::new(0.0, 0.0, measure, 4000.0), ParaAttrs { composer: Some(c), hyphenate: Some(false), ..Default::default() });
+        let (d, sid, _) = doc_with(
+            &[LOREM; 2].join(" "),
+            Rect::new(0.0, 0.0, measure, 4000.0),
+            ParaAttrs { composer: Some(c), hyphenate: Some(false), ..Default::default() },
+        );
         let cs = compose_story(&d, sid, &ComposeOptions::default());
         let lines = all_lines(&cs);
         let n = lines.len();
@@ -163,10 +168,34 @@ fn paragraph_composer_is_no_worse_than_greedy() {
 
 #[test]
 fn tabs_align_to_stops() {
-    let mut pa = ParaAttrs::default();
-    pa.tabs = Some(vec![designcraft_doc::TabStop { position: 100.0, align: TabAlign::Right, leader: String::new(), align_on: String::new() }]);
+    let pa = ParaAttrs {
+        tabs: Some(vec![designcraft_doc::TabStop { position: 100.0, align: TabAlign::Right, leader: String::new(), align_on: String::new() }]),
+        ..Default::default()
+    };
     let (d, sid, _) = doc_with("Name\t42", Rect::new(0.0, 0.0, 300.0, 100.0), pa);
     let cs = compose_story(&d, sid, &ComposeOptions::default());
     let l = &cs.frames[0].lines[0];
     assert!((l.end_x - 100.0).abs() < 0.5, "{}", l.end_x);
+}
+
+#[test]
+fn justified_narrow_column_has_no_extreme_lines() {
+    let text = "Color holds it all together. A restrained palette of two or three swatches, applied consistently to headlines, rules and backgrounds, gives a publication its voice. Spot inks, tints and gradients are all just named swatches, so a single change ripples through every page.";
+    let para = ParaAttrs { align: Some(Align::LeftJustified), first_line_indent: Some(12.0), hyph_min_word: Some(6), ..Default::default() };
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (_, sid) =
+        d.add_text_frame(SpreadRef::Doc(0), Rect::new(0.0, 0.0, 170.67, 2000.0), lid, text, ParaFormat { para, ..Default::default() }).unwrap();
+    d.story_mut(sid).unwrap().format_chars(0..text.len(), |f| f.over.size = Some(9.75));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let mut worst = 0.0f64;
+    for l in all_lines(&cs) {
+        let s: String = d.story(sid).unwrap().text[l.range.clone()].to_string();
+        eprintln!("{:5.2} {}", l.spacing, s);
+        if !l.last_in_para {
+            worst = worst.max(l.spacing);
+        }
+    }
+    // Regression bound; tighter once dictionary hyphenation lands (plan: Moby PD word list).
+    assert!(worst < 8.0, "loose line ratio {worst}");
 }

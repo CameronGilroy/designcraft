@@ -182,7 +182,13 @@ impl Document {
             pages[1].side = PageSide::Right;
         }
         let id = SpreadId(self.alloc());
-        let mut sp = Spread { id, pages, items: vec![], parent: Some(ParentInfo { prefix: prefix.into(), name: name.into(), based_on: None }), allow_shuffle: true };
+        let mut sp = Spread {
+            id,
+            pages,
+            items: vec![],
+            parent: Some(ParentInfo { prefix: prefix.into(), name: name.into(), based_on: None }),
+            allow_shuffle: true,
+        };
         sp.relayout();
         self.parents.push(Arc::new(sp));
         id

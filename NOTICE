@@ -1,0 +1,13 @@
+DesignCraft
+Copyright the DesignCraft contributors. Licensed under MIT OR Apache-2.0.
+
+This product bundles third-party material under the following licences. Per-file attribution
+(author, source, licence) for every asset is in ASSETS.md. No Adobe icons, images or artwork are included.
+
+- Source Sans 3 and Source Serif 4 (assets/fonts/Source*) — SIL Open Font License 1.1. See assets/fonts/OFL-SourceSans3.txt, OFL-SourceSerif4.txt.
+- Inter (assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-Inter.txt.
+- JetBrains Mono (assets/fonts/JetBrainsMono-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-JetBrainsMono.txt.
+- All UI icons are drawn in code (crates/ui-egui/src/icons.rs) and are original work, MIT OR Apache-2.0.
+
+Rust dependencies (vello_cpu, kurbo, skrifa, harfrust, image, egui, eframe, …) are permissively
+licensed (MIT/Apache-2.0/BSD/ISC/Zlib) and fetched through crates.io.

@@ -253,7 +253,13 @@ mod tests {
 
     #[test]
     fn spread_spine_and_hit() {
-        let s = Spread { id: SpreadId(1), pages: vec![page(PageSide::Left, 0.0), page(PageSide::Right, 612.0)], items: vec![], parent: None, allow_shuffle: true };
+        let s = Spread {
+            id: SpreadId(1),
+            pages: vec![page(PageSide::Left, 0.0), page(PageSide::Right, 612.0)],
+            items: vec![],
+            parent: None,
+            allow_shuffle: true,
+        };
         assert_eq!(s.spine_x(), 612.0);
         assert_eq!(s.page_at_x(700.0), Some(1));
         assert_eq!(s.page_at_x(-50.0), Some(0));

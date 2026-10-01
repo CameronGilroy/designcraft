@@ -33,10 +33,20 @@ pub struct Spacing {
 #[derive(Clone, Copy, Debug)]
 enum Item {
     /// Unbreakable width (a glyph).
-    Box { w: f64 },
+    Box {
+        w: f64,
+    },
     /// Space glyph `g`.
-    Glue { w: f64, st: f64, sh: f64 },
-    Penalty { w: f64, p: f64, flagged: bool },
+    Glue {
+        w: f64,
+        st: f64,
+        sh: f64,
+    },
+    Penalty {
+        w: f64,
+        p: f64,
+        flagged: bool,
+    },
 }
 
 const INF: f64 = 10000.0;
@@ -54,10 +64,8 @@ fn items(glyphs: &[Glyph], hyph_after: &[bool], sp: &Spacing) -> (Vec<Item>, Vec
     let n = glyphs.len();
     for (i, g) in glyphs.iter().enumerate() {
         if is_forced(g.ch) {
-            if !sp.justify || true {
-                it.push(Item::Glue { w: 0.0, st: INF, sh: 0.0 });
-                ig.push(i);
-            }
+            it.push(Item::Glue { w: 0.0, st: INF, sh: 0.0 });
+            ig.push(i);
             it.push(Item::Penalty { w: 0.0, p: -INF, flagged: false });
             ig.push(i + 1);
             continue;
@@ -139,7 +147,15 @@ pub fn knuth_plass(glyphs: &[Glyph], hyph_after: &[bool], sp: &Spacing, width: &
 }
 
 #[allow(clippy::too_many_arguments)]
-fn kp_pass(items: &[Item], ig: &[usize], glyphs: &[Glyph], sp: &Spacing, width: &dyn Fn(usize) -> f64, tol: f64, emergency: bool) -> Option<Vec<Break>> {
+fn kp_pass(
+    items: &[Item],
+    ig: &[usize],
+    glyphs: &[Glyph],
+    sp: &Spacing,
+    width: &dyn Fn(usize) -> f64,
+    tol: f64,
+    emergency: bool,
+) -> Option<Vec<Break>> {
     let m = items.len();
     // Prefix sums (before item i).
     let mut sw = vec![0.0; m + 1];
@@ -155,7 +171,8 @@ fn kp_pass(items: &[Item], ig: &[usize], glyphs: &[Glyph], sp: &Spacing, width: 
         sy[i + 1] = sy[i] + y;
         sz[i + 1] = sz[i] + z;
     }
-    let mut arena: Vec<Node> = vec![Node { pos: 0, line: 0, fitness: 1, tw: 0.0, ty: 0.0, tz: 0.0, demerits: 0.0, prev: None, hyphens: 0, flagged: false }];
+    let mut arena: Vec<Node> =
+        vec![Node { pos: 0, line: 0, fitness: 1, tw: 0.0, ty: 0.0, tz: 0.0, demerits: 0.0, prev: None, hyphens: 0, flagged: false }];
     let mut active: Vec<usize> = vec![0];
     for b in 0..m {
         let (is_break, pw, pp, flagged) = match items[b] {
@@ -188,10 +205,16 @@ fn kp_pass(items: &[Item], ig: &[usize], glyphs: &[Glyph], sp: &Spacing, width: 
             } else {
                 last_removed = Some((a, r));
             }
-            if r >= -1.0 && r <= tol || (forced && r >= -1.0) {
+            if r >= -1.0 && (r <= tol || forced) {
                 let bad = (100.0 * r.abs().powi(3)).min(INF);
                 let lp = 10.0 + bad;
-                let mut d = if pp >= 0.0 { lp * lp + pp * pp } else if pp > -INF { lp * lp - pp * pp } else { lp * lp };
+                let mut d = if pp >= 0.0 {
+                    lp * lp + pp * pp
+                } else if pp > -INF {
+                    lp * lp - pp * pp
+                } else {
+                    lp * lp
+                };
                 if flagged && n.flagged {
                     d += 3000.0;
                 }
@@ -260,6 +283,9 @@ fn kp_pass(items: &[Item], ig: &[usize], glyphs: &[Glyph], sp: &Spacing, width: 
             }
         }
         if active.is_empty() {
+            if std::env::var_os("DC_KP_DEBUG").is_some() {
+                eprintln!("kp tol {tol}: no active nodes at item {b}/{m} (glyph {})", ig[b]);
+            }
             return None;
         }
     }

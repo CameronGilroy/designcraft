@@ -365,7 +365,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                         }
                     }
                 }
-                let fits = baseline + desc <= col.y1 + 0.01 || (cur.last_baseline.is_none() && baseline <= col.y1 && false);
+                let fits = baseline + desc <= col.y1 + 0.01;
                 if !fits {
                     // Next column / frame; re-break the rest of the paragraph there.
                     g0 = s;
@@ -428,12 +428,23 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 let r = &pp.rule_above;
                 let y = bl - asc - r.offset;
                 let col = ft.lines.iter().rev().find(|l| l.para == pi).map(|l| (l.x0, l.x1)).unwrap_or((0.0, 0.0));
-                ft.decos.push(Deco { rect: Rect::new(col.0 + r.left_indent, y - r.weight, col.1 - r.right_indent, y), color: r.color.clone(), tint: r.tint });
+                ft.decos.push(Deco {
+                    rect: Rect::new(col.0 + r.left_indent, y - r.weight, col.1 - r.right_indent, y),
+                    color: r.color.clone(),
+                    tint: r.tint,
+                });
             }
             if pp.shading_on {
                 let lines: Vec<&Line> = ft.lines.iter().filter(|l| l.para == pi).collect();
                 if let (Some(a), Some(z)) = (lines.first(), lines.last()) {
-                    ft.decos.insert(0, Deco { rect: Rect::new(a.x0, a.baseline - a.ascent, a.x1, z.baseline + z.descent), color: pp.shading_color.clone(), tint: pp.shading_tint });
+                    ft.decos.insert(
+                        0,
+                        Deco {
+                            rect: Rect::new(a.x0, a.baseline - a.ascent, a.x1, z.baseline + z.descent),
+                            color: pp.shading_color.clone(),
+                            tint: pp.shading_tint,
+                        },
+                    );
                 }
             }
         }
@@ -521,7 +532,15 @@ impl Cursor {
     }
 }
 
-fn line_metrics(line: &[Glyph], all: &[Glyph], s: usize, base_leading: f64, base_size: f64, db: &FontDb, base: &designcraft_doc::CharProps) -> (f64, f64, f64) {
+fn line_metrics(
+    line: &[Glyph],
+    all: &[Glyph],
+    s: usize,
+    base_leading: f64,
+    base_size: f64,
+    db: &FontDb,
+    base: &designcraft_doc::CharProps,
+) -> (f64, f64, f64) {
     let _ = db;
     let src: &[Glyph] = if line.is_empty() { all.get(s..(s + 1).min(all.len())).unwrap_or(&[]) } else { line };
     if src.is_empty() {
@@ -735,11 +754,36 @@ fn layout_line(
 }
 
 fn place(g: &Glyph, x: f64) -> PlacedGlyph {
-    let visible = !(g.ch == '\t' || g.ch == '\n' || breaker::is_forced(g.ch) || g.ch == story::INDENT_HERE || g.ch == story::RIGHT_INDENT_TAB || g.ch == shape::SOFT_HYPHEN);
-    PlacedGlyph { face: g.face.clone(), gid: g.gid, x: x + g.dx, y: -g.shift + g.dy, adv: g.adv, sx: g.sx, sy: g.sy, style: g.style, byte: g.byte, len: g.len, visible }
+    let visible = !(g.ch == '\t'
+        || g.ch == '\n'
+        || breaker::is_forced(g.ch)
+        || g.ch == story::INDENT_HERE
+        || g.ch == story::RIGHT_INDENT_TAB
+        || g.ch == shape::SOFT_HYPHEN);
+    PlacedGlyph {
+        face: g.face.clone(),
+        gid: g.gid,
+        x: x + g.dx,
+        y: -g.shift + g.dy,
+        adv: g.adv,
+        sx: g.sx,
+        sy: g.sy,
+        style: g.style,
+        byte: g.byte,
+        len: g.len,
+        visible,
+    }
 }
 
-fn prepend_label(db: &FontDb, glyphs: &mut Vec<Glyph>, label: &str, at: usize, base: &designcraft_doc::CharProps, pp: &ParaProps, table: &mut StyleTable<'_>) {
+fn prepend_label(
+    db: &FontDb,
+    glyphs: &mut Vec<Glyph>,
+    label: &str,
+    at: usize,
+    base: &designcraft_doc::CharProps,
+    pp: &ParaProps,
+    table: &mut StyleTable<'_>,
+) {
     // Shape the label as a tiny standalone story so it uses the paragraph's base character style.
     let mut tmp = Story::new(StoryId(0));
     tmp.insert(0, label);

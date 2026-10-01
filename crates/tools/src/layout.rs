@@ -27,7 +27,8 @@ pub const SPREAD_GAP: f64 = 72.0;
 impl CanvasLayout {
     /// Layout of the document spreads (or the parent spreads when `parents` is true).
     pub fn new(doc: &Document, parents: bool) -> Self {
-        let list: Vec<SpreadRef> = if parents { (0..doc.parents.len()).map(SpreadRef::Parent).collect() } else { (0..doc.spreads.len()).map(SpreadRef::Doc).collect() };
+        let list: Vec<SpreadRef> =
+            if parents { (0..doc.parents.len()).map(SpreadRef::Parent).collect() } else { (0..doc.spreads.len()).map(SpreadRef::Doc).collect() };
         let mut slots = Vec::with_capacity(list.len());
         let mut y = 0.0;
         let mut pb: Option<Rect> = None;

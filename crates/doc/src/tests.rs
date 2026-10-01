@@ -67,7 +67,14 @@ fn hit_testing_respects_layers() {
 fn page_names_follow_sections() {
     let mut d = Document::new(&NewDocument { pages: 6, ..Default::default() });
     assert_eq!(d.page_name(0), "1");
-    d.sections.push(Section { start: 2, start_number: Some(1), style: NumberStyle::LowerRoman, prefix: "A-".into(), marker: String::new(), include_prefix: true });
+    d.sections.push(Section {
+        start: 2,
+        start_number: Some(1),
+        style: NumberStyle::LowerRoman,
+        prefix: "A-".into(),
+        marker: String::new(),
+        include_prefix: true,
+    });
     assert_eq!(d.page_name(1), "2");
     assert_eq!(d.page_name(2), "A-i");
     assert_eq!(d.page_name(4), "A-iii");

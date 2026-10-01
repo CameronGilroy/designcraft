@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn sideways_dependency_flagged() {
-        let v = check(&[c("designcraft-text", &[("designcraft-pathops", Normal, true)])]);
+        let v = check(&[c("designcraft-compose", &[("designcraft-images", Normal, true)])]);
         assert!(matches!(v[..], [Violation::Upward { from: 2, to: 2, .. }]));
     }
 

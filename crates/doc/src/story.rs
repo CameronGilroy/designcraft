@@ -85,7 +85,14 @@ pub struct Story {
 
 impl Story {
     pub fn new(id: StoryId) -> Self {
-        Story { id, text: String::new(), paras: vec![ParaFormat::default()], chars: vec![CharRun { len: 0, format: CharFormat::default() }], frames: vec![], rev: 0 }
+        Story {
+            id,
+            text: String::new(),
+            paras: vec![ParaFormat::default()],
+            chars: vec![CharRun { len: 0, format: CharFormat::default() }],
+            frames: vec![],
+            rev: 0,
+        }
     }
 
     pub fn with_text(id: StoryId, text: &str, para: ParaFormat) -> Self {

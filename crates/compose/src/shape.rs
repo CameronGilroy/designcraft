@@ -152,7 +152,16 @@ fn is_mark(c: char) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn shape_run(db: &FontDb, text: &str, range: std::ops::Range<usize>, p: &CharProps, auto_leading: f64, style: u32, sub: &SubstCtx, out: &mut Vec<Glyph>) {
+fn shape_run(
+    db: &FontDb,
+    text: &str,
+    range: std::ops::Range<usize>,
+    p: &CharProps,
+    auto_leading: f64,
+    style: u32,
+    sub: &SubstCtx,
+    out: &mut Vec<Glyph>,
+) {
     let primary = db.face(&p.font_family, &p.font_style);
     // Split into segments: font coverage changes and special characters (markers, tabs, breaks).
     let mut seg_start = range.start;
@@ -201,7 +210,11 @@ fn shape_run(db: &FontDb, text: &str, range: std::ops::Range<usize>, p: &CharPro
             continue;
         }
         let covered = c.is_whitespace() || c.is_control() || c == SOFT_HYPHEN || primary.covers(c);
-        let face = if covered || is_mark(c) { if is_mark(c) { seg_face.clone() } else { primary.clone() } } else { db.fallback_for(c, primary.id()).unwrap_or_else(|| primary.clone()) };
+        let face = if covered || is_mark(c) {
+            if is_mark(c) { seg_face.clone() } else { primary.clone() }
+        } else {
+            db.fallback_for(c, primary.id()).unwrap_or_else(|| primary.clone())
+        };
         if face.id() != seg_face.id() {
             flush(seg_start, i, &seg_face, out);
             seg_start = i;

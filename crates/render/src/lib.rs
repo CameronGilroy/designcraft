@@ -159,7 +159,16 @@ impl Renderer {
     }
 
     /// Render the given spreads into a `width`×`height` image with `view` (canvas → pixels).
-    pub fn render(&mut self, doc: &Document, cache: &Cache, spreads: &[Placed], width: u32, height: u32, view: Affine, opts: &RenderOptions) -> Rendered {
+    pub fn render(
+        &mut self,
+        doc: &Document,
+        cache: &Cache,
+        spreads: &[Placed],
+        width: u32,
+        height: u32,
+        view: Affine,
+        opts: &RenderOptions,
+    ) -> Rendered {
         let start = now();
         let w = width.clamp(1, u16::MAX as u32) as u16;
         let h = height.clamp(1, u16::MAX as u32) as u16;
@@ -232,8 +241,13 @@ impl Renderer {
             }
             ctx.set_transform(f.view);
             ctx.set_paint(color_of(&paper, 1.0));
-            for p in &sp.pages {
-                ctx.fill_rect(&p.bounds());
+            // One rect for equal-height spreads avoids an anti-aliasing seam at the spine.
+            if sp.pages.windows(2).all(|w| w[0].height == w[1].height) {
+                ctx.fill_rect(&sp.bounds());
+            } else {
+                for p in &sp.pages {
+                    ctx.fill_rect(&p.bounds());
+                }
             }
         }
         // Layers back to front; within each layer parent items first (document spreads only).
@@ -381,7 +395,8 @@ impl Renderer {
                 ctx.pop_layer();
             }
             StrokeAlign::Outside if closed => {
-                let outline = kurbo::stroke(bp.iter(), &kurbo::Stroke { width: st.weight * 2.0, ..stroke }, &kurbo::StrokeOpts::default(), 0.05 * f.px);
+                let outline =
+                    kurbo::stroke(bp.iter(), &kurbo::Stroke { width: st.weight * 2.0, ..stroke }, &kurbo::StrokeOpts::default(), 0.05 * f.px);
                 let mut p = outline;
                 // Remove the interior: even-odd with the path itself.
                 for el in bp.elements() {
@@ -430,7 +445,10 @@ impl Renderer {
         ctx.set_transform(f.view * xf * g.xf);
         let sx = g.size.0 / pm.width().max(1) as f64;
         let sy = g.size.1 / pm.height().max(1) as f64;
-        ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(pm), sampler: peniko::ImageSampler::default().with_quality(peniko::ImageQuality::Medium) });
+        ctx.set_paint(vello_cpu::Image {
+            image: vello_cpu::ImageSource::Pixmap(pm),
+            sampler: peniko::ImageSampler::default().with_quality(peniko::ImageQuality::Medium),
+        });
         ctx.set_paint_transform(Affine::scale_non_uniform(sx, sy));
         ctx.fill_rect(&rect);
         ctx.reset_paint_transform();
@@ -468,10 +486,12 @@ impl Renderer {
                 if style.underline || style.strikethrough {
                     let w = style.size / 14.0;
                     if style.underline {
-                        lines_deco.push((g.style, kurbo::Rect::new(g.x, l.baseline + style.size * 0.12, g.x + g.adv, l.baseline + style.size * 0.12 + w)));
+                        lines_deco
+                            .push((g.style, kurbo::Rect::new(g.x, l.baseline + style.size * 0.12, g.x + g.adv, l.baseline + style.size * 0.12 + w)));
                     }
                     if style.strikethrough {
-                        lines_deco.push((g.style, kurbo::Rect::new(g.x, l.baseline - style.size * 0.3, g.x + g.adv, l.baseline - style.size * 0.3 + w)));
+                        lines_deco
+                            .push((g.style, kurbo::Rect::new(g.x, l.baseline - style.size * 0.3, g.x + g.adv, l.baseline - style.size * 0.3 + w)));
                     }
                 }
                 let outline = db.outline(&g.face, g.gid);
@@ -642,6 +662,23 @@ fn now() -> u64 {
     0
 }
 
+/// Pixel size of an encoded image without decoding it fully.
+pub fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.into_dimensions().ok()
+}
+
+/// MIME type guess for encoded image bytes.
+pub fn image_mime(bytes: &[u8]) -> &'static str {
+    match image::guess_format(bytes) {
+        Ok(image::ImageFormat::Png) => "image/png",
+        Ok(image::ImageFormat::Jpeg) => "image/jpeg",
+        Ok(image::ImageFormat::Gif) => "image/gif",
+        Ok(image::ImageFormat::WebP) => "image/webp",
+        Ok(image::ImageFormat::Tiff) => "image/tiff",
+        _ => "application/octet-stream",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -652,9 +689,11 @@ mod tests {
     fn renders_page_with_text_and_fill() {
         let mut d = Document::new(&NewDocument::default());
         let lid = d.default_layer();
-        let (fid, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 576.0, 300.0), lid, "Hello DesignCraft", ParaFormat::default()).unwrap();
+        let (fid, _) =
+            d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 576.0, 300.0), lid, "Hello DesignCraft", ParaFormat::default()).unwrap();
         let id = designcraft_doc::ItemId(d.alloc());
-        let mut box_ = Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(36.0, 400.0, 136.0, 500.0)));
+        let mut box_ =
+            Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(36.0, 400.0, 136.0, 500.0)));
         box_.fill = Fill::swatch("C=100 M=0 Y=0 K=0");
         d.insert_item(SpreadRef::Doc(0), box_, None).unwrap();
         let cache = Cache::new();
