@@ -205,6 +205,19 @@ fn place_gun_click_drag_and_into_frame() {
     assert!(matches!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(f)).unwrap().content, designcraft_doc::Content::Graphic(_)));
 }
 
+#[test]
+fn preflight_reports_overset_and_missing_fonts() {
+    let mut s = session();
+    s.execute("frame.create", &json!({"rect": [36, 36, 100, 50], "content": "text", "text": "This text will not fit in such a tiny frame at all."}))
+        .unwrap();
+    s.execute("text.select", &json!({"story": s.doc().unwrap().doc.stories.keys().next().unwrap().0, "anchor": 0, "focus": 4})).unwrap();
+    s.execute("type.char", &json!({"attrs": {"fontFamily": "Nonexistent Sans"}})).unwrap();
+    let r = s.execute("preflight.run", &json!({})).unwrap();
+    let kinds: Vec<&str> = r["issues"].as_array().unwrap().iter().map(|i| i["kind"].as_str().unwrap()).collect();
+    assert!(kinds.contains(&"overset") && kinds.contains(&"missingFont"), "{kinds:?}");
+    assert_eq!(r["errors"], 2);
+}
+
 /// Unicode text per page, through hayro's interpreter (ToUnicode / ActualText).
 fn pdf_text(bytes: &[u8]) -> Vec<String> {
     use hayro_interpret::font::Glyph;

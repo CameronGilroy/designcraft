@@ -662,3 +662,35 @@ pub fn effects_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
         });
     }
 }
+
+pub fn preflight_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let issues = designcraft_engine::cmd::preflight::check(&app.session, 150.0);
+    let errors = issues.iter().filter(|i| i.severity == "error").count();
+    ui.horizontal(|ui| {
+        let (r, _) = ui.allocate_exact_size(vec2(10.0, 10.0), egui::Sense::hover());
+        ui.painter().circle_filled(
+            r.center(),
+            4.5,
+            if errors == 0 { egui::Color32::from_rgb(60, 200, 90) } else { egui::Color32::from_rgb(235, 50, 50) },
+        );
+        ui.label(if issues.is_empty() { "No errors".to_string() } else { format!("{errors} error(s), {} warning(s)", issues.len() - errors) });
+    });
+    divider(ui);
+    for i in issues {
+        let page = i.page.and_then(|p| app.session.active().map(|d| d.doc.page_name(p)));
+        let text = format!("{}  {}", if i.severity == "error" { "⛔" } else { "⚠" }, i.message);
+        let resp = ui.add(egui::Button::new(egui::RichText::new(text).size(11.0)).frame(false));
+        if let Some(pg) = &page {
+            ui.label(egui::RichText::new(format!("   page {pg}")).size(10.0).color(t.text_dim));
+        }
+        if resp.clicked() {
+            if let Some(id) = i.item {
+                let _ = app.run("selection.set", json!({"ids": [id]}));
+            }
+            if let Some(p) = i.page {
+                crate::canvas::go_to_page(app, p);
+            }
+        }
+    }
+}

@@ -24,6 +24,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     ("align", "Align", "panel-align"),
     ("links", "Links", "panel-links"),
     ("info", "Info", "panel-info"),
+    ("preflight", "Preflight", "panel-preflight"),
 ];
 
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
@@ -126,6 +127,7 @@ pub fn flyout(app: &mut DesignApp, ctx: &egui::Context) {
                     "color" => panels::swatches::color_panel(app, ui),
                     "effects" => panels::properties::effects_panel(app, ui),
                     "links" => panels::properties::links_panel(app, ui),
+                    "preflight" => panels::properties::preflight_panel(app, ui),
                     _ => panels::properties::info_panel(app, ui),
                 });
             });

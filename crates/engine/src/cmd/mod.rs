@@ -7,6 +7,7 @@ mod find;
 mod inspect;
 mod layout;
 mod object;
+pub mod preflight;
 mod style;
 pub mod text;
 
@@ -110,6 +111,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(layout::specs());
         v.extend(inspect::specs());
         v.extend(find::specs());
+        v.extend(preflight::specs());
         v
     })
 }

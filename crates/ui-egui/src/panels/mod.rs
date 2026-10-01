@@ -82,8 +82,19 @@ pub fn text_attrs(app: &mut DesignApp) -> Option<Value> {
 
 /// Count preflight errors: overset stories (more checks land with the Preflight panel).
 pub fn preflight_errors(app: &DesignApp) -> usize {
+    // Memoized per document snapshot (the status bar asks every frame).
+    static MEMO: std::sync::Mutex<Option<(usize, usize)>> = std::sync::Mutex::new(None);
     let Some(st) = app.session.active() else { return 0 };
-    st.doc.stories.keys().filter(|sid| app.session.cache.get(&st.doc, **sid, None).is_overset()).count()
+    let key = std::sync::Arc::as_ptr(&st.doc) as usize;
+    let mut g = MEMO.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((k, n)) = *g
+        && k == key
+    {
+        return n;
+    }
+    let n = designcraft_engine::cmd::preflight::check(&app.session, 150.0).iter().filter(|i| i.severity == "error").count();
+    *g = Some((key, n));
+    n
 }
 
 /// A swatch dropdown showing a chip and name; `on_pick` gets the chosen swatch name.
