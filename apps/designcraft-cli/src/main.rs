@@ -1,7 +1,7 @@
 //! Headless DesignCraft.
 //!
 //! ```text
-//! designcraft-cli run [--in FILE.designcraft|FILE.idml | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT.png|.jpg|.pdf|.designcraft|.idml] [--pdf-options JSON] [--all-pages DIR]
+//! designcraft-cli run [--in FILE.designcraft|FILE.idml | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT.png|.jpg|.pdf|.designcraft|.idml|.epub] [--pdf-options JSON] [--all-pages DIR]
 //! designcraft-cli commands            # list every command (JSON)
 //! designcraft-cli mcp [--connect PORT] [--sample]  # MCP server over stdio (docs/mcp.md)
 //! designcraft-cli perf [--pages N] [--frames N] [--chars N] [--images N] [--runs N] [--strict]  # budgets on a synthetic stress document
@@ -120,7 +120,10 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             "--export" => {
                 let out = val()?;
-                if out.ends_with(".pdf") {
+                if out.ends_with(".epub") {
+                    let r = s.execute("file.exportEpub", &json!({"path": out})).map_err(|e| e.to_string())?;
+                    eprintln!("wrote {out} ({} bytes)", r["bytes"]);
+                } else if out.ends_with(".pdf") {
                     let mut p = pdf_opts.clone();
                     p["path"] = json!(out);
                     let r = s.execute("file.exportPdf", &p).map_err(|e| e.to_string())?;

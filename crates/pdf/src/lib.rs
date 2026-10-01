@@ -26,6 +26,7 @@
 #![forbid(unsafe_code)]
 
 mod export;
+mod links;
 mod marks;
 mod text;
 

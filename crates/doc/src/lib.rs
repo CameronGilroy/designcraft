@@ -226,7 +226,53 @@ pub struct Document {
     pub sections: Vec<Section>,
     #[serde(default)]
     pub assets: BTreeMap<AssetId, Arc<Asset>>,
+    /// Hyperlinks (Window → Interactive → Hyperlinks).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hyperlinks: Vec<Hyperlink>,
+    /// PDF bookmarks (Window → Interactive → Bookmarks).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bookmarks: Vec<Bookmark>,
+    /// Words added to the document's user dictionary (spelling).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub user_words: Vec<String>,
     pub next_id: u64,
+}
+
+/// What a hyperlink is attached to.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum HyperlinkSource {
+    Item { id: ItemId },
+    Text { story: StoryId, start: usize, end: usize },
+}
+
+/// Where a hyperlink goes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind", content = "value")]
+pub enum HyperlinkDest {
+    Url(String),
+    Email(String),
+    /// Absolute page index.
+    Page(usize),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hyperlink {
+    pub id: u64,
+    pub name: String,
+    pub source: HyperlinkSource,
+    pub dest: HyperlinkDest,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Bookmark {
+    pub name: String,
+    /// Absolute page index.
+    pub page: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Bookmark>,
 }
 
 impl Document {
@@ -267,30 +313,27 @@ impl Document {
         self.spreads.iter().enumerate().flat_map(|(si, s)| s.pages.iter().map(move |p| (si, p))).enumerate().map(|(i, (si, p))| (i, si, p))
     }
 
+    /// The section containing absolute page `abs`.
+    pub fn section_of(&self, abs: usize) -> Option<&Section> {
+        self.sections.iter().filter(|s| s.start <= abs).max_by_key(|s| s.start)
+    }
+
+    /// The page number (before formatting) of absolute page `abs`, per sections. A section without
+    /// a start number continues from the previous section.
+    pub fn page_number(&self, abs: usize) -> u32 {
+        let Some(sec) = self.section_of(abs) else { return abs as u32 + 1 };
+        let start = match sec.start_number {
+            Some(n) => n,
+            None if sec.start == 0 => 1,
+            None => self.page_number(sec.start - 1) + 1,
+        };
+        start + (abs - sec.start) as u32
+    }
+
     /// The displayed page name ("1", "iv", "A-3"…) for an absolute page index, per sections.
     pub fn page_name(&self, abs: usize) -> String {
-        let mut sec: Option<&Section> = None;
-        for s in &self.sections {
-            if s.start <= abs && sec.is_none_or(|c| s.start >= c.start) {
-                sec = Some(s);
-            }
-        }
-        let Some(sec) = sec else { return (abs + 1).to_string() };
-        // Numbers continue from the previous section when start_number is None.
-        let start_number = match sec.start_number {
-            Some(n) => n,
-            None => {
-                let prev: Vec<&Section> = self.sections.iter().filter(|s| s.start < sec.start).collect();
-                if prev.is_empty() {
-                    sec.start as u32 + 1
-                } else {
-                    // Approximate continuation: absolute position + 1.
-                    sec.start as u32 + 1
-                }
-            }
-        };
-        let n = start_number + (abs - sec.start) as u32;
-        let num = sec.style.format(n);
+        let Some(sec) = self.section_of(abs) else { return (abs + 1).to_string() };
+        let num = sec.style.format(self.page_number(abs));
         if sec.include_prefix { format!("{}{}", sec.prefix, num) } else { num }
     }
 
