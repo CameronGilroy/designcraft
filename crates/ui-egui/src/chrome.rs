@@ -362,7 +362,9 @@ pub fn doc_tabs(app: &mut DesignApp, ui: &mut egui::Ui) {
     let titles: Vec<(String, bool)> = app.session.documents().iter().map(|d| (d.title(), d.is_dirty())).collect();
     for (i, (title, dirty)) in titles.iter().enumerate() {
         let is_active = Some(i) == active;
-        let label = format!("{}{} @ {:.0}%", if *dirty { "*" } else { "" }, title, zoom * 100.0);
+        // `*` = unsaved; the view-mode suffix only in Preview (InDesign shows its GPU mode there).
+        let suffix = if is_active && app.ui.screen_mode == crate::ScreenMode::Preview { " [Preview]" } else { "" };
+        let label = format!("{}{} @ {:.0}%{suffix}", if *dirty { "*" } else { "" }, title, zoom * 100.0);
         let galley = ui.painter().layout_no_wrap(label, semibold(11.5), if is_active { t.text_strong } else { t.text_dim });
         let w = (galley.size().x + 44.0).max(if is_active { 210.0 } else { 150.0 });
         let r = egui::Rect::from_min_size(egui::pos2(x, bar.min.y), vec2(w, 28.0));

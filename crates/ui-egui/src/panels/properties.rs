@@ -1,326 +1,1128 @@
-//! The Properties panel (context-sensitive) and small single-purpose panels (Stroke, Character,
-//! Paragraph, Text Wrap, Align, Links, Info).
+//! The Properties panel (context-sensitive, laid out as InDesign 2026's: selection-type band,
+//! sections per selection state — `plan/indesign/11-observed-ui.md` §4.1) and small
+//! single-purpose panels (Stroke, Character, Paragraph, Text Wrap, Align, Links, Info).
 
 use designcraft_doc::Align;
 use designcraft_geom::Unit;
-use egui::vec2;
-use serde_json::json;
+use designcraft_geom::corners::CornerShape;
+use egui::{Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use serde_json::{Value, json};
 
 use super::{SelInfo, sel_info, text_attrs};
 use crate::theme::Tokens;
-use crate::widgets::{caption, divider, measure, number, section};
+use crate::widgets::{
+    self, FIELD_H, NumField, button_pair, caption, divider, dropdown, full_width, icon_toggle, link_label, measure, more_options, number,
+    outline_button, rule, section, section_row, selection_band,
+};
 use crate::{DesignApp, icons};
 
 fn units(app: &DesignApp) -> Unit {
     app.session.active().map(|d| d.doc.settings.horizontal_units).unwrap_or(Unit::Picas)
 }
 
-pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
-    let t = Tokens::get(ui.ctx());
-    let Some(st) = app.session.active() else {
-        ui.label(egui::RichText::new("No document open").color(t.text_dim));
-        return;
-    };
-    let has_text = st.selection.text.is_some();
-    let info = sel_info(app);
-    if has_text {
-        ui.label(egui::RichText::new("Text").color(t.text_dim));
-        character_panel(app, ui);
-        divider(ui);
-        paragraph_panel(app, ui);
-        divider(ui);
-        if section(ui, "Text Frame", false) {
-            text_frame_section(app, ui);
-        }
-        return;
+/// Allocate a full-width block `h` tall.
+fn block(ui: &mut Ui, h: f32) -> Rect {
+    ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::hover()).0
+}
+
+/// A sub-rect of a block at (`x`, `y`) relative to its top-left.
+fn sub(b: Rect, x: f32, y: f32, w: f32, h: f32) -> Rect {
+    Rect::from_min_size(b.min + vec2(x, y), vec2(w, h))
+}
+
+/// Run `f` in a child ui occupying `r` (left-to-right, vertically centred). The parent's cursor
+/// does not move: callers allocate the whole block first with [`block`].
+pub(crate) fn place<R>(ui: &mut Ui, r: Rect, f: impl FnOnce(&mut Ui) -> R) -> R {
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    f(&mut child)
+}
+
+fn temp_bool(ui: &Ui, key: &str, default: bool) -> bool {
+    ui.data(|d| d.get_temp::<bool>(egui::Id::new(key))).unwrap_or(default)
+}
+
+fn set_temp_bool(ui: &Ui, key: &str, v: bool) {
+    ui.data_mut(|d| d.insert_temp(egui::Id::new(key), v));
+}
+
+/// Label of the current selection for the selection-type band.
+fn selection_title(app: &DesignApp, info: &Option<SelInfo>) -> String {
+    let Some(st) = app.session.active() else { return String::new() };
+    if st.selection.text.is_some() {
+        return "Characters".into();
     }
     match info {
-        Some(i) => {
-            let kind = if i.count > 1 { format!("{} objects", i.count) } else { i.kind.trim_matches(['<', '>']).to_string() };
-            ui.label(egui::RichText::new(capitalize(&kind)).color(t.text_dim));
-            if section(ui, "Transform", true) {
-                transform_section(app, ui, &i);
-            }
-            divider(ui);
-            if section(ui, "Appearance", true) {
-                appearance_section(app, ui, &i);
-            }
-            divider(ui);
-            if i.count > 1 && section(ui, "Align", true) {
-                align_panel(app, ui);
-                divider(ui);
-            }
-            if i.is_text {
-                if section(ui, "Text Frame", true) {
-                    text_frame_section(app, ui);
-                }
-                divider(ui);
-            }
-            if i.is_graphic {
-                if section(ui, "Frame Fitting", true) {
-                    ui.horizontal(|ui| {
-                        for (icon, mode, tip) in [
-                            ("fit-fill", "fillProportionally", "Fill Frame Proportionally"),
-                            ("fit-prop", "fitProportionally", "Fit Content Proportionally"),
-                            ("fit-content", "fitContentToFrame", "Fit Content to Frame"),
-                            ("fit-frame", "fitFrameToContent", "Fit Frame to Content"),
-                            ("fit-center", "centerContent", "Center Content"),
-                        ] {
-                            if icons::button(ui, icon, 24.0, false, tip).clicked() {
-                                let _ = app.run("object.fit", json!({"mode": mode}));
-                            }
-                        }
-                    });
-                }
-                divider(ui);
-            }
-            if section(ui, "Text Wrap", false) {
-                wrap_panel(app, ui);
-            }
-            divider(ui);
-            if section(ui, "Quick Actions", true) {
-                ui.horizontal_wrapped(|ui| {
-                    for (label, cmd) in [
-                        ("Group", "object.group"),
-                        ("Ungroup", "object.ungroup"),
-                        ("Lock", "object.lock"),
-                        ("Bring to Front", "object.bringToFront"),
-                        ("Send to Back", "object.sendToBack"),
-                    ] {
-                        if ui.button(label).clicked() {
-                            let _ = app.run(cmd, json!({}));
-                        }
-                    }
-                    if i.is_text && ui.button("Fill with Placeholder Text").clicked() {
-                        let _ = app.run("type.fillWithPlaceholder", json!({}));
-                    }
-                });
-            }
-        }
-        None => document_section(app, ui),
+        None => "No Selection".into(),
+        Some(i) if i.count > 1 => "Multiple Objects".into(),
+        Some(i) => match i.kind {
+            "<text frame>" => "Text Frame".into(),
+            "<group>" => "Group".into(),
+            "<image>" => "Image".into(),
+            "<rectangle>" => "Rectangle".into(),
+            "<ellipse>" => "Ellipse".into(),
+            "<polygon>" => "Polygon".into(),
+            "<line>" => "Line".into(),
+            _ => "Path".into(),
+        },
     }
 }
 
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
-    }
-}
-
-fn document_section(app: &mut DesignApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
+    if app.session.active().is_none() {
+        ui.label(egui::RichText::new("No document open").color(t.text_dim));
+        return;
+    }
+    ui.spacing_mut().item_spacing = vec2(6.0, 5.0);
+    let info = sel_info(app);
+    let has_text = app.session.active().is_some_and(|s| s.selection.text.is_some());
+    selection_band(ui, &selection_title(app, &info));
+    if has_text {
+        text_style_section(app, ui);
+        divider(ui);
+        section(ui, "Appearance", true);
+        text_appearance_section(app, ui);
+        divider(ui);
+        section(ui, "Character", true);
+        character_section(app, ui);
+        divider(ui);
+        section(ui, "Paragraph", true);
+        paragraph_section(app, ui);
+        divider(ui);
+        section(ui, "Bullets and Numbering", true);
+        bullets_section(app, ui);
+        divider(ui);
+        section(ui, "Quick Actions", true);
+        quick_actions_text(app, ui);
+        return;
+    }
+    let Some(i) = info else {
+        document_sections(app, ui);
+        return;
+    };
+    section(ui, "Transform", true);
+    transform_section(app, ui, &i);
+    divider(ui);
+    if i.is_text && i.count == 1 {
+        text_style_section(app, ui);
+        divider(ui);
+    }
+    section(ui, "Appearance", true);
+    appearance_section(app, ui, &i);
+    divider(ui);
+    if i.is_text && i.count == 1 {
+        section(ui, "Character", true);
+        character_section(app, ui);
+        divider(ui);
+        section(ui, "Paragraph", true);
+        paragraph_section(app, ui);
+        divider(ui);
+    }
+    section(ui, "Align", true);
+    align_row(app, ui);
+    divider(ui);
+    if i.is_text && i.count == 1 {
+        section(ui, "Text Frame", true);
+        text_frame_section(app, ui);
+        divider(ui);
+    } else {
+        if i.is_graphic {
+            section(ui, "Frame Fitting", true);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                for (icon, mode, tip) in [
+                    ("fit-fill", "fillProportionally", "Fill Frame Proportionally"),
+                    ("fit-prop", "fitProportionally", "Fit Content Proportionally"),
+                    ("fit-content", "fitContentToFrame", "Fit Content to Frame"),
+                    ("fit-frame", "fitFrameToContent", "Fit Frame to Content"),
+                    ("fit-center", "centerContent", "Center Content"),
+                ] {
+                    if icon_toggle(ui, icon, false, tip).clicked() {
+                        let _ = app.run("object.fit", json!({"mode": mode}));
+                    }
+                }
+            });
+            divider(ui);
+        }
+        section(ui, "Text Wrap", true);
+        wrap_section(app, ui, &i);
+        divider(ui);
+    }
+    section(ui, "Quick Actions", true);
+    quick_actions_object(app, ui, &i);
+}
+
+// ---------------------------------------------------------------- No Selection
+
+/// Page-size presets for the Document dropdown (portrait, points).
+const PAGE_PRESETS: &[(&str, f64, f64)] = &[
+    ("Letter", 612.0, 792.0),
+    ("Legal", 612.0, 1008.0),
+    ("Tabloid", 792.0, 1224.0),
+    ("Letter - Half", 396.0, 612.0),
+    ("Legal - Half", 504.0, 612.0),
+    ("A3", 841.89, 1190.55),
+    ("A4", 595.276, 841.89),
+    ("A5", 419.528, 595.276),
+    ("B5", 498.898, 708.661),
+];
+
+fn preset_name(w: f64, h: f64) -> &'static str {
+    let (a, b) = (w.min(h), w.max(h));
+    PAGE_PRESETS.iter().find(|p| (p.1 - a).abs() < 0.6 && (p.2 - b).abs() < 0.6).map(|p| p.0).unwrap_or("Custom")
+}
+
+fn document_sections(app: &mut DesignApp, ui: &mut Ui) {
     let u = units(app);
     let Some(st) = app.session.active() else { return };
     let d = st.doc.clone();
-    ui.label(egui::RichText::new("Document").color(t.text_dim));
-    if section(ui, "Document", true) {
-        egui::Grid::new("docgrid").num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
-            caption(ui, "W");
-            if let Some(v) = measure(ui, "dw", Some(d.settings.page_width), u, 70.0) {
-                let _ = app.run("layout.documentSetup", json!({"width": v}));
+    let (pw, ph) = (d.settings.page_width, d.settings.page_height);
+    section(ui, "Document", true);
+    // Preset dropdown + orientation.
+    let b = block(ui, FIELD_H);
+    let mut preset = None;
+    place(ui, sub(b, 0.0, 0.0, 93.0, FIELD_H), |ui| {
+        let resp = dropdown(ui, preset_name(pw, ph), 93.0);
+        egui::Popup::menu(&resp).show(|ui| {
+            ui.set_min_width(140.0);
+            for p in PAGE_PRESETS {
+                if ui.selectable_label(preset_name(pw, ph) == p.0, p.0).clicked() {
+                    preset = Some((p.1, p.2));
+                    ui.close();
+                }
             }
-            caption(ui, "H");
-            if let Some(v) = measure(ui, "dh", Some(d.settings.page_height), u, 70.0) {
-                let _ = app.run("layout.documentSetup", json!({"height": v}));
-            }
-            ui.end_row();
-            caption(ui, "Pages");
-            ui.label(d.page_count().to_string());
-            caption(ui, "");
-            let mut facing = d.settings.facing_pages;
-            if ui.checkbox(&mut facing, "Facing").changed() {
-                let _ = app.run("layout.documentSetup", json!({"facingPages": facing}));
-            }
-            ui.end_row();
         });
-        if ui.button("Document Setup…").clicked() {
-            app.ui.dialog = Some(crate::dialogs::Dialog::new("documentSetup", json!({})));
+    });
+    let landscape = pw > ph;
+    let mut orient = None;
+    place(ui, sub(b, 126.0, 0.0, 52.0, FIELD_H), |ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        if icon_toggle(ui, "orient-portrait", !landscape, "Portrait").clicked() && landscape {
+            orient = Some(());
+        }
+        if icon_toggle(ui, "orient-landscape", landscape, "Landscape").clicked() && !landscape {
+            orient = Some(());
+        }
+    });
+    if let Some((w, h)) = preset {
+        let (w, h) = if landscape { (h, w) } else { (w, h) };
+        let _ = app.run("layout.documentSetup", json!({"width": w, "height": h}));
+    }
+    if orient.is_some() {
+        let _ = app.run("layout.documentSetup", json!({"width": ph, "height": pw}));
+    }
+    ui.add_space(3.0);
+    // W / H, page count, facing pages.
+    let b = block(ui, 2.0 * FIELD_H + 5.0);
+    for (row, (label, v, key)) in [("W:", pw, "width"), ("H:", ph, "height")].into_iter().enumerate() {
+        let y = row as f32 * 26.0;
+        place(ui, sub(b, 0.0, y, 20.0, FIELD_H), |ui| widgets::caption_w(ui, label, 20.0));
+        let nv =
+            place(ui, sub(b, 21.0, y, 72.0, FIELD_H), |ui| NumField::measure(key, Some(v), u).width(72.0).spinner().range(1.0, 15552.0).show(ui));
+        if let Some(nv) = nv {
+            let _ = app.run("layout.documentSetup", json!({key: nv}));
         }
     }
-    divider(ui);
-    if section(ui, "Margins", true) {
-        let p = d.page(crate::canvas::current_page(app).unwrap_or(0)).cloned();
-        if let Some(p) = p {
-            egui::Grid::new("margins").num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
-                for (row, (a, av, b, bv)) in
-                    [("Top", p.margins.top, "Bottom", p.margins.bottom), ("Inside", p.margins.inside, "Outside", p.margins.outside)]
-                        .into_iter()
-                        .enumerate()
-                {
-                    caption(ui, a);
-                    if let Some(v) = measure(ui, &format!("m{row}a"), Some(av), u, 64.0) {
-                        let mut m = p.margins;
-                        if row == 0 {
-                            m.top = v
-                        } else {
-                            m.inside = v
-                        }
-                        let _ = app.run("layout.marginsAndColumns", json!({"margins": m}));
-                    }
-                    caption(ui, b);
-                    if let Some(v) = measure(ui, &format!("m{row}b"), Some(bv), u, 64.0) {
-                        let mut m = p.margins;
-                        if row == 0 {
-                            m.bottom = v
-                        } else {
-                            m.outside = v
-                        }
-                        let _ = app.run("layout.marginsAndColumns", json!({"margins": m}));
-                    }
-                    ui.end_row();
-                }
-            });
-            ui.horizontal(|ui| {
-                caption(ui, "Columns");
-                if let Some(v) = number(ui, "cols", Some(p.columns.count as f64), "", 36.0, 0) {
-                    let _ = app.run("layout.marginsAndColumns", json!({"columns": v.max(1.0) as u64}));
-                }
-                caption(ui, "Gutter");
-                if let Some(v) = measure(ui, "gut", Some(p.columns.gutter), u, 56.0) {
-                    let _ = app.run("layout.marginsAndColumns", json!({"gutter": v}));
-                }
-            });
+    let n = d.page_count();
+    let t = Tokens::get(ui.ctx());
+    icons::paint(ui.painter(), sub(b, 127.0, 2.0, 17.0, 17.0), "page-count", t.icon);
+    let nv = place(ui, sub(b, 150.0, 0.0, 68.0, FIELD_H), |ui| number(ui, "pagecount", Some(n as f64), "", 68.0, 0));
+    if let Some(nv) = nv {
+        let want = (nv.round() as usize).clamp(1, 9999);
+        if want > n {
+            let _ = app.run("layout.pages.insert", json!({"count": want - n, "after": n - 1}));
+        } else if want < n {
+            let _ = app.run("layout.pages.delete", json!({"pages": (want..n).collect::<Vec<_>>()}));
         }
     }
-    divider(ui);
-    if section(ui, "Rulers & Grids", true) {
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut app.ui.rulers, "Rulers");
-            ui.checkbox(&mut app.ui.baseline_grid, "Baseline grid");
+    let mut facing = d.settings.facing_pages;
+    let changed = place(ui, sub(b, 126.0, 26.0, 100.0, FIELD_H), |ui| widgets::checkbox(ui, &mut facing, "Facing Pages").changed());
+    if changed {
+        let _ = app.run("layout.documentSetup", json!({"facingPages": facing}));
+    }
+    // Margins.
+    section(ui, "Margins", true);
+    let cur = crate::canvas::current_page(app).unwrap_or(0);
+    if let Some(p) = d.page(cur).cloned() {
+        let linked = temp_bool(ui, "margins_linked", true);
+        let b = block(ui, 2.0 * FIELD_H + 5.0);
+        let mut set: Option<designcraft_doc::Margins> = None;
+        let fields = [
+            ("margin-top", "Top", p.margins.top, 0.0, 0.0),
+            ("margin-bottom", "Bottom", p.margins.bottom, 0.0, 26.0),
+            ("margin-outside", if d.settings.facing_pages { "Outside" } else { "Right" }, p.margins.outside, 127.0, 0.0),
+            ("margin-inside", if d.settings.facing_pages { "Inside" } else { "Left" }, p.margins.inside, 127.0, 26.0),
+        ];
+        for (k, (icon, tip, v, x, y)) in fields.into_iter().enumerate() {
+            let ir = sub(b, x, y + 2.0, 17.0, 17.0);
+            icons::paint(ui.painter(), ir, icon, t.icon);
+            ui.interact(ir, ui.id().with(("micon", k)), Sense::hover()).on_hover_text(tip);
+            let nv = place(ui, sub(b, x + 20.0, y, 73.0, FIELD_H), |ui| {
+                NumField::measure(tip, Some(v), u).width(73.0).spinner().range(0.0, 8000.0).show(ui)
+            });
+            if let Some(nv) = nv {
+                let mut m = p.margins;
+                if linked {
+                    m = designcraft_doc::Margins { top: nv, bottom: nv, inside: nv, outside: nv };
+                } else {
+                    match k {
+                        0 => m.top = nv,
+                        1 => m.bottom = nv,
+                        2 => m.outside = nv,
+                        _ => m.inside = nv,
+                    }
+                }
+                set = Some(m);
+            }
+        }
+        let lr = sub(b, 99.0, 12.5, 22.0, FIELD_H);
+        let clicked = place(ui, lr, |ui| {
+            widgets::icon_toggle_sized(ui, if linked { "link" } else { "link-broken" }, linked, "Make all settings the same", vec2(22.0, 21.0))
+                .clicked()
         });
+        if clicked {
+            set_temp_bool(ui, "margins_linked", !linked);
+        }
+        if let Some(m) = set {
+            let _ = app.run("layout.marginsAndColumns", json!({"margins": m}));
+        }
+    }
+    ui.add_space(6.0);
+    let fw = full_width(ui);
+    if outline_button(ui, "Adjust Layout", fw).clicked() {
+        app.ui.dialog = Some(crate::dialogs::Dialog::new("documentSetup", json!({})));
     }
     divider(ui);
-    if section(ui, "Guides", true) {
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut app.ui.guides, "Guides");
-            ui.checkbox(&mut app.ui.frame_edges, "Frame edges");
-        });
+    // Page.
+    section(ui, "Page", true);
+    let b = block(ui, FIELD_H);
+    let names: Vec<String> = (0..d.page_count()).map(|i| d.page_name(i)).collect();
+    let picked = place(ui, sub(b, 0.0, 0.0, 93.0, FIELD_H), |ui| widgets::dropdown_list(ui, &d.page_name(cur), 93.0, &names, Some(cur)));
+    if let Some(pg) = picked {
+        crate::canvas::go_to_page(app, pg);
+    }
+    let (add, del) = place(ui, sub(b, 172.0, 0.0, 50.0, FIELD_H), |ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let a = widgets::icon_toggle_sized(ui, "style-new", false, "Insert Page", vec2(22.0, 21.0)).clicked();
+        let d = widgets::icon_toggle_sized(ui, "trash", false, "Delete Page", vec2(22.0, 21.0)).clicked();
+        (a, d)
+    });
+    if add {
+        let _ = app.run("layout.pages.insert", json!({"after": cur, "count": 1}));
+    }
+    if del {
+        let _ = app.run("layout.pages.delete", json!({"pages": [cur]}));
+    }
+    ui.add_space(3.0);
+    if outline_button(ui, "Edit Page", fw).clicked() {
+        app.ui.dialog = Some(crate::dialogs::Dialog::new("documentSetup", json!({})));
     }
     divider(ui);
-    if section(ui, "Quick Actions", true) {
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("Insert Page").clicked() {
-                let _ = app.run("layout.pages.insert", json!({"count": 1}));
-            }
-            if ui.button("Place…").clicked() {
-                let _ = app.run("app.placeDialog", json!({}));
-            }
-            if ui.button("Export PNG…").clicked() {
-                let _ = app.run("app.exportPng", json!({}));
-            }
-        });
+    // Rulers & Grids / Guides: icon toggle rows.
+    let (mut rulers, mut bl, mut dg) = (app.ui.rulers, app.ui.baseline_grid, app.ui.document_grid);
+    section_row(ui, "Rulers & Grids", |ui| {
+        ui.spacing_mut().item_spacing.x = 14.0;
+        if icon_toggle(ui, "grid-document", dg, "Show Document Grid").clicked() {
+            dg = !dg;
+        }
+        if icon_toggle(ui, "grid-baseline", bl, "Show Baseline Grid").clicked() {
+            bl = !bl;
+        }
+        if icon_toggle(ui, "rulers", rulers, "Show Rulers").clicked() {
+            rulers = !rulers;
+        }
+    });
+    if rulers != app.ui.rulers {
+        let _ = app.run("view.rulers", json!({}));
+    }
+    if bl != app.ui.baseline_grid {
+        let _ = app.run("view.baselineGrid", json!({}));
+    }
+    app.ui.document_grid = dg;
+    rule(ui);
+    let (mut guides, mut locked, mut smart) = (app.ui.guides, app.ui.guides_locked, app.ui.smart_guides);
+    section_row(ui, "Guides", |ui| {
+        ui.spacing_mut().item_spacing.x = 14.0;
+        if icon_toggle(ui, "guides-smart", smart, "Smart Guides").clicked() {
+            smart = !smart;
+        }
+        if icon_toggle(ui, "guides-lock", locked, "Lock Guides").clicked() {
+            locked = !locked;
+        }
+        if icon_toggle(ui, "guides-show", guides, "Show Guides").clicked() {
+            guides = !guides;
+        }
+    });
+    if guides != app.ui.guides {
+        let _ = app.run("view.guides", json!({}));
+    }
+    app.ui.guides_locked = locked;
+    app.ui.smart_guides = smart;
+    rule(ui);
+    section(ui, "Quick Actions", true);
+    let (a, b) = button_pair(ui, "Import File", "Insert Page");
+    if a {
+        let _ = app.run("app.placeDialog", json!({}));
+    }
+    if b {
+        let _ = app.run("layout.pages.insert", json!({"after": cur, "count": 1}));
     }
 }
 
-fn transform_section(app: &mut DesignApp, ui: &mut egui::Ui, i: &SelInfo) {
+// ---------------------------------------------------------------- Objects
+
+/// The 9-point reference-point proxy; returns a newly picked point (0..8, row-major).
+fn ref_point_proxy(ui: &mut Ui, r: Rect, cur: u8) -> Option<u8> {
+    let t = Tokens::get(ui.ctx());
+    let mut out = None;
+    let pitch = r.width() / 3.0;
+    for i in 0..9u8 {
+        let c = pos2(r.min.x + pitch * (i % 3) as f32 + pitch / 2.0, r.min.y + pitch * (i / 3) as f32 + pitch / 2.0);
+        let sq = Rect::from_center_size(c, vec2(6.0, 6.0));
+        let resp = ui.interact(sq.expand(1.5), ui.id().with(("refpt", i)), Sense::click());
+        if i == cur {
+            ui.painter().rect_filled(sq.expand(0.5), 0.0, egui::Color32::WHITE);
+        } else {
+            ui.painter().rect_stroke(sq, 0.0, Stroke::new(1.0, if resp.hovered() { t.text_strong } else { t.icon }), StrokeKind::Inside);
+        }
+        if resp.clicked() {
+            out = Some(i);
+        }
+    }
+    // Connecting lines between the squares.
+    for k in 0..3 {
+        let y = r.min.y + pitch * k as f32 + pitch / 2.0;
+        let x = r.min.x + pitch * k as f32 + pitch / 2.0;
+        for j in 0..2 {
+            let a = r.min.x + pitch * j as f32 + pitch / 2.0 + 3.0;
+            ui.painter().line_segment([pos2(a, y), pos2(a + pitch - 6.0, y)], Stroke::new(1.0, t.icon));
+            let a = r.min.y + pitch * j as f32 + pitch / 2.0 + 3.0;
+            ui.painter().line_segment([pos2(x, a), pos2(x, a + pitch - 6.0)], Stroke::new(1.0, t.icon));
+        }
+    }
+    out
+}
+
+fn transform_section(app: &mut DesignApp, ui: &mut Ui, i: &SelInfo) {
     let u = units(app);
-    egui::Grid::new("xf").num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
-        caption(ui, "X");
-        if let Some(v) = measure(ui, "px", Some(i.page_rect.x0), u, 70.0) {
-            let _ = app.run("transform.set", json!({"x": v}));
+    let rp = app.ui.ref_point;
+    let b = block(ui, 2.0 * FIELD_H + 4.0);
+    // Reference-point position of the bounds.
+    let r = i.page_rect;
+    let (fx, fy) = ((rp % 3) as f64 / 2.0, (rp / 3) as f64 / 2.0);
+    let (x, y) = (r.x0 + r.width() * fx, r.y0 + r.height() * fy);
+    if let Some(p) = ref_point_proxy(ui, sub(b, 5.0, 10.0, 26.0, 26.0), rp) {
+        app.ui.ref_point = p;
+    }
+    let constrain = temp_bool(ui, "constrain_wh", false);
+    let mut set = serde_json::Map::new();
+    for (row, (lx, vx, kx, lw, vw, kw)) in
+        [("X:", x, "x", "W:", r.width(), "width"), ("Y:", y, "y", "H:", r.height(), "height")].into_iter().enumerate()
+    {
+        let yy = row as f32 * 25.0;
+        place(ui, sub(b, 40.0, yy, 18.0, FIELD_H), |ui| widgets::caption_w(ui, lx, 18.0));
+        if let Some(v) = place(ui, sub(b, 59.0, yy, 54.0, FIELD_H), |ui| measure(ui, kx, Some(vx), u, 54.0)) {
+            set.insert(kx.into(), json!(v));
         }
-        caption(ui, "W");
-        if let Some(v) = measure(ui, "pw", Some(i.page_rect.width()), u, 70.0) {
-            let _ = app.run("transform.set", json!({"width": v}));
+        place(ui, sub(b, 120.0, yy, 19.0, FIELD_H), |ui| widgets::caption_w(ui, lw, 19.0));
+        if let Some(v) = place(ui, sub(b, 140.0, yy, 54.0, FIELD_H), |ui| measure(ui, kw, Some(vw), u, 54.0)) {
+            set.insert(kw.into(), json!(v));
+            if constrain && vw > 0.0 {
+                let k = v / vw;
+                let (ok, ov) = if kw == "width" { ("height", r.height()) } else { ("width", r.width()) };
+                set.insert(ok.into(), json!(ov * k));
+            }
         }
-        ui.end_row();
-        caption(ui, "Y");
-        if let Some(v) = measure(ui, "py", Some(i.page_rect.y0), u, 70.0) {
-            let _ = app.run("transform.set", json!({"y": v}));
-        }
-        caption(ui, "H");
-        if let Some(v) = measure(ui, "ph", Some(i.page_rect.height()), u, 70.0) {
-            let _ = app.run("transform.set", json!({"height": v}));
-        }
-        ui.end_row();
+    }
+    let clicked = place(ui, sub(b, 200.0, 12.0, 22.0, FIELD_H), |ui| {
+        widgets::icon_toggle_sized(
+            ui,
+            if constrain { "link" } else { "link-broken" },
+            constrain,
+            "Constrain proportions for width and height",
+            vec2(22.0, 21.0),
+        )
+        .clicked()
     });
-    ui.horizontal(|ui| {
-        caption(ui, "Rotate");
-        if let Some(v) = number(ui, "rot", Some(0.0), "°", 46.0, 1) {
-            let _ = app.run("transform.rotate", json!({"angle": v}));
-        }
-        if ui.small_button("⇋").on_hover_text("Flip Horizontal").clicked() {
-            let _ = app.run("transform.flip", json!({"axis": "horizontal"}));
-        }
-        if ui.small_button("⇵").on_hover_text("Flip Vertical").clicked() {
-            let _ = app.run("transform.flip", json!({"axis": "vertical"}));
-        }
-    });
+    if clicked {
+        set_temp_bool(ui, "constrain_wh", !constrain);
+    }
+    if !set.is_empty() {
+        set.insert("ref".into(), json!(rp));
+        let _ = app.run("transform.set", Value::Object(set));
+    }
+    if more_options(ui).clicked() {
+        app.ui.open_panel = Some("info".into());
+    }
 }
 
-fn appearance_section(app: &mut DesignApp, ui: &mut egui::Ui, i: &SelInfo) {
-    ui.horizontal(|ui| {
-        caption(ui, "Fill   ");
-        super::swatch_picker(app, ui, "pfill", Some(i.fill.clone()), |app, n| {
-            let _ = app.run("object.fill", json!({"swatch": n}));
-        });
-        ui.label(&i.fill);
-    });
-    ui.horizontal(|ui| {
-        caption(ui, "Stroke");
-        super::swatch_picker(app, ui, "pstroke", Some(i.stroke.clone()), |app, n| {
-            let _ = app.run("object.stroke", json!({"swatch": n}));
-        });
-        if let Some(v) = number(ui, "psw", Some(i.stroke_weight), " pt", 50.0, 3) {
-            let _ = app.run("object.stroke", json!({"weight": v}));
-        }
-    });
-    ui.horizontal(|ui| {
-        caption(ui, "Opacity");
-        let mut o = (i.opacity * 100.0) as f32;
-        if ui.add(egui::Slider::new(&mut o, 0.0..=100.0).suffix("%").integer()).drag_stopped() {
-            let _ = app.run("object.opacity", json!({"opacity": o / 100.0}));
-        }
-    });
-    ui.horizontal(|ui| {
-        let mut on = i.shadow;
-        if ui.checkbox(&mut on, "Drop shadow").changed() {
-            let _ = app.run("object.dropShadow", json!({"on": on}));
-        }
-    });
-    ui.horizontal(|ui| {
-        caption(ui, "Corners");
-        for (label, shape) in [("None", "none"), ("Rounded", "rounded"), ("Bevel", "bevel"), ("Inset", "inset")] {
-            if ui.small_button(label).clicked() {
-                let _ = app.run("object.cornerOptions", json!({"shape": shape, "size": 12.0}));
+/// A stroke-type preview dropdown (light box with the line style).
+fn stroke_type_dropdown(app: &mut DesignApp, ui: &mut Ui, cur: &str, w: f32) {
+    const TYPES: &[(&str, &str)] = &[
+        ("Solid", "solid"),
+        ("Dashed", "dashed"),
+        ("Dotted", "dotted"),
+        ("Thick - Thin", "thickThin"),
+        ("Thin - Thick", "thinThick"),
+        ("Thin - Thin", "thinThin"),
+        ("Thick - Thick", "thickThick"),
+    ];
+    let resp = preview_dropdown(ui, w, |p, r| paint_stroke_type(p, r, cur));
+    egui::Popup::menu(&resp).show(|ui| {
+        ui.set_min_width(140.0);
+        for (label, kind) in TYPES {
+            if ui.selectable_label(*kind == cur, *label).clicked() {
+                let ty = if *kind == "dashed" { json!({"kind": "dashed", "pattern": [12.0, 4.0]}) } else { json!({"kind": kind}) };
+                let _ = app.run("object.stroke", json!({"type": ty}));
+                ui.close();
             }
         }
     });
 }
 
-fn text_frame_section(app: &mut DesignApp, ui: &mut egui::Ui) {
+fn paint_stroke_type(p: &egui::Painter, r: Rect, kind: &str) {
+    let c = egui::Color32::BLACK;
+    let (x0, x1, y) = (r.min.x + 5.0, r.max.x - 5.0, r.center().y);
+    match kind {
+        "dashed" => {
+            let mut x = x0;
+            while x < x1 {
+                p.line_segment([pos2(x, y), pos2((x + 6.0).min(x1), y)], Stroke::new(4.0, c));
+                x += 9.0;
+            }
+        }
+        "dotted" => {
+            let mut x = x0 + 2.0;
+            while x < x1 {
+                p.circle_filled(pos2(x, y), 2.0, c);
+                x += 6.0;
+            }
+        }
+        "thickThin" | "thinThick" | "thinThin" | "thickThick" => {
+            let (a, b) = match kind {
+                "thickThin" => (3.0, 1.0),
+                "thinThick" => (1.0, 3.0),
+                "thinThin" => (1.0, 1.0),
+                _ => (2.5, 2.5),
+            };
+            p.line_segment([pos2(x0, y - 3.0), pos2(x1, y - 3.0)], Stroke::new(a, c));
+            p.line_segment([pos2(x0, y + 3.0), pos2(x1, y + 3.0)], Stroke::new(b, c));
+        }
+        _ => {
+            p.line_segment([pos2(x0, y), pos2(x1, y)], Stroke::new(5.0, c));
+        }
+    }
+}
+
+/// A dropdown whose face is a light preview box (stroke type, corner shape).
+fn preview_dropdown(ui: &mut Ui, w: f32, paint: impl FnOnce(&egui::Painter, Rect)) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(w, FIELD_H), Sense::click());
+    let face = Rect::from_min_max(r.min, pos2(r.max.x - widgets::SEG_W, r.max.y));
+    ui.painter().rect_filled(face, 0.0, egui::Color32::from_gray(0xdf));
+    paint(ui.painter(), face);
+    let seg = Rect::from_min_max(pos2(face.max.x, r.min.y), r.max);
+    ui.painter().rect_filled(seg, 0.0, if resp.hovered() { t.hover } else { t.input });
+    widgets::chevron_down(ui.painter(), seg.center(), t.icon);
+    ui.painter().rect_stroke(r, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
+    resp
+}
+
+fn paint_corner_shape(p: &egui::Painter, r: Rect, shape: CornerShape) {
+    let c = egui::Color32::BLACK;
+    let s = Stroke::new(1.5, c);
+    let (x0, y0, x1, y1) = (r.min.x + 4.0, r.min.y + 4.0, r.max.x - 9.0, r.max.y - 3.0);
+    let k = 8.0;
+    let pts: Vec<egui::Pos2> = match shape {
+        CornerShape::None => vec![pos2(x0, y0), pos2(x1, y0), pos2(x1, y1)],
+        CornerShape::Bevel => vec![pos2(x0, y0), pos2(x1 - k, y0), pos2(x1, y0 + k), pos2(x1, y1)],
+        CornerShape::Inset => vec![pos2(x0, y0), pos2(x1 - k, y0), pos2(x1 - k, y0 + k), pos2(x1, y0 + k), pos2(x1, y1)],
+        CornerShape::Rounded | CornerShape::InverseRounded | CornerShape::Fancy => {
+            let mut v = vec![pos2(x0, y0)];
+            for i in 0..=8 {
+                let a = i as f32 / 8.0 * std::f32::consts::FRAC_PI_2;
+                v.push(if shape == CornerShape::InverseRounded {
+                    pos2(x1 - k * a.cos(), y0 + k * a.sin())
+                } else {
+                    pos2(x1 - k + k * a.sin(), y0 + k - k * a.cos())
+                });
+            }
+            v.push(pos2(x1, y1));
+            v
+        }
+    };
+    p.add(egui::Shape::line(pts, s));
+}
+
+fn appearance_section(app: &mut DesignApp, ui: &mut Ui, i: &SelInfo) {
+    let t = Tokens::get(ui.ctx());
+    let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
+    // Fill.
+    let b = block(ui, FIELD_H);
+    let (fc, fg) = widgets::swatch_colors(&doc, &i.fill, 1.0);
+    let chip = sub(b, 4.0, 2.0, 17.0, 17.0);
+    widgets::paint_chip(ui.painter(), chip, fc, fg);
+    ui.painter().rect_stroke(chip, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
+    let resp = ui.interact(chip, ui.id().with("fillchip"), Sense::click()).on_hover_text(format!("Fill: {}", i.fill));
+    swatch_menu(app, &resp, &doc, &i.fill, |app, n| {
+        let _ = app.run("object.fill", json!({"swatch": n}));
+    });
+    ui.painter().text(b.min + vec2(34.0, FIELD_H / 2.0), egui::Align2::LEFT_CENTER, "Fill", egui::FontId::proportional(11.5), t.text);
+    ui.add_space(4.0);
+    // Stroke.
+    let b = block(ui, FIELD_H);
+    let (sc, _) = widgets::swatch_colors(&doc, &i.stroke, 1.0);
+    let chip = sub(b, 4.0, 2.0, 17.0, 17.0);
+    widgets::paint_stroke_chip(ui.painter(), chip, sc, egui::Color32::from_gray(20));
+    ui.painter().rect_stroke(chip, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
+    let resp = ui.interact(chip, ui.id().with("strokechip"), Sense::click()).on_hover_text(format!("Stroke: {}", i.stroke));
+    swatch_menu(app, &resp, &doc, &i.stroke, |app, n| {
+        let _ = app.run("object.stroke", json!({"swatch": n}));
+    });
+    if place(ui, sub(b, 34.0, 0.0, 56.0, FIELD_H), |ui| link_label(ui, "Stroke", 56.0)).clicked() {
+        app.ui.open_panel = Some("stroke".into());
+    }
+    const WEIGHTS: &[f64] = &[0.0, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 20.0, 30.0, 40.0, 50.0, 100.0];
+    if let Some(v) = place(ui, sub(b, 96.0, 0.0, 69.0, FIELD_H), |ui| {
+        NumField::number("sw", Some(i.stroke_weight), " pt", 3).width(69.0).spinner().presets(WEIGHTS).range(0.0, 800.0).show(ui)
+    }) {
+        let _ = app.run("object.stroke", json!({"weight": v}));
+    }
+    let kind = i.stroke_kind.clone();
+    place(ui, sub(b, 171.0, 0.0, 54.0, FIELD_H), |ui| stroke_type_dropdown(app, ui, &kind, 54.0));
+    ui.add_space(4.0);
+    // Corner.
+    let b = block(ui, FIELD_H);
+    icons::paint(ui.painter(), sub(b, 3.0, 1.0, 19.0, 19.0), "corner", t.accent);
+    if place(ui, sub(b, 34.0, 0.0, 56.0, FIELD_H), |ui| link_label(ui, "Corner", 56.0)).clicked() {
+        app.ui.dialog = Some(crate::dialogs::Dialog::new("frameSize", json!({})));
+    }
+    let (shape, size) = i.corner;
+    if let Some(v) = place(ui, sub(b, 96.0, 0.0, 69.0, FIELD_H), |ui| {
+        NumField::measure("corner", Some(size), Unit::Points).width(69.0).spinner().range(0.0, 1000.0).show(ui)
+    }) {
+        let sh = if shape == CornerShape::None { CornerShape::Rounded } else { shape };
+        let _ = app.run("object.cornerOptions", json!({"shape": sh, "size": v}));
+    }
+    place(ui, sub(b, 171.0, 0.0, 54.0, FIELD_H), |ui| {
+        let resp = preview_dropdown(ui, 54.0, |p, r| paint_corner_shape(p, r, shape));
+        egui::Popup::menu(&resp).show(|ui| {
+            ui.set_min_width(140.0);
+            for s in CornerShape::ALL {
+                if ui.selectable_label(s == shape, s.label()).clicked() {
+                    let _ = app.run("object.cornerOptions", json!({"shape": s, "size": if size > 0.0 { size } else { 12.0 }}));
+                    ui.close();
+                }
+            }
+        });
+    });
+    ui.add_space(4.0);
+    // Opacity.
+    let b = block(ui, FIELD_H);
+    icons::paint(ui.painter(), sub(b, 3.0, 1.0, 19.0, 19.0), "opacity", t.icon);
+    if place(ui, sub(b, 34.0, 0.0, 56.0, FIELD_H), |ui| link_label(ui, "Opacity", 56.0)).clicked() {
+        app.ui.open_panel = Some("effects".into());
+    }
+    if let Some(v) = place(ui, sub(b, 96.0, 0.0, 51.0, FIELD_H), |ui| {
+        NumField::number("opacity", Some((i.opacity * 100.0).round()), "%", 0).width(51.0).range(0.0, 100.0).show(ui)
+    }) {
+        let _ = app.run("object.opacity", json!({"opacity": v / 100.0}));
+    }
+    let more = sub(b, 147.0, 0.0, 18.0, FIELD_H);
+    let mresp = ui.interact(more, ui.id().with("opmore"), Sense::click());
+    ui.painter().rect(more, 0.0, if mresp.hovered() { t.hover } else { t.input }, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
+    icons::paint(ui.painter(), more.shrink(4.0), "chevron-right", t.icon);
+    if mresp.clicked() {
+        app.ui.open_panel = Some("effects".into());
+    }
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        if icon_toggle(ui, "frame-dashed", false, "Frame Fitting").clicked() {
+            app.ui.open_panel = Some("textWrap".into());
+        }
+        if icon_toggle(ui, "fx", i.shadow, "Effects: Drop Shadow").clicked() {
+            let _ = app.run("object.dropShadow", json!({"on": !i.shadow}));
+        }
+    });
+}
+
+/// Swatch list popup attached to `resp`.
+fn swatch_menu(app: &mut DesignApp, resp: &egui::Response, doc: &designcraft_doc::Document, cur: &str, on_pick: impl FnOnce(&mut DesignApp, String)) {
+    let mut picked = None;
+    egui::Popup::menu(resp).show(|ui| {
+        ui.set_min_width(200.0);
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for sw in &doc.swatches {
+                let (c, g) = widgets::swatch_colors(doc, &sw.name, 1.0);
+                let row = ui.horizontal(|ui| {
+                    let (cr, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                    widgets::paint_chip(ui.painter(), cr, c, g);
+                    ui.add(egui::Button::new(&sw.name).frame(false).selected(sw.name == cur))
+                });
+                if row.inner.clicked() {
+                    picked = Some(sw.name.clone());
+                    ui.close();
+                }
+            }
+        });
+    });
+    if let Some(p) = picked {
+        on_pick(app, p);
+    }
+}
+
+fn align_row(app: &mut DesignApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let to = app.ui.align_to.clone();
+        let resp = icon_toggle(ui, "align-to", false, &format!("Align To: {to}"));
+        egui::Popup::menu(&resp).show(|ui| {
+            for (label, id) in [
+                ("Align to Selection", "selection"),
+                ("Align to Key Object", "keyObject"),
+                ("Align to Margins", "margins"),
+                ("Align to Page", "page"),
+                ("Align to Spread", "spread"),
+            ] {
+                if ui.selectable_label(app.ui.align_to == id, label).clicked() {
+                    app.ui.align_to = id.into();
+                    ui.close();
+                }
+            }
+        });
+        let (r, _) = ui.allocate_exact_size(vec2(1.0, FIELD_H), Sense::hover());
+        ui.painter().line_segment([r.center_top(), r.center_bottom()], Stroke::new(1.0, t.section_divider.gamma_multiply(1.6)));
+        for (edge, icon, tip) in [
+            ("left", "objalign-left", "Align left edges"),
+            ("hcenter", "objalign-hcenter", "Align horizontal centers"),
+            ("right", "objalign-right", "Align right edges"),
+            ("top", "objalign-top", "Align top edges"),
+            ("vcenter", "objalign-vcenter", "Align vertical centers"),
+            ("bottom", "objalign-bottom", "Align bottom edges"),
+        ] {
+            if icon_toggle(ui, icon, false, tip).clicked() {
+                let _ = app.run("object.align", json!({"edge": edge, "to": to}));
+            }
+        }
+    });
+}
+
+fn wrap_section(app: &mut DesignApp, ui: &mut Ui, i: &SelInfo) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 7.0;
+        for (icon, mode, tip) in [
+            ("wrap-none", "none", "No Text Wrap"),
+            ("wrap-bbox", "boundingBox", "Wrap Around Bounding Box"),
+            ("wrap-contour", "contour", "Wrap Around Object Shape"),
+            ("wrap-jump", "jumpObject", "Jump Object"),
+            ("wrap-next", "jumpToNextColumn", "Jump to Next Column"),
+        ] {
+            if icon_toggle(ui, icon, i.wrap == mode, tip).clicked() {
+                let _ = app.run("object.textWrap", json!({"mode": mode}));
+            }
+        }
+        ui.add_space(2.0);
+        let mut inv = i.wrap_invert;
+        let enabled = i.wrap != "none";
+        let r = ui.add_enabled_ui(enabled, |ui| widgets::checkbox(ui, &mut inv, "Invert")).inner;
+        if r.changed() {
+            let _ = app.run("object.textWrap", json!({"mode": i.wrap, "invert": inv}));
+        }
+    });
+    if more_options(ui).clicked() {
+        app.ui.open_panel = Some("textWrap".into());
+    }
+}
+
+fn arrange_menu(app: &mut DesignApp, resp: &egui::Response) {
+    egui::Popup::menu(resp).show(|ui| {
+        for (label, cmd) in [
+            ("Bring to Front", "object.bringToFront"),
+            ("Bring Forward", "object.bringForward"),
+            ("Send Backward", "object.sendBackward"),
+            ("Send to Back", "object.sendToBack"),
+        ] {
+            if ui.button(label).clicked() {
+                let _ = app.run(cmd, json!({}));
+                ui.close();
+            }
+        }
+    });
+}
+
+fn convert_shape_menu(app: &mut DesignApp, resp: &egui::Response) {
+    egui::Popup::menu(resp).show(|ui| {
+        for (label, shape) in
+            [("Rectangle", "none"), ("Rounded Rectangle", "rounded"), ("Beveled Rectangle", "bevel"), ("Inverse Rounded Rectangle", "inverseRounded")]
+        {
+            if ui.button(label).clicked() {
+                let _ = app.run("object.cornerOptions", json!({"shape": shape, "size": 12.0}));
+                ui.close();
+            }
+        }
+    });
+}
+
+fn quick_actions_object(app: &mut DesignApp, ui: &mut Ui, i: &SelInfo) {
+    let fw = full_width(ui);
+    let hw = (fw - 10.0) / 2.0;
+    if i.is_text {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            let r = outline_button(ui, "Convert Shape", hw);
+            convert_shape_menu(app, &r);
+            let r = outline_button(ui, "Arrange", hw);
+            arrange_menu(app, &r);
+        });
+        ui.add_space(4.0);
+        if outline_button(ui, "Fill with Placeholder Text", fw).clicked() {
+            let _ = app.run("type.fillWithPlaceholder", json!({}));
+        }
+        ui.add_space(4.0);
+        if outline_button(ui, "Edit in Story Editor", fw).clicked() {
+            let _ = app.run("app.storyEditor", json!({}));
+        }
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        let r = outline_button(ui, "Arrange", hw);
+        arrange_menu(app, &r);
+        if outline_button(ui, if i.count > 1 { "Group" } else { "Lock" }, hw).clicked() {
+            let _ = app.run(if i.count > 1 { "object.group" } else { "object.lock" }, json!({}));
+        }
+    });
+    ui.add_space(4.0);
+    if i.kind == "<group>" {
+        if outline_button(ui, "Ungroup", fw).clicked() {
+            let _ = app.run("object.ungroup", json!({}));
+        }
+    } else {
+        let r = outline_button(ui, "Convert Shape", fw);
+        convert_shape_menu(app, &r);
+    }
+}
+
+// ---------------------------------------------------------------- Text
+
+fn text_style_section(app: &mut DesignApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    section(ui, "Text Style", true);
+    let Some(a) = text_attrs(app) else { return };
+    let tab = app.ui.text_style_tab;
+    let fw = full_width(ui);
+    if let Some(k) = widgets::segmented(ui, &["Paragraph Styles", "Character Styles"], tab as usize, fw) {
+        app.ui.text_style_tab = k as u8;
+    }
+    ui.add_space(5.0);
+    let (names, cur): (Vec<String>, String) = {
+        let st = app.session.active().expect("doc");
+        if tab == 0 {
+            (
+                st.doc.styles.paragraph.iter().map(|p| p.name.clone()).filter(|n| n != designcraft_doc::NO_PARA_STYLE).collect(),
+                a["paragraphStyle"].as_str().unwrap_or("").to_string(),
+            )
+        } else {
+            (st.doc.styles.character.iter().map(|p| p.name.clone()).collect(), a["characterStyle"].as_str().unwrap_or("[None]").to_string())
+        }
+    };
+    let ov = if tab == 0 { a["paraOverrides"].as_u64().unwrap_or(0) + a["charOverrides"].as_u64().unwrap_or(0) } else { 0 };
+    let label = if ov > 0 { format!("{cur}+") } else { cur.clone() };
+    let resp = widgets::dropdown_h(ui, "", fw, 34.0);
+    // "Ag" swatch + style name.
+    let ag = Rect::from_min_size(resp.rect.min + vec2(6.0, 6.0), vec2(22.0, 22.0));
+    ui.painter().rect_filled(ag, 1.0, egui::Color32::WHITE);
+    ui.painter().text(ag.center(), egui::Align2::CENTER_CENTER, "Ag", egui::FontId::new(13.0, egui::FontFamily::Proportional), egui::Color32::BLACK);
+    ui.painter().with_clip_rect(resp.rect.shrink2(vec2(20.0, 0.0))).text(
+        pos2(ag.max.x + 8.0, resp.rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        &label,
+        egui::FontId::proportional(11.5),
+        t.text,
+    );
+    let mut pick = None;
+    egui::Popup::menu(&resp).show(|ui| {
+        ui.set_min_width(fw);
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for n in &names {
+                if ui.selectable_label(*n == cur, n).clicked() {
+                    pick = Some(n.clone());
+                    ui.close();
+                }
+            }
+        });
+    });
+    if let Some(n) = pick {
+        if tab == 0 {
+            let _ = app.run("style.paragraph.apply", json!({"name": n, "clearOverrides": false}));
+        } else {
+            let _ = app.run("style.character.apply", json!({"name": n}));
+        }
+    }
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        if icon_toggle(ui, "pilcrow-menu", false, if tab == 0 { "Paragraph Styles panel" } else { "Character Styles panel" }).clicked() {
+            app.ui.open_panel = Some(if tab == 0 { "paragraphStyles" } else { "characterStyles" }.into());
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 12.0;
+            ui.add_space(4.0);
+            if icon_toggle(ui, "style-new", false, "Create new style").clicked() {
+                let cmd = if tab == 0 { "style.paragraph.create" } else { "style.character.create" };
+                let _ = app.run(cmd, json!({}));
+            }
+            if icon_toggle(ui, "style-clear", false, "Clear overrides").clicked() && tab == 0 && !cur.is_empty() {
+                let _ = app.run("style.paragraph.apply", json!({"name": cur, "clearOverrides": true}));
+            }
+            if icon_toggle(ui, "style-load", false, "Styles panel").clicked() {
+                app.ui.open_panel = Some(if tab == 0 { "paragraphStyles" } else { "characterStyles" }.into());
+            }
+        });
+    });
+}
+
+fn text_appearance_section(app: &mut DesignApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let Some(a) = text_attrs(app) else { return };
+    let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
+    let c = &a["chars"];
+    for (k, (key, label)) in [("fill", "Fill"), ("stroke", "Stroke")].into_iter().enumerate() {
+        let sw = c[key].as_str().unwrap_or(designcraft_color::swatch::NONE).to_string();
+        let b = block(ui, FIELD_H);
+        let (col, g) = widgets::swatch_colors(&doc, &sw, 1.0);
+        let chip = sub(b, 4.0, 2.0, 17.0, 17.0);
+        if k == 0 {
+            widgets::paint_chip(ui.painter(), chip, col, g);
+        } else {
+            widgets::paint_stroke_chip(ui.painter(), chip, col, egui::Color32::from_gray(20));
+        }
+        ui.painter().rect_stroke(chip, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
+        // The "T" marks text formatting.
+        let tc = if col.is_some_and(|c| c.r() as u32 + c.g() as u32 + c.b() as u32 > 380) { egui::Color32::BLACK } else { egui::Color32::WHITE };
+        if k == 0 {
+            ui.painter().text(chip.center(), egui::Align2::CENTER_CENTER, "T", crate::theme::semibold(12.0), tc);
+        }
+        let resp = ui.interact(chip, ui.id().with(("tchip", k)), Sense::click()).on_hover_text(format!("{label}: {sw}"));
+        swatch_menu(app, &resp, &doc, &sw, |app, n| {
+            let _ = app.run("type.char", json!({"attrs": {key: n}}));
+        });
+        if k == 0 {
+            ui.painter().text(b.min + vec2(34.0, FIELD_H / 2.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(11.5), t.text);
+        } else {
+            if place(ui, sub(b, 34.0, 0.0, 56.0, FIELD_H), |ui| link_label(ui, label, 56.0)).clicked() {
+                app.ui.open_panel = Some("stroke".into());
+            }
+            const WEIGHTS: &[f64] = &[0.0, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0];
+            if let Some(v) = place(ui, sub(b, 96.0, 0.0, 69.0, FIELD_H), |ui| {
+                NumField::number("tsw", c["strokeWeight"].as_f64(), " pt", 3).width(69.0).spinner().presets(WEIGHTS).range(0.0, 100.0).show(ui)
+            }) {
+                let _ = app.run("type.char", json!({"attrs": {"strokeWeight": v}}));
+            }
+        }
+        ui.add_space(4.0);
+    }
+}
+
+/// Character section: font family (with search), style, size/leading, kerning/tracking, •••.
+fn character_section(app: &mut DesignApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let Some(a) = text_attrs(app) else { return };
+    let c = a["chars"].clone();
+    let fam = c["fontFamily"].as_str().unwrap_or("").to_string();
+    let sty = c["fontStyle"].as_str().unwrap_or("").to_string();
+    let fw = full_width(ui);
+    // Family dropdown with a search segment on the left.
+    let fams = designcraft_fonts::FontDb::global().families();
+    let resp = widgets::dropdown(ui, "", fw);
+    let r = resp.rect;
+    icons::paint(ui.painter(), Rect::from_min_size(r.min + vec2(3.0, 3.0), vec2(14.0, 14.0)), "search", t.icon);
+    widgets::chevron_down(ui.painter(), r.min + vec2(22.0, 10.5), t.icon);
+    ui.painter().text(
+        r.min + vec2(30.0, 10.5),
+        egui::Align2::LEFT_CENTER,
+        if fam.is_empty() { "—" } else { &fam },
+        egui::FontId::proportional(11.5),
+        t.text,
+    );
+    let mut pick_fam = None;
+    egui::Popup::menu(&resp).show(|ui| {
+        ui.set_min_width(fw);
+        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+            for f in &fams {
+                if ui.selectable_label(*f == fam, f).clicked() {
+                    pick_fam = Some(f.clone());
+                    ui.close();
+                }
+            }
+        });
+    });
+    if let Some(f) = pick_fam {
+        let styles = designcraft_fonts::FontDb::global().styles(&f);
+        let style = if styles.iter().any(|s| s == "Regular") { "Regular".to_string() } else { styles.first().cloned().unwrap_or_default() };
+        let _ = app.run("type.char", json!({"attrs": {"fontFamily": f, "fontStyle": style}}));
+    }
+    ui.add_space(1.0);
+    let styles = designcraft_fonts::FontDb::global().styles(&fam);
+    let cur = styles.iter().position(|s| *s == sty);
+    if let Some(k) = widgets::dropdown_list(ui, if sty.is_empty() { "—" } else { &sty }, fw, &styles, cur) {
+        let _ = app.run("type.char", json!({"attrs": {"fontStyle": styles[k]}}));
+    }
+    ui.add_space(1.0);
+    const SIZES: &[f64] = &[6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 18.0, 21.0, 24.0, 30.0, 36.0, 48.0, 60.0, 72.0];
+    let half = (fw - 10.0) / 2.0;
+    let b = block(ui, 2.0 * FIELD_H + 5.0);
+    let size = c["size"].as_f64();
+    let auto = c["leading"]["kind"].as_str() != Some("points");
+    let lv = if auto { size.map(|s| s * a["para"]["autoLeading"].as_f64().unwrap_or(1.2)) } else { c["leading"]["value"].as_f64() };
+    icons::paint(ui.painter(), sub(b, 0.0, 1.0, 19.0, 19.0), "font-size", t.icon);
+    if let Some(v) = place(ui, sub(b, 24.0, 0.0, half - 24.0, FIELD_H), |ui| {
+        NumField::number("csize", size, " pt", 2).width(half - 24.0).spinner().presets(SIZES).range(0.1, 1296.0).show(ui)
+    }) {
+        let _ = app.run("type.char", json!({"attrs": {"size": v}}));
+    }
+    icons::paint(ui.painter(), sub(b, half + 10.0, 1.0, 19.0, 19.0), "leading", t.icon);
+    let lw = half - 24.0;
+    let lshow = lv.map(|v| (v * 100.0).round() / 100.0);
+    if let Some(v) = place(ui, sub(b, half + 34.0, 0.0, lw, FIELD_H), |ui| {
+        let key = if auto { "cleadauto" } else { "clead" };
+        // Auto leading is shown in parentheses, like "(14.4 pt)".
+        NumField::number(key, lshow, " pt", 2).width(lw).spinner().presets(SIZES).range(0.0, 5000.0).parens(auto).show(ui)
+    }) {
+        let _ = app.run("type.char", json!({"attrs": {"leading": {"kind": "points", "value": v}}}));
+    }
+    // Kerning / tracking.
+    icons::paint(ui.painter(), sub(b, 0.0, 27.0, 19.0, 19.0), "kerning", t.icon);
+    let kern = c["kerning"]["kind"].as_str().unwrap_or("metrics").to_string();
+    let kern_label = match kern.as_str() {
+        "optical" => "Optical".to_string(),
+        "none" => "0".to_string(),
+        "manual" => format!("{}", c["kerning"]["value"].as_f64().unwrap_or(0.0)),
+        _ => "Metrics".to_string(),
+    };
+    place(ui, sub(b, 24.0, 26.0, half - 24.0, FIELD_H), |ui| {
+        let resp = widgets::dropdown(ui, &kern_label, half - 24.0);
+        egui::Popup::menu(&resp).show(|ui| {
+            for (label, v) in [("Metrics", json!({"kind": "metrics"})), ("Optical", json!({"kind": "optical"})), ("0", json!({"kind": "none"}))] {
+                if ui.selectable_label(kern_label == label, label).clicked() {
+                    let _ = app.run("type.char", json!({"attrs": {"kerning": v}}));
+                    ui.close();
+                }
+            }
+        });
+    });
+    icons::paint(ui.painter(), sub(b, half + 10.0, 27.0, 19.0, 19.0), "tracking", t.icon);
+    const TRACK: &[f64] = &[-100.0, -75.0, -50.0, -25.0, -10.0, -5.0, 0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 200.0];
+    if let Some(v) = place(ui, sub(b, half + 34.0, 26.0, lw, FIELD_H), |ui| {
+        NumField::number("ctrack", c["tracking"].as_f64(), "", 0).width(lw).spinner().presets(TRACK).step(5.0).range(-1000.0, 10000.0).show(ui)
+    }) {
+        let _ = app.run("type.char", json!({"attrs": {"tracking": v}}));
+    }
+    if more_options(ui).clicked() {
+        app.ui.open_panel = Some("character".into());
+    }
+}
+
+/// Paragraph section: the 9 alignment buttons and •••.
+fn paragraph_section(app: &mut DesignApp, ui: &mut Ui) {
+    let Some(a) = text_attrs(app) else { return };
+    let cur: Align = serde_json::from_value(a["para"]["align"].clone()).unwrap_or_default();
+    let fw = full_width(ui);
+    let pitch = fw / 9.0;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for (al, icon) in [
+            (Align::Left, "palign-left"),
+            (Align::Center, "palign-center"),
+            (Align::Right, "palign-right"),
+            (Align::LeftJustified, "palign-justify-left"),
+            (Align::CenterJustified, "palign-justify-center"),
+            (Align::RightJustified, "palign-justify-right"),
+            (Align::FullyJustified, "palign-justify-all"),
+            (Align::TowardsSpine, "palign-spine-towards"),
+            (Align::AwayFromSpine, "palign-spine-away"),
+        ] {
+            if widgets::icon_toggle_sized(ui, icon, cur == al, al.label(), vec2(pitch.min(23.0), 21.0)).clicked() {
+                let _ = app.run("type.para", json!({"attrs": {"align": al}}));
+            }
+            if pitch > 23.0 {
+                ui.add_space(pitch - 23.0);
+            }
+        }
+    });
+    if more_options(ui).clicked() {
+        app.ui.open_panel = Some("paragraph".into());
+    }
+}
+
+fn bullets_section(app: &mut DesignApp, ui: &mut Ui) {
+    let Some(a) = text_attrs(app) else { return };
+    let lt = a["para"]["listType"].as_str().unwrap_or("none").to_string();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        for (icon, kind, tip) in [("bullets", "bullets", "Bulleted List"), ("numbering", "numbers", "Numbered List")] {
+            let on = lt == kind;
+            if icon_toggle(ui, icon, on, tip).clicked() {
+                let _ = app.run("type.para", json!({"attrs": {"listType": if on { "none" } else { kind }}}));
+            }
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(8.0);
+            if outline_button(ui, "Options", 66.0).clicked() {
+                app.ui.open_panel = Some("paragraph".into());
+            }
+        });
+    });
+}
+
+fn quick_actions_text(app: &mut DesignApp, ui: &mut Ui) {
+    let fw = full_width(ui);
+    let hw = (fw - 10.0) / 2.0;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        let r = outline_button(ui, "Change Case", hw);
+        egui::Popup::menu(&r).show(|ui| {
+            for (label, v) in [("UPPERCASE", "allCaps"), ("Small Caps", "smallCaps"), ("Normal", "normal")] {
+                if ui.button(label).clicked() {
+                    let _ = app.run("type.char", json!({"attrs": {"capitalization": v}}));
+                    ui.close();
+                }
+            }
+        });
+        if outline_button(ui, "Story Editor", hw).clicked() {
+            let _ = app.run("app.storyEditor", json!({}));
+        }
+    });
+    ui.add_space(4.0);
+    if outline_button(ui, "Fill with Placeholder Text", fw).clicked() {
+        let _ = app.run("type.fillWithPlaceholder", json!({}));
+    }
+}
+
+/// Text Frame section: columns, gutter, [Options].
+fn text_frame_section(app: &mut DesignApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
     let u = units(app);
     let Some(st) = app.session.active() else { return };
     let fid = st.selection.items.first().copied().or_else(|| st.selection.text.and_then(|t| t.frame));
     let Some(opts) = fid.and_then(|f| st.doc.item(f)).and_then(|i| i.text_frame()).map(|t| t.options.clone()) else { return };
-    ui.horizontal(|ui| {
-        caption(ui, "Columns");
-        if let Some(v) = number(ui, "tfc", Some(opts.columns as f64), "", 36.0, 0) {
-            let _ = app.run("object.textFrameOptions", json!({"columns": v.max(1.0) as u64}));
-        }
-        caption(ui, "Gutter");
-        if let Some(v) = measure(ui, "tfg", Some(opts.gutter), u, 56.0) {
-            let _ = app.run("object.textFrameOptions", json!({"gutter": v}));
-        }
-    });
-    ui.horizontal(|ui| {
-        caption(ui, "Inset");
-        if let Some(v) = measure(ui, "tfi", Some(opts.inset[0]), u, 56.0) {
-            let _ = app.run("object.textFrameOptions", json!({"inset": v}));
-        }
-    });
-    ui.horizontal(|ui| {
-        caption(ui, "Align");
-        for (label, vj) in [("Top", "top"), ("Center", "center"), ("Bottom", "bottom"), ("Justify", "justify")] {
-            let on = serde_json::to_value(opts.vertical_justification).ok().and_then(|v| v.as_str().map(|s| s == vj)).unwrap_or(false);
-            if ui.selectable_label(on, label).clicked() {
-                let _ = app.run("object.textFrameOptions", json!({"verticalJustification": vj}));
-            }
-        }
-    });
-    if ui.button("Text Frame Options…").clicked() {
+    let b = block(ui, FIELD_H);
+    icons::paint(ui.painter(), sub(b, 0.0, 1.0, 19.0, 19.0), "text-columns", t.icon);
+    if let Some(v) = place(ui, sub(b, 22.0, 0.0, 54.0, FIELD_H), |ui| {
+        NumField::number("tfcols", Some(opts.columns as f64), "", 0).width(54.0).spinner().range(1.0, 40.0).show(ui)
+    }) {
+        let _ = app.run("object.textFrameOptions", json!({"columns": v.max(1.0) as u64}));
+    }
+    icons::paint(ui.painter(), sub(b, 83.0, 1.0, 19.0, 19.0), "text-gutter", t.icon);
+    if let Some(v) = place(ui, sub(b, 105.0, 0.0, 54.0, FIELD_H), |ui| {
+        NumField::measure("tfgut", Some(opts.gutter), u).width(54.0).spinner().range(0.0, 1440.0).show(ui)
+    }) {
+        let _ = app.run("object.textFrameOptions", json!({"gutter": v}));
+    }
+    let ow = (b.max.x - 8.0) - (b.min.x + 164.0);
+    if place(ui, sub(b, 164.0, 0.5, ow, 20.0), |ui| outline_button(ui, "Options", ow)).clicked() {
         app.ui.dialog = Some(crate::dialogs::Dialog::new("textFrameOptions", json!({})));
     }
 }

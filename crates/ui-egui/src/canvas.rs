@@ -205,10 +205,16 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
             draw_hidden_characters(app, &painter, &xf, &doc, &layout);
         }
     }
-    draw_selection(app, &painter, &xf, &doc, &layout);
+    let sel_rect = draw_selection(app, &painter, &xf, &doc, &layout);
     draw_tool_overlays(app, &painter, &xf);
     if rulers {
         draw_rulers(app, ui, full, rect, &xf, &doc, &layout, &t);
+    }
+    if let Some(r) = sel_rect
+        && !preview
+        && r.intersects(rect)
+    {
+        crate::taskbar::show(app, &ui.ctx().clone(), r, rect);
     }
     // Cursor.
     if let Some(p) = resp.hover_pos().filter(|p| rect.contains(*p)) {
@@ -248,8 +254,10 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
     let Some(st) = app.session.active() else { return };
     let ppp = ctx.pixels_per_point() as f64;
     let doc_key = (st.uid, std::sync::Arc::as_ptr(&st.doc) as u64, st.revision, preview);
-    // Overscan: 25% of the viewport on every side.
-    let (ow, oh) = (rect.width() * 0.25, rect.height() * 0.25);
+    // Overscan: 25% of the viewport on every side, within the GPU's maximum texture size.
+    let max_side = ctx.input(|i| i.max_texture_side) as f32 / ppp as f32;
+    let (ow, oh) =
+        ((rect.width() * 0.25).min((max_side - rect.width()) / 2.0).max(0.0), (rect.height() * 0.25).min((max_side - rect.height()) / 2.0).max(0.0));
     let want = |origin: Point| crate::Shown {
         doc: doc_key,
         origin: Point::new(origin.x - ow as f64 / xf.zoom, origin.y - oh as f64 / xf.zoom),
@@ -515,12 +523,23 @@ fn layer_color(doc: &Document, it: &Item) -> Color32 {
     doc.layer(it.layer).map(|l| c32(l.color)).unwrap_or(Color32::from_rgb(79, 153, 255))
 }
 
-fn draw_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document, layout: &CanvasLayout) {
-    let Some(st) = app.session.active() else { return };
+/// Draw selection chrome; returns the selection's screen bounds (for the Contextual Task Bar).
+fn draw_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document, layout: &CanvasLayout) -> Option<Rect> {
+    let st = app.session.active()?;
     let sel: &Selection = &st.selection;
+    let mut text_rect = None;
     // Text selection / caret.
     if let Some(ts) = sel.text {
         draw_text_selection(app, painter, xf, doc, layout, ts);
+        let fid = ts.frame.or_else(|| {
+            let cs = app.session.cache.get(doc, ts.story, None);
+            compose::caret(&cs, ts.focus).and_then(|c| cs.frames.get(c.0)).map(|f| f.frame)
+        });
+        if let Some(fid) = fid
+            && let (Some(it), Some((a, _))) = (doc.item(fid), item_canvas_xf(doc, layout, fid))
+        {
+            text_rect = Some(xf.rect(a.transform_rect_bbox(it.bounds())));
+        }
     }
     let mut union: Option<Rect> = None;
     let mut color = Color32::from_rgb(79, 153, 255);
@@ -610,6 +629,7 @@ fn draw_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Docum
             }
         }
     }
+    text_rect.or(union)
 }
 
 /// Port location (canvas): out port at bottom-right, in port at top-left.
@@ -663,7 +683,8 @@ fn draw_ports(
 fn draw_text_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document, layout: &CanvasLayout, ts: designcraft_doc::TextSel) {
     let cs = app.session.cache.get(doc, ts.story, None);
     let range = ts.range();
-    for ft in &cs.frames {
+    let mut runs: Vec<(usize, Affine, Vec<[Point; 4]>, Vec<(usize, usize)>)> = Vec::new();
+    for (fi, ft) in cs.frames.iter().enumerate() {
         let Some((a, _)) = item_canvas_xf(doc, layout, ft.frame) else { continue };
         let Some(it) = doc.item(ft.frame) else { continue };
         let m = a * it.xf;
@@ -671,24 +692,37 @@ fn draw_text_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &
         for poly in path_screen(it, xf, a) {
             painter.add(egui::Shape::line(poly, Stroke::new(1.0, layer_color(doc, it).gamma_multiply(0.6))));
         }
-        if !range.is_empty() {
-            for l in &ft.lines {
-                let s = range.start.max(l.range.start);
-                let e = range.end.min(l.range.end);
-                if s > e || (s == e && !(l.range.end < range.end && e == l.range.end)) {
-                    continue;
+        if range.is_empty() {
+            continue;
+        }
+        let mut quads = Vec::new();
+        let mut glyphs = Vec::new();
+        for (li, l) in ft.lines.iter().enumerate() {
+            let s = range.start.max(l.range.start);
+            let e = range.end.min(l.range.end);
+            if s > e || (s == e && !(l.range.end < range.end && e == l.range.end)) {
+                continue;
+            }
+            let x0 = caret_x(l, s);
+            let x1 = if e == l.range.end && range.end > l.range.end { l.end_x.max(x0 + 3.0) } else { caret_x(l, e) };
+            quads.push([
+                Point::new(x0, l.baseline - l.ascent),
+                Point::new(x1, l.baseline - l.ascent),
+                Point::new(x1, l.baseline + l.descent),
+                Point::new(x0, l.baseline + l.descent),
+            ]);
+            for (gi, g) in l.glyphs.iter().enumerate() {
+                if g.visible && g.len > 0 && g.byte >= s && g.byte < e {
+                    glyphs.push((li, gi));
                 }
-                let x0 = caret_x(l, s);
-                let x1 = if e == l.range.end && range.end > l.range.end { l.end_x.max(x0 + 3.0) } else { caret_x(l, e) };
-                let q = [
-                    xf.to_screen(m * Point::new(x0, l.baseline - l.ascent)),
-                    xf.to_screen(m * Point::new(x1, l.baseline - l.ascent)),
-                    xf.to_screen(m * Point::new(x1, l.baseline + l.descent)),
-                    xf.to_screen(m * Point::new(x0, l.baseline + l.descent)),
-                ];
-                painter.add(egui::Shape::convex_polygon(q.to_vec(), Color32::from_rgba_unmultiplied(80, 140, 255, 110), Stroke::NONE));
             }
         }
+        if !quads.is_empty() {
+            runs.push((fi, m, quads, glyphs));
+        }
+    }
+    if !runs.is_empty() {
+        draw_inverse_highlight(app, painter, xf, doc, &cs, ts.story, &runs);
     }
     if ts.is_caret()
         && let Some((fi, x, bl, asc, desc)) = compose::caret(&cs, ts.focus)
@@ -704,6 +738,95 @@ fn draw_text_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &
         }
         painter.ctx().request_repaint_after(std::time::Duration::from_millis(330));
     }
+}
+
+/// InDesign draws selected text inverted: a black highlight with the selected glyphs in the
+/// inverse of their colour (white for black text). The highlight and glyph outlines are
+/// rasterised with `vello_cpu` into a small screen-space texture over the selection.
+fn draw_inverse_highlight(
+    app: &DesignApp,
+    painter: &egui::Painter,
+    xf: &Xf,
+    doc: &Document,
+    cs: &compose::ComposedStory,
+    story: designcraft_doc::StoryId,
+    runs: &[(usize, Affine, Vec<[Point; 4]>, Vec<(usize, usize)>)],
+) {
+    use designcraft_render::vello_cpu::{self, kurbo, peniko};
+    let ctx = painter.ctx();
+    let ppp = ctx.pixels_per_point();
+    let to_screen = |m: Affine, p: Point| xf.to_screen(m * p);
+    let mut bbox = Rect::NOTHING;
+    for (_, m, quads, _) in runs {
+        for q in quads {
+            for p in q {
+                bbox.extend_with(to_screen(*m, *p));
+            }
+        }
+    }
+    let bbox = bbox.intersect(painter.clip_rect());
+    if !bbox.is_positive() {
+        return;
+    }
+    // Snap to device pixels so the texture maps 1:1.
+    let bbox = Rect::from_min_max(
+        pos2((bbox.min.x * ppp).floor() / ppp, (bbox.min.y * ppp).floor() / ppp),
+        pos2((bbox.max.x * ppp).ceil() / ppp, (bbox.max.y * ppp).ceil() / ppp),
+    );
+    let (w, h) = (((bbox.width() * ppp).round() as u32).clamp(1, 8192), ((bbox.height() * ppp).round() as u32).clamp(1, 8192));
+    let Some(st) = app.session.active() else { return };
+    let key = egui::Id::new(("inverse_sel", st.uid, st.revision, std::sync::Arc::as_ptr(&st.doc) as usize, story.0))
+        .with((runs.iter().map(|r| r.2.len() + r.3.len() * 7919).sum::<usize>(), w, h))
+        .with((bbox.min.x.to_bits(), bbox.min.y.to_bits(), xf.zoom.to_bits(), st.selection.text.map(|t| (t.anchor, t.focus))));
+    let cache_id = egui::Id::new("inverse_sel_tex");
+    let cached: Option<(egui::Id, egui::TextureHandle)> = ctx.data(|d| d.get_temp(cache_id));
+    let tex = match cached {
+        Some((k, t)) if k == key => t,
+        _ => {
+            let view = xf.affine(ppp as f64, bbox.min);
+            let mut rc = vello_cpu::RenderContext::new_with(w as u16, h as u16, vello_cpu::RenderSettings { num_threads: 0, ..Default::default() });
+            rc.set_paint(peniko::Color::from_rgba8(0, 0, 0, 255));
+            for (_, m, quads, _) in runs {
+                rc.set_transform(view * *m);
+                for q in quads {
+                    let mut bp = kurbo::BezPath::new();
+                    bp.move_to(q[0]);
+                    for p in &q[1..] {
+                        bp.line_to(*p);
+                    }
+                    bp.close_path();
+                    rc.fill_path(&bp);
+                }
+            }
+            let db = designcraft_fonts::FontDb::global();
+            for (fi, m, _, glyphs) in runs {
+                let Some(ft) = cs.frames.get(*fi) else { continue };
+                for &(li, gi) in glyphs {
+                    let Some(l) = ft.lines.get(li) else { continue };
+                    let Some(g) = l.glyphs.get(gi) else { continue };
+                    let Some(style) = cs.styles.get(g.style as usize) else { continue };
+                    let Some(c) = doc.resolve_color(&style.fill, style.fill_tint) else { continue };
+                    let [r, gg, b, _] = c.to_rgba8(1.0);
+                    rc.set_paint(peniko::Color::from_rgba8(255 - r, 255 - gg, 255 - b, 255));
+                    let outline = db.outline(&g.face, g.gid);
+                    let skew =
+                        if style.skew != 0.0 { Affine::new([1.0, 0.0, -style.skew.to_radians().tan(), 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
+                    let ga = Affine::translate((g.x, l.baseline + g.y)) * skew * Affine::scale_non_uniform(g.sx, g.sy);
+                    rc.set_transform(view * *m * ga);
+                    rc.fill_path(&outline);
+                }
+            }
+            rc.flush();
+            let mut pm = vello_cpu::Pixmap::new(w as u16, h as u16);
+            let mut res = vello_cpu::Resources::new();
+            rc.render(&mut pm, &mut res);
+            let ci = egui::ColorImage::from_rgba_premultiplied([w as usize, h as usize], pm.data_as_u8_slice());
+            let t = ctx.load_texture("inverse_selection", ci, egui::TextureOptions::NEAREST);
+            ctx.data_mut(|d| d.insert_temp(cache_id, (key, t.clone())));
+            t
+        }
+    };
+    painter.image(tex.id(), bbox, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
 }
 
 fn caret_x(l: &compose::Line, pos: usize) -> f64 {

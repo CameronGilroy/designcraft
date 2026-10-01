@@ -283,3 +283,20 @@ fn export_pdf_of_the_sample() {
     assert!(s.execute("file.exportPdf", &json!({"pages": "9"})).is_err());
     assert!(s.execute("file.exportPdf", &json!({"standard": "bogus"})).is_err());
 }
+
+#[test]
+fn object_set_flags_and_wrap_invert() {
+    let mut s = session();
+    let r = s.execute("frame.create", &json!({"rect": [36, 36, 300, 200]})).unwrap();
+    let id = r["id"].as_u64().unwrap();
+    let item = |s: &Session| s.doc().unwrap().doc.item(designcraft_doc::ItemId(id)).cloned().unwrap();
+    s.execute("object.setFlags", &json!({"ids": [id], "hidden": true})).unwrap();
+    assert!(item(&s).hidden);
+    s.execute("object.setFlags", &json!({"ids": [id], "hidden": false, "locked": true})).unwrap();
+    assert!(!item(&s).hidden && item(&s).locked);
+    s.execute("object.setFlags", &json!({"ids": [id], "locked": false})).unwrap();
+    assert!(!item(&s).locked);
+    s.execute("selection.set", &json!({"ids": [id]})).unwrap();
+    s.execute("object.textWrap", &json!({"mode": "boundingBox", "invert": true})).unwrap();
+    assert!(item(&s).wrap.invert);
+}

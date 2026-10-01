@@ -40,6 +40,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
         "{panel: properties|pages|layers|swatches|paragraphStyles|characterStyles|stroke|character|paragraph|textWrap|links}",
     ),
     ("window.controlBar", "Control", Some("Cmd+Alt+6"), "{}"),
+    ("window.taskBar", "Contextual Task Bar", None, "{}"),
     ("window.toolsDoubleColumn", "Tools: Double Column", None, "{}"),
     (
         "window.workspace",
@@ -167,7 +168,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:view.baselineGrid",
         ],
     ),
-    ("Window", &["ui:window.controlBar", "ui:window.toolsDoubleColumn", "-", "ui:window.panel", "-", "ui:window.brightness"]),
+    ("Window", &["ui:window.controlBar", "ui:window.taskBar", "ui:window.toolsDoubleColumn", "-", "ui:window.panel", "-", "ui:window.brightness"]),
     ("Help", &["cmd:file.newSample"]),
 ];
 
@@ -296,6 +297,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(Value::Null)
         }
         "window.controlBar" => flag(&mut app.ui.control_bar),
+        "window.taskBar" => flag(&mut app.ui.task_bar),
         "window.toolsDoubleColumn" => flag(&mut app.ui.tools_double_column),
         "window.workspace" => {
             let name = p.get("name").and_then(Value::as_str).unwrap_or("Essentials");
@@ -503,6 +505,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "view.textThreads" => app.ui.text_threads,
         "view.hiddenCharacters" => app.ui.hidden_characters,
         "window.controlBar" => app.ui.control_bar,
+        "window.taskBar" => app.ui.task_bar,
         "window.toolsDoubleColumn" => app.ui.tools_double_column,
         "view.togglePreview" => app.ui.screen_mode == crate::ScreenMode::Preview,
         "window.brightness" => params.get("brightness").and_then(Value::as_str) == Some(app.ui.brightness.id()),

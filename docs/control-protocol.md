@@ -26,4 +26,6 @@ Start the app with `--control <port>` (or `DESIGNCRAFT_CONTROL_PORT`). The serve
 | `ui.render` | `{path?, page?, scale?, bleed?}` | Render a page headlessly (PNG; base64 if no path) |
 | `app.open` / `app.save` / `app.export` / `app.quit` | | Files |
 
+Headless window screenshots (locked screen, hidden window): `cargo run -p designcraft-ui-egui --example ui_shot -- script.jsonl`, where each line is one of the requests above, `{"shot": "/abs/out.png"}` or `{"steps": n}` (renders the whole UI offscreen with wgpu).
+
 The MCP server (`designcraft-cli mcp`) wraps the same methods for Claude and other agents.

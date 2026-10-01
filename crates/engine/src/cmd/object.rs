@@ -96,6 +96,31 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("object.unlockAll", "Unlock All on Spread", ["Object"], Some("Cmd+Alt+L"), "{}", has_doc, |s, _| all_flag(s, |i| i.locked = false)),
         cmd!("object.hide", "Hide", ["Object"], Some("Cmd+3"), "{ids?}", has_selection, |s, p| set_flag(s, p, |i| i.hidden = true, true)),
         cmd!("object.showAll", "Show All on Spread", ["Object"], Some("Cmd+Alt+3"), "{}", has_doc, |s, _| all_flag(s, |i| i.hidden = false)),
+        cmd!(
+            "object.setFlags",
+            "Set Visibility / Lock",
+            [],
+            None,
+            "{ids: [id], hidden?: bool, locked?: bool} — Layers panel eye/lock per object",
+            has_doc,
+            |s, p| {
+                let hidden = p.get("hidden").and_then(Value::as_bool);
+                let locked = p.get("locked").and_then(Value::as_bool);
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        if let Some(h) = hidden {
+                            i.hidden = h;
+                        }
+                        if let Some(l) = locked {
+                            i.locked = l;
+                        }
+                    },
+                    hidden == Some(true) || locked == Some(true),
+                )
+            }
+        ),
         cmd!("object.fill", "Fill", [], None, "{swatch, tint?: 0..1, ids?}", has_selection, |s, p| {
             let sw = str_param(p, "swatch").ok_or_else(|| bad("object.fill", "missing swatch"))?.to_string();
             let tint = f64_or(p, "tint", 1.0) as f32;
@@ -210,7 +235,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Text Wrap",
             ["Window"],
             Some("Cmd+Alt+W"),
-            "{mode: none|boundingBox|contour|jumpObject|jumpToNextColumn, offset?: number|[t,l,b,r], ids?}",
+            "{mode: none|boundingBox|contour|jumpObject|jumpToNextColumn, offset?: number|[t,l,b,r], invert?: bool, ids?}",
             has_selection,
             |s, p| {
                 let mode = p.get("mode").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or(designcraft_doc::WrapMode::BoundingBox);
@@ -219,6 +244,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     Some(v) => serde_json::from_value(v.clone()).ok(),
                     None => None,
                 };
+                let invert = p.get("invert").and_then(Value::as_bool);
                 set_flag(
                     s,
                     p,
@@ -226,6 +252,9 @@ pub fn specs() -> Vec<CommandSpec> {
                         i.wrap.mode = mode;
                         if let Some(o) = off {
                             i.wrap.offsets = o;
+                        }
+                        if let Some(v) = invert {
+                            i.wrap.invert = v;
                         }
                     },
                     false,
