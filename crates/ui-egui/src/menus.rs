@@ -183,18 +183,9 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             app.ui.dialog = Some(crate::dialogs::Dialog::new("newDocument", json!({})));
             Ok(Value::Null)
         }
-        "app.openDialog" => {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("open")) {
-                return Some(app.run("file.open", json!({"path": path})));
-            }
-            Ok(Value::Null)
-        }
-        "app.placeDialog" => {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                return Some(app.run("file.place", json!({"path": path})));
-            }
-            Ok(Value::Null)
-        }
+        "app.openDialog" => app.pick_and_open("open"),
+        "app.placeDialog" => app.pick_and_open("place"),
+        "app.save" | "app.saveDialog" if app.services.download.is_some() => download_document(app),
         "app.save" => {
             if app.session.active().is_some_and(|d| d.path.is_some()) {
                 return Some(app.run("file.save", json!({})));
@@ -321,6 +312,18 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         _ => return None,
     })
+}
+
+/// Save by handing the serialized document to the host as a download (web).
+fn download_document(app: &mut DesignApp) -> Result<Value, String> {
+    let name = app.session.active().map(|d| format!("{}.designcraft", d.doc.title)).ok_or("no document")?;
+    let ser = app.run("file.serialize", json!({}))?;
+    let bytes = ser.get("json").and_then(Value::as_str).unwrap_or_default().as_bytes().to_vec();
+    if let Some(download) = app.services.download.as_mut() {
+        download(&name, &bytes);
+    }
+    // Marks the document saved; on the web the engine doesn't touch a file system.
+    app.run("file.saveAs", json!({"path": name}))
 }
 
 fn export_png(app: &mut DesignApp, p: &Value) -> Result<Value, String> {

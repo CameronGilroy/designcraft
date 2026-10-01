@@ -9,11 +9,13 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Text engine: Knuth–Plass paragraph composer and single-line composer, hyphenation, justification, columns, threading across frames and spreads, tabs, bullets/numbering, rules, shading, baseline grid, first-baseline options, vertical justification, wrap exclusions, overset detection, caret/hit testing.
 - Rendering: vello_cpu (SIMD, multithreaded) — pages, items, images with mip levels, gradients, composed text.
 - UI (egui): application bar + menus, Control panel (object and text modes), Tools panel with flyouts, document tabs, rulers, pasteboard, guides (margins, columns, bleed, baseline grid), frame edges, selection handles, text ports and threads, Properties / Pages / Layers dock, Swatches, Styles, Character, Paragraph, Stroke, Text Wrap panels, New Document dialog, ⌘K palette, 4 brightness themes.
-- Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection (basic), Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
+- Pen tool, Direct Selection anchor/handle editing, rotate from corners, Rotate/Scale/Shear tools, Eyedropper, snapping & smart guides, Align/Distribute, Find/Change (text + GREP), Story Editor, Paragraph Style Options, Effects panel, hidden characters, native macOS menu bar, measured InDesign 2026 look (Medium Dark).
+- Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection, Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
 - ~100 commands, all reachable through the JSON control channel; headless CLI rendering to PNG.
 - MCP server (`designcraft-cli mcp [--connect PORT]`, docs/mcp.md): headless engine or the running app; commands, batch, document/story inspection, page renders as images, window screenshots, pointer/keyboard/dialog input.
+- Web build (`apps/designcraft-web`, trunk): the same UI on WebGPU with a WebGL2 fallback; open/place via the browser file picker or drag-and-drop, save/export as downloads.
 
-**Next (in order):** PDF export (krilla, PDF/X-4) · IDML import/export · native format as zip · web build · Pen tool & Direct Selection anchors · Story Editor · Find/Change (+GREP) · tables · Liang hyphenation · smart guides · Links panel + relink · Preflight · TOC/index/footnotes · EPUB.
+**Next (in order):** PDF export (krilla, PDF/X-4) · IDML import/export · native format as zip · tables · dictionary hyphenation · Links panel + relink · Preflight panel · TOC/index/footnotes · EPUB.
 
 ## Milestones
 
