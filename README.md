@@ -43,6 +43,15 @@ cargo xtask ci                                             # fmt, clippy, tests,
 
 Drive a running app: send JSON lines to `127.0.0.1:7979` — see [`docs/control-protocol.md`](docs/control-protocol.md).
 
+### Web
+
+```sh
+cd apps/designcraft-web && trunk build --release          # → dist/web (serve it with any static server)
+cd apps/designcraft-web && trunk serve --release          # http://127.0.0.1:8767
+```
+
+Needs [trunk](https://trunkrs.dev) and the `wasm32-unknown-unknown` target. The same app runs through eframe's web runner on WebGPU, falling back to WebGL2 (`?webgl` forces it; `?sample` opens the sample magazine). Open and Place use the browser's file picker (dropping files works too); Save and Export download the file. The web build has no control channel.
+
 ## Architecture
 
 An engine-first Cargo workspace with enforced layering (`cargo xtask layers`); the egui frontend is a separate crate, so the UI can be swapped without touching the engine.
@@ -56,7 +65,7 @@ An engine-first Cargo workspace with enforced layering (`cargo xtask layers`); t
 | L4 | `tools` (pointer events → commands + overlays) |
 | L5 | `engine` (session, history, command registry) |
 | L6 | `ui-egui` (InDesign-style UI, control channel) |
-| L7 | `apps/designcraft`, `apps/designcraft-cli` |
+| L7 | `apps/designcraft`, `apps/designcraft-cli`, `apps/designcraft-web` |
 
 Status and milestones: **[ROADMAP.md](ROADMAP.md)**. Contributor and agent rules (clean-room, asset policy, quality gates): [`AGENTS.md`](AGENTS.md). Every bundled asset is listed with its licence in [`ASSETS.md`](ASSETS.md).
 

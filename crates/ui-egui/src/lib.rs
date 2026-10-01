@@ -30,6 +30,10 @@ pub use control::{ControlRequest, ControlResponse};
 pub type ReadFn = Box<dyn Fn(&str) -> Result<Vec<u8>, String>>;
 pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
 pub type PickFn = Box<dyn FnMut(&str) -> Option<String>>;
+pub type OpenAsyncFn = Box<dyn FnMut(&str)>;
+pub type DownloadFn = Box<dyn FnMut(&str, &[u8])>;
+/// Files `(name, bytes)` delivered asynchronously by the host (web file picker, dropped files).
+pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 
 /// Platform services injected by the host (desktop or web).
 #[derive(Default)]
@@ -40,6 +44,15 @@ pub struct Services {
     pub pick_save: Option<PickFn>,
     pub read: Option<ReadFn>,
     pub write: Option<WriteFn>,
+    /// Asynchronous open dialog for a purpose (`open`, `place`); the chosen file arrives later
+    /// through [`Services::inbox`]. Used when `pick_open` is unset (web).
+    pub open_async: Option<OpenAsyncFn>,
+    /// Hand bytes to the user as a named file (browser download). When set, Save uses it
+    /// instead of writing to a path.
+    pub download: Option<DownloadFn>,
+    /// Files delivered asynchronously, drained every frame: `.designcraft` → `file.openBytes`,
+    /// anything else → `file.place`.
+    pub inbox: Option<Inbox>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -227,10 +240,7 @@ impl DesignApp {
                 UiRequest::View { params } => canvas::apply_view_request(self, &params),
                 UiRequest::Pick { purpose, params } => {
                     let _ = params;
-                    if let Some(path) = self.services.pick_open.as_mut().and_then(|f| f(&purpose)) {
-                        let cmd = if purpose == "place" { "file.place" } else { "file.open" };
-                        let _ = self.run(cmd, json!({"path": path}));
-                    }
+                    let _ = self.pick_and_open(&purpose);
                 }
             }
         }
@@ -238,6 +248,40 @@ impl DesignApp {
         if let Some(st) = self.session.active() {
             let uid = st.uid;
             self.views.entry(uid).or_default();
+        }
+    }
+
+    /// Ask the host for a file to open (`open`) or place (`place`). Synchronous pickers run the
+    /// command right away; asynchronous ones (web) deliver the file through the inbox.
+    pub fn pick_and_open(&mut self, purpose: &str) -> Result<Value, String> {
+        let cmd = if purpose == "place" { "file.place" } else { "file.open" };
+        if let Some(pick) = self.services.pick_open.as_mut() {
+            return match pick(purpose) {
+                Some(path) => self.run(cmd, json!({"path": path})),
+                None => Ok(Value::Null),
+            };
+        }
+        if let Some(open) = self.services.open_async.as_mut() {
+            open(purpose);
+        }
+        Ok(Value::Null)
+    }
+
+    /// Open or place files delivered through the inbox.
+    fn drain_inbox(&mut self) {
+        let Some(inbox) = self.services.inbox.clone() else { return };
+        let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
+        for (name, bytes) in files {
+            let b64 = designcraft_engine::cmd::base64_encode(&bytes);
+            let r = if name.to_ascii_lowercase().ends_with(".designcraft") {
+                let title = name.rsplit_once('.').map_or(name.as_str(), |(stem, _)| stem);
+                self.run("file.openBytes", json!({"name": title, "base64": b64}))
+            } else {
+                self.run("file.place", json!({"name": name, "base64": b64}))
+            };
+            if let Err(e) = r {
+                self.status(format!("{name}: {e}"));
+            }
         }
     }
 
@@ -266,6 +310,9 @@ impl DesignApp {
         }
         self.last_time = now;
         self.drain_control(ctx);
+        if self.fonts_ready {
+            self.drain_inbox();
+        }
         if !self.synthetic.is_empty() {
             ctx.request_repaint();
         }
