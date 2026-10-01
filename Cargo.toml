@@ -1,0 +1,75 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+default-members = ["crates/*", "apps/designcraft", "apps/designcraft-cli", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+repository = "https://github.com/storytold/designcraft"
+
+[workspace.dependencies]
+# internal
+designcraft-geom = { path = "crates/geom" }
+designcraft-color = { path = "crates/color" }
+designcraft-doc = { path = "crates/doc" }
+designcraft-fonts = { path = "crates/fonts" }
+designcraft-compose = { path = "crates/compose" }
+designcraft-images = { path = "crates/images" }
+designcraft-render = { path = "crates/render" }
+designcraft-pdf = { path = "crates/pdf" }
+designcraft-idml = { path = "crates/idml" }
+designcraft-format = { path = "crates/format" }
+designcraft-tools = { path = "crates/tools" }
+designcraft-engine = { path = "crates/engine" }
+designcraft-ui-egui = { path = "crates/ui-egui" }
+designcraft-mcp = { path = "crates/mcp" }
+designcraft-testkit = { path = "crates/testkit" }
+
+# foundation
+kurbo = { version = "0.13", features = ["serde"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+log = "0.4"
+proptest = "1"
+rayon = "1"
+
+# text / rendering / formats
+skrifa = "0.47"
+harfrust = "0.13"
+vello_cpu = "0.2"
+vello_common = { version = "0.2", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "tiff"] }
+krilla = "0.8"
+quick-xml = "0.38"
+zip = { version = "2.6", default-features = false, features = ["deflate"] }
+
+# ui
+egui = "0.36"
+egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
+eframe = { version = "0.36", default-features = false }
+egui_kittest = "0.36"
+rfd = "0.17"
+arboard = { version = "3.6", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+debug = 0
