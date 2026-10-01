@@ -2,6 +2,7 @@
 
 mod edit;
 mod file;
+mod find;
 mod inspect;
 mod layout;
 mod object;
@@ -106,6 +107,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(style::specs());
         v.extend(layout::specs());
         v.extend(inspect::specs());
+        v.extend(find::specs());
         v
     })
 }

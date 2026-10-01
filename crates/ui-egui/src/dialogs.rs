@@ -26,6 +26,7 @@ impl Dialog {
                 "marginTop": "3p0", "marginBottom": "3p0", "marginInside": "3p0", "marginOutside": "3p0", "bleed": "0p0", "primaryTextFrame": false})
             }
             "goToPage" => json!({"page": 1}),
+            "findChange" => json!({"find": "", "change": "", "grep": false, "caseSensitive": false, "wholeWord": false, "scope": "document"}),
             "textFrameOptions" => json!({"columns": 1, "gutter": "1p0", "inset": "0p0", "verticalJustification": "top"}),
             "documentSetup" => json!({}),
             _ => json!({}),
@@ -93,6 +94,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "goToPage" => "Go to Page",
         "textFrameOptions" => "Text Frame Options",
         "documentSetup" => "Document Setup",
+        "findChange" => "Find/Change",
         _ => "Dialog",
     };
     egui::Modal::new(egui::Id::new("dialog")).show(ctx, |ui| {
@@ -157,6 +159,67 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     text_field(ui, &mut d, "height", 90.0);
                     ui.end_row();
                 });
+            }
+            "findChange" => {
+                ui.horizontal(|ui| {
+                    for (label, grep) in [("Text", false), ("GREP", true)] {
+                        if ui.selectable_label(d.b("grep") == grep, label).clicked() {
+                            d.fields.insert("grep".into(), json!(grep));
+                        }
+                    }
+                });
+                egui::Grid::new("fc").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("Find what:");
+                    text_field(ui, &mut d, "find", 260.0);
+                    ui.end_row();
+                    ui.label("Change to:");
+                    text_field(ui, &mut d, "change", 260.0);
+                    ui.end_row();
+                    ui.label("Search:");
+                    let cur = d.s("scope");
+                    egui::ComboBox::from_id_salt("fcscope").selected_text(&cur).show_ui(ui, |ui| {
+                        for v in ["document", "story", "selection"] {
+                            if ui.selectable_label(cur == v, v).clicked() {
+                                d.fields.insert("scope".into(), json!(v));
+                            }
+                        }
+                    });
+                    ui.end_row();
+                });
+                ui.horizontal(|ui| {
+                    check(ui, &mut d, "caseSensitive", "Case sensitive");
+                    check(ui, &mut d, "wholeWord", "Whole word");
+                });
+                ui.horizontal(|ui| {
+                    let params0 = json!({"find": d.s("find"), "change": d.s("change"), "grep": d.b("grep"), "caseSensitive": d.b("caseSensitive"), "wholeWord": d.b("wholeWord"), "scope": d.s("scope")});
+                    let params = || params0.clone();
+                    if ui.button("Find Next").clicked() {
+                        let r = app.run("find.next", params());
+                        let msg = match r {
+                            Ok(Value::Null) => "No matches".to_string(),
+                            Ok(_) => "Found".to_string(),
+                            Err(e) => e,
+                        };
+                        d.fields.insert("status".into(), json!(msg));
+                    }
+                    if ui.button("Change All").clicked() {
+                        let msg = match app.run("find.change", params()) {
+                            Ok(v) => format!("{} replacement(s) made", v["count"]),
+                            Err(e) => e,
+                        };
+                        d.fields.insert("status".into(), json!(msg));
+                    }
+                    if ui.button("Count").clicked() {
+                        let msg = match app.run("find.find", params()) {
+                            Ok(v) => format!("{} match(es)", v.as_array().map(|a| a.len()).unwrap_or(0)),
+                            Err(e) => e,
+                        };
+                        d.fields.insert("status".into(), json!(msg));
+                    }
+                });
+                if let Some(st) = d.fields.get("status").and_then(Value::as_str) {
+                    ui.label(egui::RichText::new(st).color(crate::theme::Tokens::get(ui.ctx()).text_dim));
+                }
             }
             "goToPage" => {
                 ui.horizontal(|ui| {
@@ -264,6 +327,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             json!({"columns": d.n("columns").unwrap_or(1.0) as u64, "gutter": d.m("gutter").unwrap_or(12.0), "inset": d.m("inset").unwrap_or(0.0), "verticalJustification": d.s("verticalJustification")}),
         ),
         "documentSetup" => app.run("layout.documentSetup", json!({"width": d.m("width"), "height": d.m("height")})),
+        "findChange" => app.run("find.change", json!({"find": d.s("find"), "change": d.s("change"), "grep": d.b("grep"), "caseSensitive": d.b("caseSensitive"), "wholeWord": d.b("wholeWord"), "scope": d.s("scope")})),
         other => Err(format!("unknown dialog {other}")),
     }
 }

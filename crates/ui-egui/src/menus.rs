@@ -13,6 +13,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.save", "Save", Some("Cmd+S"), "{}"),
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
     ("app.palette", "Command Palette…", Some("Cmd+K"), "{}"),
+    ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "{}"),
     ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "{}"),
     ("view.fitPage", "Fit Page in Window", Some("Cmd+0"), "{}"),
@@ -197,6 +198,10 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(Value::Null)
         }
         "app.exportPng" => export_png(app, p),
+        "app.findChange" => {
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("findChange", json!({})));
+            Ok(Value::Null)
+        }
         "app.palette" => {
             app.ui.palette = Some(String::new());
             Ok(Value::Null)
