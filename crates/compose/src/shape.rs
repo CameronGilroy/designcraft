@@ -1,6 +1,7 @@
 //! Paragraph → styled, positioned glyphs (before line breaking).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use designcraft_doc::{Capitalization, CharProps, Kerning, Leading, Position, Story, Styles, story};
 use designcraft_fonts::{Feature, FontDb, FontFace, ShapedGlyph, feature};
@@ -37,6 +38,9 @@ pub struct Glyph {
     pub style: u32,
     /// Unbreakable (No Break).
     pub no_break: bool,
+    /// Width of a word space (U+0020) in this glyph's font, size and horizontal scale: the unit of
+    /// word and letter spacing in justification.
+    pub space: f64,
 }
 
 impl Glyph {
@@ -224,6 +228,54 @@ fn shape_run(
     flush(seg_start, range.end, &seg_face, out);
 }
 
+type WordMap = HashMap<Box<str>, Arc<[ShapedGlyph]>>;
+
+/// Shaped words (font units) by (face, caps, features), then text.
+static WORD_CACHE: Mutex<Vec<((u32, bool, String), WordMap)>> = Mutex::new(Vec::new());
+const WORD_CACHE_MAX: usize = 50_000;
+
+/// Shape `src` word by word through a cache (like a browser's word cache): the text is split
+/// after each U+0020 so repeated words are shaped once. Shaping does not cross word spaces in the
+/// scripts we lay out, and clusters stay byte offsets into `src`.
+fn shape_cached(face: &FontFace, src: &str, feats: &[Feature], caps: bool) -> Vec<ShapedGlyph> {
+    let map = |c: char| if caps { c.to_uppercase().next().unwrap_or(c) } else { c };
+    if src.len() < 2 || !src.contains(' ') {
+        return designcraft_fonts::shape(face, src, feats, map);
+    }
+    let fkey = format!("{feats:?}");
+    let mut out = Vec::with_capacity(src.len());
+    let mut guard = WORD_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let key = (face.id(), caps, fkey);
+    let idx = match guard.iter().position(|e| e.0 == key) {
+        Some(i) => i,
+        None => {
+            if guard.len() > 64 {
+                guard.clear();
+            }
+            guard.push((key, HashMap::new()));
+            guard.len() - 1
+        }
+    };
+    let cache = &mut guard[idx].1;
+    if cache.len() > WORD_CACHE_MAX {
+        cache.clear();
+    }
+    let mut start = 0;
+    for piece in src.split_inclusive(' ') {
+        let glyphs = match cache.get(piece) {
+            Some(g) => g.clone(),
+            None => {
+                let g: Arc<[ShapedGlyph]> = designcraft_fonts::shape(face, piece, feats, map).into();
+                cache.insert(piece.into(), g.clone());
+                g
+            }
+        };
+        out.extend(glyphs.iter().map(|g| ShapedGlyph { cluster: g.cluster + start, ..*g }));
+        start += piece.len();
+    }
+    out
+}
+
 fn metrics(face: &FontFace, p: &CharProps, auto_leading: f64) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
     let (size, shift) = effective_size(p);
     let k = size / face.upem;
@@ -266,6 +318,7 @@ fn control_glyph(face: &Arc<FontFace>, p: &CharProps, auto_leading: f64, style: 
         size,
         style,
         no_break: p.no_break,
+        space: face.advance(face.glyph_for(' ')) * k * p.h_scale,
     }
 }
 
@@ -289,7 +342,8 @@ fn shape_segment(
     let src = replacement.unwrap_or(&text[range.clone()]);
     let caps = p.capitalization == Capitalization::AllCaps;
     let feats = features_for(p);
-    let shaped: Vec<ShapedGlyph> = designcraft_fonts::shape(face, src, &feats, |c| if caps { c.to_uppercase().next().unwrap_or(c) } else { c });
+    let space = face.advance(face.glyph_for(' ')) * k * hs;
+    let shaped: Vec<ShapedGlyph> = shape_cached(face, src, &feats, caps);
     let n = shaped.len();
     for (gi, sg) in shaped.iter().enumerate() {
         let (byte, len, ch) = if replacement.is_some() {
@@ -328,6 +382,7 @@ fn shape_segment(
             size,
             style,
             no_break: p.no_break,
+            space,
         });
     }
 }
