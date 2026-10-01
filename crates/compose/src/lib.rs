@@ -1060,7 +1060,7 @@ fn tab_leader(tab: &Glyph, leader: &str, x: f64, w: f64, origin: f64, out: &mut 
     while at + pw <= end + 0.01 && n < 2000 {
         for &(gid, adv) in &glyphs {
             out.push(PlacedGlyph {
-                face: tab.face.clone(),
+                face: tab.face,
                 gid,
                 x: at,
                 y: -tab.shift + tab.dy,
@@ -1158,7 +1158,7 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
         || g.ch == story::RIGHT_INDENT_TAB
         || g.ch == shape::SOFT_HYPHEN);
     PlacedGlyph {
-        face: g.face.clone(),
+        face: g.face,
         gid: g.gid,
         x: x + g.dx,
         y: -g.shift + g.dy,
