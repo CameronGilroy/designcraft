@@ -16,4 +16,5 @@ path = "src/main.rs"
 designcraft-engine = { workspace = true }
 designcraft-render = { workspace = true }
 designcraft-doc = { workspace = true }
+designcraft-mcp = { workspace = true }
 serde_json = { workspace = true }
