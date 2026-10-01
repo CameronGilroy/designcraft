@@ -11,11 +11,13 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - UI (egui): application bar + menus, Control panel (object and text modes), Tools panel with flyouts, document tabs, rulers, pasteboard, guides (margins, columns, bleed, baseline grid), frame edges, selection handles, text ports and threads, Properties / Pages / Layers dock, Swatches, Styles, Character, Paragraph, Stroke, Text Wrap panels, New Document dialog, ⌘K palette, 4 brightness themes.
 - Pen tool, Direct Selection anchor/handle editing, rotate from corners, Rotate/Scale/Shear tools, Eyedropper, snapping & smart guides, Align/Distribute, Find/Change (text + GREP), Story Editor, Paragraph Style Options, Effects panel, hidden characters, native macOS menu bar, measured InDesign 2026 look (Medium Dark).
 - Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection, Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
+- Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection (basic), Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
+- PDF export (krilla): real selectable text with embedded font subsets, DeviceCMYK/RGB + spot Separations, bleed boxes, crop/bleed marks + page info, pages or spreads, PDF/A-2b (PDF/X-4 output intent pending) — `file.exportPdf`, File › Export PDF…, `designcraft-cli run --export out.pdf`.
 - ~100 commands, all reachable through the JSON control channel; headless CLI rendering to PNG.
 - MCP server (`designcraft-cli mcp [--connect PORT]`, docs/mcp.md): headless engine or the running app; commands, batch, document/story inspection, page renders as images, window screenshots, pointer/keyboard/dialog input.
 - Web build (`apps/designcraft-web`, trunk): the same UI on WebGPU with a WebGL2 fallback; open/place via the browser file picker or drag-and-drop, save/export as downloads.
 
-**Next (in order):** PDF export (krilla, PDF/X-4) · IDML import/export · native format as zip · tables · dictionary hyphenation · Links panel + relink · Preflight panel · TOC/index/footnotes · EPUB.
+**Next (in order):** IDML import/export · dictionary hyphenation · native format as zip · tables · PDF/X-4 output intent, bookmarks, tagged PDF · Links panel + relink · Preflight panel · TOC/index/footnotes · EPUB.
 
 ## Milestones
 
@@ -27,7 +29,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 | M3 | Styles (nested/GREP, bullets, keeps, span columns) | started |
 | M4 | Color & effects | started |
 | M5 | Graphics & links | started |
-| M6 | Files & export (native, IDML, PDF, PNG/JPEG) | next |
+| M6 | Files & export (native, IDML, PDF, PNG/JPEG) | in progress (PDF export) |
 | M7 | Long documents (sections, TOC, index, footnotes, books) | |
 | M8 | Tables | |
 | M9 | Performance (MT composition, tiles) | |

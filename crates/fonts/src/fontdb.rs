@@ -78,6 +78,10 @@ impl FontFace {
     pub fn hb(&self) -> Option<harfrust::FontRef<'_>> {
         harfrust::FontRef::from_index(self.data(), self.index).ok()
     }
+    /// Face index within the font file (collections); 0 for plain fonts.
+    pub fn index(&self) -> u32 {
+        self.index
+    }
     /// Unique id of this face within the process.
     pub fn id(&self) -> u32 {
         self.id
