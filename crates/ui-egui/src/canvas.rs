@@ -177,20 +177,21 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     }
     // Rendered content.
     render_texture(app, ui.ctx(), rect, &xf, &layout, preview);
-    if let Some(tex) = &app.canvas.texture {
+    if let (Some(tex), Some(sh)) = (&app.canvas.texture, app.canvas.shown) {
+        // Place the texture where its region is in the current view (shifted while panning,
+        // scaled while a zoom re-render is pending).
+        let k = (xf.zoom / sh.zoom) as f32;
+        let tl = xf.to_screen(sh.origin);
+        let tex_rect = Rect::from_min_size(tl, vec2(sh.size.0 * k, sh.size.1 * k));
         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
         if preview {
             // Preview: only page areas (trim) show content.
             for slot in &layout.slots {
                 let r = xf.rect(slot.bounds);
-                let ruv = Rect::from_min_max(
-                    pos2((r.min.x - rect.min.x) / rect.width(), (r.min.y - rect.min.y) / rect.height()),
-                    pos2((r.max.x - rect.min.x) / rect.width(), (r.max.y - rect.min.y) / rect.height()),
-                );
-                painter.with_clip_rect(r.intersect(rect)).image(tex.id(), r, ruv, Color32::WHITE);
+                painter.with_clip_rect(r.intersect(rect)).image(tex.id(), tex_rect, uv, Color32::WHITE);
             }
         } else {
-            painter.image(tex.id(), rect, uv, Color32::WHITE);
+            painter.image(tex.id(), tex_rect, uv, Color32::WHITE);
         }
     }
     let hair = 1.0 / ui.ctx().pixels_per_point();
@@ -240,29 +241,112 @@ fn cursor_icon(c: Cursor) -> egui::CursorIcon {
     }
 }
 
+/// Keep the canvas texture current. Panning inside the overscanned region just shifts the
+/// texture; zooming shows the old texture scaled until the background render arrives; document
+/// edits render synchronously so editing never lags.
 fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf, layout: &CanvasLayout, preview: bool) {
     let Some(st) = app.session.active() else { return };
     let ppp = ctx.pixels_per_point() as f64;
-    let w = (rect.width() as f64 * ppp).round().max(1.0) as u32;
-    let h = (rect.height() as f64 * ppp).round().max(1.0) as u32;
-    let doc_ptr = std::sync::Arc::as_ptr(&st.doc) as u64;
-    let key = (st.uid, doc_ptr, xf.zoom.to_bits(), xf.origin.x.to_bits() ^ xf.origin.y.to_bits().rotate_left(17), st.revision, w, h, preview as u8);
-    if app.canvas.key == Some(key) && app.canvas.texture.is_some() {
+    let doc_key = (st.uid, std::sync::Arc::as_ptr(&st.doc) as u64, st.revision, preview);
+    // Overscan: 25% of the viewport on every side.
+    let (ow, oh) = (rect.width() * 0.25, rect.height() * 0.25);
+    let want = |origin: Point| crate::Shown {
+        doc: doc_key,
+        origin: Point::new(origin.x - ow as f64 / xf.zoom, origin.y - oh as f64 / xf.zoom),
+        zoom: xf.zoom,
+        size: (rect.width() + 2.0 * ow, rect.height() + 2.0 * oh),
+    };
+    let target = want(xf.origin);
+    // Does the current texture cover the viewport at this zoom and document state?
+    let covers = |s: &crate::Shown| {
+        s.doc == doc_key && (s.zoom - xf.zoom).abs() < 1e-9 && {
+            let x0 = (xf.origin.x - s.origin.x) * s.zoom;
+            let y0 = (xf.origin.y - s.origin.y) * s.zoom;
+            x0 >= -0.5 && y0 >= -0.5 && x0 + rect.width() as f64 <= s.size.0 as f64 + 0.5 && y0 + rect.height() as f64 <= s.size.1 as f64 + 0.5
+        }
+    };
+    // Collect finished background renders.
+    #[cfg(not(target_arch = "wasm32"))]
+    if let (Some(w), Some((tok, shown))) = (app.canvas.worker.as_ref(), app.canvas.pending)
+        && let Some(done) = w.poll()
+        && done.token == tok
+    {
+        upload(app, ctx, done.image);
+        app.canvas.shown = Some(shown);
+        app.canvas.pending = None;
+        app.perf.render_ms = done.ms;
+    }
+    if app.canvas.shown.is_some_and(|s| covers(&s)) {
         return;
     }
-    let t0 = crate::now_ms();
-    let placed: Vec<designcraft_render::Placed> =
-        layout.slots.iter().map(|s| designcraft_render::Placed { spread: s.spread, offset: s.offset }).collect();
-    let view = xf.affine(ppp, rect.min);
-    let opts = designcraft_render::RenderOptions { printing_only: preview, greek_below_px: 3.0 * ppp, ..Default::default() };
-    let img = app.canvas.renderer.render(&st.doc, &app.session.cache, &placed, w, h, view, &opts);
-    let ci = egui::ColorImage::from_rgba_premultiplied([w as usize, h as usize], &img.pixels);
+    let doc_changed = app.canvas.shown.is_none_or(|s| s.doc != doc_key);
+    let zoom_same = app.canvas.shown.is_some_and(|s| (s.zoom - xf.zoom).abs() < 1e-9);
+    let job = |app: &DesignApp| {
+        let st = app.session.active().expect("doc");
+        let placed: Vec<designcraft_render::Placed> =
+            layout.slots.iter().map(|s| designcraft_render::Placed { spread: s.spread, offset: s.offset }).collect();
+        let w = (target.size.0 as f64 * ppp).round().max(1.0) as u32;
+        let h = (target.size.1 as f64 * ppp).round().max(1.0) as u32;
+        let view = Affine::scale(ppp) * Affine::scale(xf.zoom) * Affine::translate((-target.origin.x, -target.origin.y));
+        let opts = designcraft_render::RenderOptions { printing_only: preview, greek_below_px: 3.0 * ppp, ..Default::default() };
+        (st.doc.clone(), placed, w, h, view, opts)
+    };
+    // Synchronous path: document edits (keep editing crisp), first frame, or no worker.
+    #[cfg(not(target_arch = "wasm32"))]
+    if !app.canvas.worker_started {
+        app.canvas.worker_started = true;
+        app.canvas.worker = render_worker_spawn(ctx);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let has_worker = app.canvas.worker.is_some();
+    #[cfg(target_arch = "wasm32")]
+    let has_worker = false;
+    if !has_worker || app.canvas.shown.is_none() || (doc_changed && zoom_same) {
+        let t0 = crate::now_ms();
+        let (doc, placed, w, h, view, opts) = job(app);
+        let img = app.canvas.renderer.render(&doc, &app.session.cache, &placed, w, h, view, &opts);
+        upload(app, ctx, img);
+        app.canvas.shown = Some(target);
+        app.canvas.pending = None;
+        app.perf.render_ms = crate::now_ms() - t0;
+        return;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Already rendering this view?
+        if app.canvas.pending.is_some_and(|(_, p)| {
+            p.doc == doc_key && (p.zoom - xf.zoom).abs() < 1e-9 && {
+                let x0 = (xf.origin.x - p.origin.x) * p.zoom;
+                let y0 = (xf.origin.y - p.origin.y) * p.zoom;
+                x0 >= 0.0 && y0 >= 0.0 && x0 + rect.width() as f64 <= p.size.0 as f64 && y0 + rect.height() as f64 <= p.size.1 as f64
+            }
+        }) {
+            return;
+        }
+        let (doc, placed, w, h, view, opts) = job(app);
+        app.canvas.token += 1;
+        let token = app.canvas.token;
+        if let Some(wk) = app.canvas.worker.as_ref() {
+            wk.submit(crate::render_worker::Job { token, doc, cache: app.session.cache.clone(), placed, w, h, view, opts });
+        }
+        app.canvas.pending = Some((token, target));
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn render_worker_spawn(ctx: &egui::Context) -> Option<crate::render_worker::Worker> {
+    if std::env::var_os("DESIGNCRAFT_SYNC_RENDER").is_some() {
+        return None;
+    }
+    crate::render_worker::Worker::spawn(ctx.clone())
+}
+
+fn upload(app: &mut DesignApp, ctx: &egui::Context, img: designcraft_render::Rendered) {
+    let ci = egui::ColorImage::from_rgba_premultiplied([img.width as usize, img.height as usize], &img.pixels);
     match &mut app.canvas.texture {
         Some(tex) => tex.set(ci, egui::TextureOptions::LINEAR),
         None => app.canvas.texture = Some(ctx.load_texture("canvas", ci, egui::TextureOptions::LINEAR)),
     }
-    app.canvas.key = Some(key);
-    app.perf.render_ms = crate::now_ms() - t0;
 }
 
 fn dashed(painter: &egui::Painter, a: Pos2, b: Pos2, stroke: Stroke, dash: f32, gap: f32) {
