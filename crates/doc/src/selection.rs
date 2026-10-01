@@ -3,6 +3,25 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{ItemId, StoryId};
+use crate::table::CellRange;
+
+/// A table cell: the table (in the selection's story) and the owning cell's grid position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellAddr {
+    pub table: u64,
+    pub row: usize,
+    pub col: usize,
+}
+
+/// Selected table cells (Table > Select, dragging across cells).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableSel {
+    pub story: StoryId,
+    pub table: u64,
+    pub range: CellRange,
+}
 
 /// A caret or text range in a story. `anchor` stays put while `focus` moves (Shift-arrows).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,11 +33,14 @@ pub struct TextSel {
     /// The frame the caret is shown in (for carets at frame boundaries).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<ItemId>,
+    /// Text in a table cell: `anchor`/`focus` index the cell's story instead of `story`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell: Option<CellAddr>,
 }
 
 impl TextSel {
     pub fn caret(story: StoryId, pos: usize) -> Self {
-        TextSel { story, anchor: pos, focus: pos, frame: None }
+        TextSel { story, anchor: pos, focus: pos, frame: None, cell: None }
     }
     pub fn range(&self) -> std::ops::Range<usize> {
         self.anchor.min(self.focus)..self.anchor.max(self.focus)
@@ -41,6 +63,9 @@ pub struct Selection {
     pub anchors: Vec<(ItemId, usize, usize)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<TextSel>,
+    /// Selected table cells.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cells: Option<TableSel>,
     /// Key object for Align.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<ItemId>,
@@ -48,7 +73,7 @@ pub struct Selection {
 
 impl Selection {
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty() && self.text.is_none()
+        self.items.is_empty() && self.text.is_none() && self.cells.is_none()
     }
     pub fn len(&self) -> usize {
         self.items.len()

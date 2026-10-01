@@ -82,8 +82,9 @@ fn apply_para(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let targets = super::text::format_targets_pub(s);
     s.edit(|d, _| {
-        for (sid, r) in &targets {
-            if let Some(st) = d.story_mut(*sid) {
+        for t in &targets {
+            let r = &t.range;
+            if let Some(st) = d.text_story_mut(t.story, t.cell) {
                 st.format_paras(r.clone(), |f| {
                     f.style = name.clone();
                     if clear {
@@ -108,9 +109,9 @@ fn apply_char(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let targets = super::text::format_targets_pub(s);
     s.edit(|d, _| {
-        for (sid, r) in &targets {
-            if let Some(st) = d.story_mut(*sid) {
-                st.format_chars(r.clone(), |f| f.style = name.clone());
+        for t in &targets {
+            if let Some(st) = d.text_story_mut(t.story, t.cell) {
+                st.format_chars(t.range.clone(), |f| f.style = name.clone());
             }
         }
         ok()

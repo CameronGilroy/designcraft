@@ -13,6 +13,7 @@ mod object;
 pub mod preflight;
 pub mod spelling;
 mod style;
+pub mod table;
 pub mod text;
 mod toc;
 mod variables;
@@ -115,6 +116,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(object::specs());
         v.extend(text::specs());
         v.extend(style::specs());
+        v.extend(table::specs());
         v.extend(layout::specs());
         v.extend(inspect::specs());
         v.extend(find::specs());

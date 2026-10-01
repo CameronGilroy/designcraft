@@ -26,6 +26,7 @@ impl Dialog {
                 "marginTop": "3p0", "marginBottom": "3p0", "marginInside": "3p0", "marginOutside": "3p0", "bleed": "0p0", "primaryTextFrame": false})
             }
             "goToPage" => json!({"page": 1}),
+            "insertTable" => json!({"bodyRows": 4, "columns": 4, "headerRows": 0, "footerRows": 0}),
             "findChange" => json!({"find": "", "change": "", "grep": false, "caseSensitive": false, "wholeWord": false, "scope": "document"}),
             "textFrameOptions" => json!({"columns": 1, "gutter": "1p0", "inset": "0p0", "verticalJustification": "top"}),
             "documentSetup" => json!({}),
@@ -95,6 +96,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "newDocument" => "New Document",
         "frameSize" => "Rectangle",
         "goToPage" => "Go to Page",
+        "insertTable" => "Create Table",
         "textFrameOptions" => "Text Frame Options",
         "documentSetup" => "Document Setup",
         "findChange" => "Find/Change",
@@ -232,6 +234,21 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     text_field(ui, &mut d, "page", 80.0);
                 });
             }
+            "insertTable" => {
+                ui.label(egui::RichText::new("Table Dimensions").font(semibold(12.0)));
+                egui::Grid::new("ins_table").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("Body Rows");
+                    text_field(ui, &mut d, "bodyRows", 60.0);
+                    ui.label("Columns");
+                    text_field(ui, &mut d, "columns", 60.0);
+                    ui.end_row();
+                    ui.label("Header Rows");
+                    text_field(ui, &mut d, "headerRows", 60.0);
+                    ui.label("Footer Rows");
+                    text_field(ui, &mut d, "footerRows", 60.0);
+                    ui.end_row();
+                });
+            }
             "textFrameOptions" => {
                 egui::Grid::new("tfo").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     ui.label("Number of columns");
@@ -327,6 +344,11 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             crate::canvas::go_to_page(app, (d.n("page").unwrap_or(1.0) as usize).saturating_sub(1));
             Ok(Value::Null)
         }
+        "insertTable" => app.run(
+            "table.insert",
+            json!({"rows": d.n("bodyRows").unwrap_or(4.0).max(1.0) as u64, "cols": d.n("columns").unwrap_or(4.0).max(1.0) as u64,
+                "headerRows": d.n("headerRows").unwrap_or(0.0).max(0.0) as u64, "footerRows": d.n("footerRows").unwrap_or(0.0).max(0.0) as u64}),
+        ),
         "textFrameOptions" => app.run(
             "object.textFrameOptions",
             json!({"columns": d.n("columns").unwrap_or(1.0) as u64, "gutter": d.m("gutter").unwrap_or(12.0), "inset": d.m("inset").unwrap_or(0.0), "verticalJustification": d.s("verticalJustification")}),

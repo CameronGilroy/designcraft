@@ -21,6 +21,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     ("character", "Character", "panel-character"),
     ("paragraph", "Paragraph", "panel-paragraph"),
     ("textWrap", "Text Wrap", "panel-wrap"),
+    ("table", "Table", "panel-table"),
     ("align", "Align", "panel-align"),
     ("links", "Links", "panel-links"),
     ("info", "Info", "panel-info"),
@@ -128,6 +129,7 @@ pub fn flyout(app: &mut DesignApp, ctx: &egui::Context) {
                     "effects" => panels::properties::effects_panel(app, ui),
                     "links" => panels::properties::links_panel(app, ui),
                     "preflight" => panels::properties::preflight_panel(app, ui),
+                    "table" => panels::table::show(app, ui),
                     _ => panels::properties::info_panel(app, ui),
                 });
             });

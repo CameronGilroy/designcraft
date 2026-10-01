@@ -17,6 +17,7 @@ pub mod page;
 pub mod selection;
 pub mod story;
 pub mod styles;
+pub mod table;
 pub mod vars;
 
 use std::collections::BTreeMap;
@@ -32,6 +33,7 @@ pub use page::*;
 pub use selection::*;
 pub use story::*;
 pub use styles::*;
+pub use table::*;
 
 use designcraft_color::Swatch;
 use designcraft_geom::Unit;

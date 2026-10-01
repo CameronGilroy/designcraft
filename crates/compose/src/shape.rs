@@ -191,6 +191,7 @@ fn shape_run(
                 | story::PAGE_BREAK
                 | story::INDENT_HERE
                 | story::RIGHT_INDENT_TAB
+                | story::TABLE_ANCHOR
         ) || designcraft_doc::vars::var_index(c).is_some();
         if special {
             flush(seg_start, i, &seg_face, out);
@@ -218,7 +219,7 @@ fn shape_run(
                 _ => {
                     // Zero-width control glyph carrying metrics (tabs get their width at line layout).
                     let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
-                    if c == '\t' || c == story::RIGHT_INDENT_TAB {
+                    if c == '\t' || c == story::RIGHT_INDENT_TAB || c == story::TABLE_ANCHOR {
                         g.adv = 0.0;
                     }
                     out.push(g);

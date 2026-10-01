@@ -196,7 +196,7 @@ fn find_next(s: &mut Session, p: &Value) -> Result<Value> {
     let Some((sid, a, b)) = hit else { return Ok(Value::Null) };
     let frame = st.doc.story(sid).and_then(|x| x.frames.first().copied());
     let stm = s.doc_mut()?;
-    stm.selection = designcraft_doc::Selection::text(TextSel { story: sid, anchor: a, focus: b, frame });
+    stm.selection = designcraft_doc::Selection::text(TextSel { story: sid, anchor: a, focus: b, frame, cell: None });
     stm.revision += 1;
     let _ = story::PAGE_NUMBER;
     Ok(json!({"story": sid.0, "start": a, "end": b}))

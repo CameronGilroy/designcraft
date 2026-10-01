@@ -647,4 +647,39 @@ mod tests {
         let _ = fid;
         assert!(r.stats.glyphs >= 15);
     }
+
+    #[test]
+    fn renders_tables() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 336.0, 400.0), lid, "", ParaFormat::default()).unwrap();
+        let mut t = designcraft_doc::Table::new(5, 3, 3, 1, 0, 300.0);
+        for c in 0..3 {
+            let cell = t.cell_mut(0, c).unwrap();
+            cell.fill = "C=100 M=0 Y=0 K=0".into();
+            cell.text.insert(0, "Head");
+            t.cell_mut(2, c).unwrap().text.insert(0, "WWWWWWWW");
+        }
+        d.story_mut(sid).unwrap().insert_table(0, t);
+        let cache = Cache::new();
+        let cs = cache.get(&d, sid, None);
+        let tf = &cs.frames[0].tables[0];
+        let head = tf.cell(0, 1).unwrap().rect;
+        let body = tf.cell(2, 0).unwrap().rect;
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let img = r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions::default()).unwrap();
+        // Header fill (cyan) near the right edge of the middle header cell.
+        let c = img.pixel((head.x1 - 3.0) as u32, (head.y0 + 3.0) as u32);
+        assert!(c[0] < 80 && c[2] > 150, "{c:?}");
+        // The table border (black) on the left edge.
+        let e = img.pixel(body.x0.round() as u32, body.center().y as u32);
+        assert!(e[0] < 200, "{e:?}");
+        // Cell text drew dark pixels inside the body cell.
+        let dark = ((body.x0 + 5.0) as u32..(body.x1 - 2.0) as u32)
+            .flat_map(|x| ((body.y0 + 2.0) as u32..(body.y1 - 2.0) as u32).map(move |y| (x, y)))
+            .filter(|&(x, y)| img.pixel(x, y)[0] < 100)
+            .count();
+        assert!(dark > 30, "cell text pixels: {dark}");
+    }
 }

@@ -285,6 +285,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.line(&[(3.0, 10.0), (5.0, 10.0)]);
             pen.line(&[(15.0, 10.0), (17.0, 10.0)]);
         }
+        "panel-table" => {
+            pen.frect(3.0, 3.0, 17.0, 7.5);
+            pen.rect(3.0, 3.0, 17.0, 17.0);
+            pen.line(&[(3.0, 12.0), (17.0, 12.0)]);
+            pen.line(&[(10.0, 3.0), (10.0, 17.0)]);
+        }
         "panel-align" => {
             pen.line(&[(3.0, 3.0), (3.0, 17.0)]);
             pen.frect(5.0, 5.0, 15.0, 9.0);

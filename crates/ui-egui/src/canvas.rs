@@ -520,7 +520,7 @@ fn draw_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Docum
     let sel: &Selection = &st.selection;
     // Text selection / caret.
     if let Some(ts) = sel.text {
-        draw_text_selection(app, painter, xf, doc, layout, ts);
+        draw_text_selection(app, painter, xf, doc, layout, ts, sel.cells);
     }
     let mut union: Option<Rect> = None;
     let mut color = Color32::from_rgb(79, 153, 255);
@@ -660,9 +660,40 @@ fn draw_ports(
     }
 }
 
-fn draw_text_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document, layout: &CanvasLayout, ts: designcraft_doc::TextSel) {
+fn draw_text_selection(
+    app: &DesignApp,
+    painter: &egui::Painter,
+    xf: &Xf,
+    doc: &Document,
+    layout: &CanvasLayout,
+    ts: designcraft_doc::TextSel,
+    cells: Option<designcraft_doc::TableSel>,
+) {
     let cs = app.session.cache.get(doc, ts.story, None);
     let range = ts.range();
+    // Selected table cells: tint every selected cell.
+    if let Some(sel) = cells.filter(|c| c.story == ts.story) {
+        for ft in &cs.frames {
+            let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { continue };
+            let m = a * it.xf;
+            for t in ft.tables.iter().filter(|t| t.table == sel.table) {
+                for c in t.cells.iter().filter(|c| sel.range.contains(c.row, c.col)) {
+                    let q = [
+                        xf.to_screen(m * Point::new(c.rect.x0, c.rect.y0)),
+                        xf.to_screen(m * Point::new(c.rect.x1, c.rect.y0)),
+                        xf.to_screen(m * Point::new(c.rect.x1, c.rect.y1)),
+                        xf.to_screen(m * Point::new(c.rect.x0, c.rect.y1)),
+                    ];
+                    painter.add(egui::Shape::convex_polygon(q.to_vec(), Color32::from_rgba_unmultiplied(80, 140, 255, 90), Stroke::NONE));
+                }
+            }
+        }
+        return;
+    }
+    if let Some(cell) = ts.cell {
+        draw_cell_selection(app, painter, xf, doc, layout, &cs, ts, cell);
+        return;
+    }
     for ft in &cs.frames {
         let Some((a, _)) = item_canvas_xf(doc, layout, ft.frame) else { continue };
         let Some(it) = doc.item(ft.frame) else { continue };
@@ -701,6 +732,58 @@ fn draw_text_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &
             let p0 = xf.to_screen(m * Point::new(x, bl - asc));
             let p1 = xf.to_screen(m * Point::new(x, bl + desc));
             painter.line_segment([p0, p1], Stroke::new(1.0, Color32::BLACK));
+        }
+        painter.ctx().request_repaint_after(std::time::Duration::from_millis(330));
+    }
+}
+
+/// Caret / text highlight inside a table cell (the cell's lines are offset by the cell origin).
+#[allow(clippy::too_many_arguments)]
+fn draw_cell_selection(
+    _app: &DesignApp,
+    painter: &egui::Painter,
+    xf: &Xf,
+    doc: &Document,
+    layout: &CanvasLayout,
+    cs: &compose::ComposedStory,
+    ts: designcraft_doc::TextSel,
+    cell: designcraft_doc::CellAddr,
+) {
+    let Some((fi, _, pc)) = compose::find_cell(cs, cell.table, cell.row, cell.col) else { return };
+    let Some(ft) = cs.frames.get(fi) else { return };
+    let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { return };
+    let m = a * it.xf * designcraft_geom::Affine::translate(pc.origin.to_vec2());
+    let range = ts.range();
+    if !range.is_empty()
+        && let Some(cft) = pc.text.frames.first()
+    {
+        for l in &cft.lines {
+            let s = range.start.max(l.range.start);
+            let e = range.end.min(l.range.end);
+            if s > e || (s == e && !(l.range.end < range.end && e == l.range.end)) {
+                continue;
+            }
+            let x0 = caret_x(l, s);
+            let x1 = if e == l.range.end && range.end > l.range.end { l.end_x.max(x0 + 3.0) } else { caret_x(l, e) };
+            let q = [
+                xf.to_screen(m * Point::new(x0, l.baseline - l.ascent)),
+                xf.to_screen(m * Point::new(x1, l.baseline - l.ascent)),
+                xf.to_screen(m * Point::new(x1, l.baseline + l.descent)),
+                xf.to_screen(m * Point::new(x0, l.baseline + l.descent)),
+            ];
+            painter.add(egui::Shape::convex_polygon(q.to_vec(), Color32::from_rgba_unmultiplied(80, 140, 255, 110), Stroke::NONE));
+        }
+    }
+    if ts.is_caret()
+        && let Some((_, x, bl, asc, desc)) = compose::cell_caret(cs, cell.table, cell.row, cell.col, ts.focus)
+    {
+        let m = a * it.xf;
+        let blink = (painter.ctx().input(|i| i.time) * 1.6) as i64 % 2 == 0;
+        if blink {
+            painter.line_segment(
+                [xf.to_screen(m * Point::new(x, bl - asc)), xf.to_screen(m * Point::new(x, bl + desc))],
+                Stroke::new(1.0, Color32::BLACK),
+            );
         }
         painter.ctx().request_repaint_after(std::time::Duration::from_millis(330));
     }
@@ -1010,7 +1093,7 @@ fn draw_hidden_characters(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc
 pub fn selected_text(app: &DesignApp) -> Option<String> {
     let st = app.session.active()?;
     let t = st.selection.text?;
-    let story = st.doc.story(t.story)?;
+    let story = st.doc.text_story(t.story, t.cell)?;
     let s = story.slice(t.range());
     if s.is_empty() {
         return None;

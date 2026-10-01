@@ -1239,6 +1239,15 @@ impl<'a> Ex<'a> {
                 .attr("StoryOrientation", "Horizontal")
                 .attr("StoryDirection", "LeftToRightDirection"),
         );
+        for psr in self.story_paras(s) {
+            el.push(psr);
+        }
+        el
+    }
+
+    /// `ParagraphStyleRange`s of a story (or a table cell's story).
+    fn story_paras(&mut self, s: &Story) -> Vec<El> {
+        let mut paras = Vec::new();
         let ranges = s.para_ranges();
         let n = ranges.len();
         for (pi, r) in ranges.into_iter().enumerate() {
@@ -1295,6 +1304,12 @@ impl<'a> Ex<'a> {
                     if let Some(code) = ace {
                         flush_text(&mut cur, &mut pending);
                         pending.push(Node::Pi("ACE".into(), code.into()));
+                    } else if ch == st::TABLE_ANCHOR {
+                        flush_text(&mut cur, &mut pending);
+                        flush_content(&mut pending, &mut out);
+                        if let Some(t) = s.para_table(pi) {
+                            out.push(Node::El(self.table_el(t)));
+                        }
                     } else if let Some(bt) = brk {
                         flush_text(&mut cur, &mut pending);
                         flush_content(&mut pending, &mut out);
@@ -1326,7 +1341,98 @@ impl<'a> Ex<'a> {
                     psr.push(c);
                 }
             }
-            el.push(psr);
+            paras.push(psr);
+        }
+        paras
+    }
+
+    fn cell_stroke_attrs(&self, el: &mut El, prefix: &str, s: &designcraft_doc::CellStroke) {
+        el.set(&format!("{prefix}StrokeWeight"), num(s.weight));
+        el.set(&format!("{prefix}StrokeColor"), self.sw(&s.color));
+        el.set(&format!("{prefix}StrokeTint"), pct(s.tint as f64));
+        el.set(&format!("{prefix}StrokeType"), names::stroke_type_out(&s.kind));
+    }
+
+    /// `<Table>` with rows, columns and cells (cell names are `column:row`).
+    fn table_el(&mut self, t: &designcraft_doc::Table) -> El {
+        let id = uid(t.id);
+        let (h, f) = (t.header_rows(), t.footer_rows());
+        let mut el = El::new("Table")
+            .attr("Self", &id)
+            .attr("HeaderRowCount", h)
+            .attr("FooterRowCount", f)
+            .attr("BodyRowCount", t.nrows() - h - f)
+            .attr("ColumnCount", t.ncols())
+            .attr("AppliedTableStyle", "TableStyle/$ID/[Basic Table]")
+            .attr("TableDirection", "LeftToRightDirection")
+            .attr("SpaceBefore", num(t.options.space_before))
+            .attr("SpaceAfter", num(t.options.space_after))
+            .attr("HeaderBehavior", if t.options.repeat_header { "RepeatOnEachTextColumn" } else { "RepeatOnce" })
+            .attr("FooterBehavior", if t.options.repeat_footer { "RepeatOnEachTextColumn" } else { "RepeatOnce" });
+        for side in ["Top", "Left", "Bottom", "Right"] {
+            self.cell_stroke_attrs(&mut el, &format!("{side}Border"), &t.options.border);
+        }
+        for (kind, alt) in [("Row", &t.options.alt_rows), ("Column", &t.options.alt_cols)] {
+            if let Some(a) = alt {
+                el.set(&format!("Start{kind}FillColor"), self.sw(&a.first_color));
+                el.set(&format!("Start{kind}FillCount"), a.first);
+                el.set(&format!("Start{kind}FillTint"), pct(a.first_tint as f64));
+                el.set(&format!("End{kind}FillColor"), self.sw(&a.next_color));
+                el.set(&format!("End{kind}FillCount"), a.next);
+                el.set(&format!("End{kind}FillTint"), pct(a.next_tint as f64));
+                el.set(&format!("SkipFirstAlternatingFill{kind}s"), a.skip_first);
+                el.set(&format!("SkipLastAlternatingFill{kind}s"), a.skip_last);
+            }
+        }
+        for (r, row) in t.rows.iter().enumerate() {
+            let exact = row.mode == designcraft_doc::RowHeightMode::Exactly;
+            el.push(
+                El::new("Row")
+                    .attr("Self", format!("{id}Row{r}"))
+                    .attr("Name", r)
+                    .attr("SingleRowHeight", num(row.height.max(3.0)))
+                    .attr("MinimumHeight", num(row.height.max(0.0)))
+                    .attr("AutoGrow", bool_s(!exact)),
+            );
+        }
+        for (c, col) in t.columns.iter().enumerate() {
+            el.push(El::new("Column").attr("Self", format!("{id}Column{c}")).attr("Name", c).attr("SingleColumnWidth", num(col.width)));
+        }
+        let owners = t.owners();
+        for r in 0..t.nrows() {
+            for c in 0..t.ncols() {
+                if owners[r * t.ncols() + c] != (r, c) {
+                    continue;
+                }
+                let cell = t.cell(r, c).expect("in range");
+                let vj = match cell.vj {
+                    designcraft_doc::VerticalJustification::Top => "TopAlign",
+                    designcraft_doc::VerticalJustification::Center => "CenterAlign",
+                    designcraft_doc::VerticalJustification::Bottom => "BottomAlign",
+                    designcraft_doc::VerticalJustification::Justify => "JustifyAlign",
+                };
+                let mut ce = El::new("Cell")
+                    .attr("Self", format!("{id}i{}", r * t.ncols() + c))
+                    .attr("Name", format!("{c}:{r}"))
+                    .attr("RowSpan", cell.row_span)
+                    .attr("ColumnSpan", cell.col_span)
+                    .attr("AppliedCellStyle", "CellStyle/$ID/[None]")
+                    .attr("FillColor", self.sw(&cell.fill))
+                    .attr("FillTint", pct(cell.fill_tint as f64))
+                    .attr("TopInset", num(cell.insets[0]))
+                    .attr("LeftInset", num(cell.insets[1]))
+                    .attr("BottomInset", num(cell.insets[2]))
+                    .attr("RightInset", num(cell.insets[3]))
+                    .attr("VerticalJustification", vj)
+                    .attr("RotationAngle", num(cell.rotation));
+                for (i, side) in ["TopEdge", "LeftEdge", "BottomEdge", "RightEdge"].iter().enumerate() {
+                    self.cell_stroke_attrs(&mut ce, side, &cell.strokes[i]);
+                }
+                for psr in self.story_paras(&cell.text) {
+                    ce.push(psr);
+                }
+                el.push(ce);
+            }
         }
         el
     }

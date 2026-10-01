@@ -255,3 +255,5 @@ pub(crate) use push_undo as record_undo;
 mod tests;
 #[cfg(test)]
 mod tests_idml;
+#[cfg(test)]
+mod tests_table;

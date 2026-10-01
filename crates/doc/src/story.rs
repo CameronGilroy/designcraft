@@ -9,12 +9,17 @@
 //!
 //! Special characters: `\t` tab, `\u{2028}` forced line break, [`PAGE_NUMBER`], [`SECTION_MARKER`],
 //! [`COLUMN_BREAK`], [`FRAME_BREAK`], [`PAGE_BREAK`], `\u{AD}` discretionary hyphen,
-//! `\u{2011}` non-breaking hyphen, `\u{A0}` non-breaking space, [`INDENT_HERE`], [`RIGHT_INDENT_TAB`].
+//! `\u{2011}` non-breaking hyphen, `\u{A0}` non-breaking space, [`INDENT_HERE`], [`RIGHT_INDENT_TAB`],
+//! [`TABLE_ANCHOR`] (a table, see [`crate::table`]).
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::attrs::{CharAttrs, ParaAttrs};
 use crate::ids::{ItemId, StoryId};
+use crate::table::Table;
 
 pub const PAGE_NUMBER: char = '\u{E000}';
 pub const SECTION_MARKER: char = '\u{E001}';
@@ -25,6 +30,8 @@ pub const INDENT_HERE: char = '\u{E005}';
 pub const RIGHT_INDENT_TAB: char = '\u{E006}';
 pub const NEXT_PAGE_NUMBER: char = '\u{E007}';
 pub const PREV_PAGE_NUMBER: char = '\u{E008}';
+/// Anchor of a table: alone in its paragraph, whose [`ParaFormat::table`] names the table.
+pub const TABLE_ANCHOR: char = '\u{E009}';
 pub const FORCED_LINE_BREAK: char = '\u{2028}';
 
 pub const BASIC_PARAGRAPH: &str = "[Basic Paragraph]";
@@ -39,11 +46,14 @@ pub struct ParaFormat {
     /// Paragraph-level character overrides are stored on the char runs; this holds nothing.
     #[serde(default, skip_serializing_if = "CharAttrs::is_empty")]
     pub chars: CharAttrs,
+    /// The table anchored in this paragraph (key into [`Story::tables`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table: Option<u64>,
 }
 
 impl Default for ParaFormat {
     fn default() -> Self {
-        ParaFormat { style: BASIC_PARAGRAPH.into(), para: ParaAttrs::default(), chars: CharAttrs::default() }
+        ParaFormat { style: BASIC_PARAGRAPH.into(), para: ParaAttrs::default(), chars: CharAttrs::default(), table: None }
     }
 }
 
@@ -81,6 +91,9 @@ pub struct Story {
     /// Bumped on every edit (composition cache key).
     #[serde(default)]
     pub rev: u64,
+    /// Tables anchored in the story, by id (see [`crate::table`]).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tables: BTreeMap<u64, Arc<Table>>,
 }
 
 impl Story {
@@ -92,6 +105,7 @@ impl Story {
             chars: vec![CharRun { len: 0, format: CharFormat::default() }],
             frames: vec![],
             rev: 0,
+            tables: BTreeMap::new(),
         }
     }
 
@@ -160,6 +174,17 @@ impl Story {
 
     /// Insert with an explicit character format.
     pub fn insert_with(&mut self, pos: usize, text: &str, fmt: CharFormat) {
+        self.insert_with_raw(pos, text, fmt);
+        self.fix_tables();
+    }
+
+    /// Insert without the table fix-up (callers fix up themselves).
+    pub(crate) fn insert_raw(&mut self, pos: usize, text: &str) {
+        let fmt = self.char_format_at(pos).clone();
+        self.insert_with_raw(pos, text, fmt);
+    }
+
+    fn insert_with_raw(&mut self, pos: usize, text: &str, fmt: CharFormat) {
         if text.is_empty() {
             return;
         }
@@ -189,10 +214,20 @@ impl Story {
         }
         let pi = self.para_at(a);
         let removed = self.text[a..b].bytes().filter(|c| *c == b'\n').count();
+        // Merged paragraphs keep a table whose anchor survives the deletion.
+        if removed > 0 && !self.tables.is_empty() {
+            let ranges = self.para_ranges();
+            let first = self.paras[pi].table.filter(|_| self.text[ranges[pi].start..a].contains(TABLE_ANCHOR));
+            let last = self.paras[pi + removed]
+                .table
+                .filter(|_| self.text[b.min(ranges[pi + removed].end)..ranges[pi + removed].end].contains(TABLE_ANCHOR));
+            self.paras[pi].table = first.or(last);
+        }
         self.paras.drain(pi + 1..pi + 1 + removed);
         self.text.replace_range(a..b, "");
         self.remove_run_bytes(a, b - a);
         self.normalize();
+        self.fix_tables();
         self.rev += 1;
     }
 
@@ -242,7 +277,9 @@ impl Story {
         let a = self.para_at(range.start);
         let b = self.para_at(range.end.max(range.start));
         for p in &mut self.paras[a..=b] {
+            let table = p.table;
             f(p);
+            p.table = table;
         }
         self.rev += 1;
     }
@@ -277,7 +314,7 @@ impl Story {
                 return Err(format!("run boundary {pos} splits a character"));
             }
         }
-        Ok(())
+        self.check_tables()
     }
 
     // ---------- run helpers ----------

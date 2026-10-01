@@ -198,6 +198,9 @@ impl Renderer {
                 ctx.fill_rect(&d.rect);
             }
         }
+        if !ft.tables.is_empty() {
+            self.draw_tables(ctx, f, ft, xf);
+        }
         let scale = m.determinant().abs().sqrt();
         let greek_px = f.opts.greek_below_px;
         let mut greek = BezPath::new();
@@ -260,5 +263,49 @@ impl Renderer {
             ctx.set_paint(color_of(&designcraft_color::Color::gray(0.35), 0.5));
             ctx.fill_path(&greek);
         }
+    }
+}
+
+impl Renderer {
+    /// Table fragments: cell fills, cell text, then cell edges and the border.
+    fn draw_tables(&mut self, ctx: &mut RenderContext, f: &Frame, ft: &FrameText, xf: Affine) {
+        let doc = f.doc;
+        for t in &ft.tables {
+            for c in &t.cells {
+                if let Some((sw, tint)) = &c.fill
+                    && let Some(col) = doc.resolve_color(sw, *tint)
+                {
+                    ctx.set_transform(f.view * xf);
+                    ctx.set_paint(color_of(&col, 1.0));
+                    // Overlap neighbours by half a device pixel so adjacent fills show no seams.
+                    let h = 0.5 * f.px;
+                    ctx.fill_rect(&c.rect.inflate(h, h));
+                }
+            }
+            for c in &t.cells {
+                if let Some(cft) = c.text.frames.first() {
+                    self.draw_text(ctx, f, &c.text, cft, xf * Affine::translate(c.origin.to_vec2()));
+                }
+            }
+            ctx.set_transform(f.view * xf);
+            for s in &t.strokes {
+                let Some(col) = doc.resolve_color(&s.stroke.color, s.stroke.tint) else { continue };
+                ctx.set_paint(color_of(&col, 1.0));
+                ctx.set_stroke(cell_stroke(&s.stroke));
+                ctx.stroke_path(&kurbo::Line::new(s.a, s.b).to_path(0.1));
+            }
+        }
+    }
+}
+
+/// Kurbo stroke for a table edge.
+fn cell_stroke(s: &designcraft_doc::CellStroke) -> kurbo::Stroke {
+    let st = kurbo::Stroke::new(s.weight).with_caps(kurbo::Cap::Square);
+    match &s.kind {
+        designcraft_doc::StrokeType::Dashed { pattern } if !pattern.is_empty() => {
+            st.with_caps(kurbo::Cap::Butt).with_dashes(0.0, pattern.iter().copied())
+        }
+        designcraft_doc::StrokeType::Dotted => st.with_dashes(0.0, [0.0, s.weight * 2.0]).with_caps(kurbo::Cap::Round),
+        _ => st,
     }
 }

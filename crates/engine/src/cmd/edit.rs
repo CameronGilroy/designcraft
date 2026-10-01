@@ -55,6 +55,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 st.selection = Selection { items: ids, content, ..Default::default() };
             }
             st.selection.text = None;
+            st.selection.cells = None;
             st.revision += 1;
             ok()
         }),
@@ -62,6 +63,7 @@ pub fn specs() -> Vec<CommandSpec> {
             let id = super::id_param(p, "id").ok_or_else(|| super::bad("selection.toggle", "missing id"))?;
             let st = s.doc_mut()?;
             st.selection.text = None;
+            st.selection.cells = None;
             if let Some(i) = st.selection.items.iter().position(|x| *x == id) {
                 st.selection.items.remove(i);
             } else {
@@ -73,7 +75,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "edit.selectAll", "Select All", ["Edit"], Some("Cmd+A"), "{} — all items on the active spreads, or all text in the story", has_doc, |s, _| {
             let st = s.doc_mut()?;
             if let Some(t) = st.selection.text {
-                let len = st.doc.story(t.story).map(|x| x.len()).unwrap_or(0);
+                let len = st.doc.text_story(t.story, t.cell).map(|x| x.len()).unwrap_or(0);
                 st.selection.text = Some(designcraft_doc::TextSel { anchor: 0, focus: len, ..t });
             } else {
                 let mut ids = Vec::new();

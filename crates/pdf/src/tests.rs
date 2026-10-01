@@ -159,3 +159,21 @@ fn standards() {
     assert_eq!(Standard::parse("PDF/X-4"), Some(Standard::PdfX4));
     assert_eq!(Standard::parse("pdfa-2b"), Some(Standard::PdfA2b));
 }
+
+#[test]
+fn tables_export_cell_text() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 336.0, 400.0), lid, "Before", ParaFormat::default()).unwrap();
+    let mut t = designcraft_doc::Table::new(9, 2, 2, 1, 0, 300.0);
+    t.cell_mut(0, 0).unwrap().text.insert(0, "Ink");
+    t.cell_mut(0, 0).unwrap().fill = "C=100 M=0 Y=0 K=0".into();
+    t.cell_mut(1, 1).unwrap().text.insert(0, "Plum");
+    t.cell_mut(2, 0).unwrap().text.insert(0, "Sunset");
+    d.story_mut(sid).unwrap().insert_table(6, t);
+    let bytes = export_pdf(&d, &Cache::new(), &PdfOptions::default()).unwrap();
+    let text = extract_text(&bytes).concat();
+    for w in ["Before", "Ink", "Plum", "Sunset"] {
+        assert!(text.contains(w), "{w} missing from {text:?}");
+    }
+}
