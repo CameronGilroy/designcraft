@@ -758,6 +758,7 @@ version = "0.1.0"
 dependencies = [
  "designcraft-doc",
  "designcraft-engine",
+ "designcraft-mcp",
  "designcraft-render",
  "serde_json",
 ]
@@ -834,6 +835,19 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "designcraft-mcp"
+version = "0.1.0"
+dependencies = [
+ "designcraft-engine",
+ "designcraft-geom",
+ "designcraft-render",
+ "designcraft-tools",
+ "image",
+ "log",
+ "serde_json",
 ]
 
 [[package]]
