@@ -7,10 +7,11 @@ use std::sync::Arc;
 use designcraft_color::cms::lab;
 use designcraft_color::{Color, ColorType, Gradient, GradientKind, GradientStop, Swatch, SwatchValue, swatch};
 use designcraft_doc::{
-    Asset, AssetId, BaselineGrid, CharAttrs, CharFormat, CharRun, CharacterStyle, Columns, ColumnsKind, Content, DocSettings, Document, DropShadow,
-    Effects, Fill, GridAlign, GridRelative, Guide, Item, ItemId, Kerning, LAYER_COLORS, Layer, LayerId, ListType, Margins, ObjectStyle, Page, PageId,
-    PageSide, ParaAttrs, ParaFormat, ParagraphStyle, ParentInfo, Rule, Section, Shape, SpanColumns, Spread, SpreadId, Story, StoryId, Stroke, Styles,
-    TabStop, TextFrame, TextFrameOptions, TextWrap, story as st,
+    AltFills, Asset, AssetId, BaselineGrid, Cell, CellRange, CellStroke, CharAttrs, CharFormat, CharRun, CharacterStyle, Columns, ColumnsKind,
+    Content, DocSettings, Document, DropShadow, Effects, Fill, GridAlign, GridRelative, Guide, Item, ItemId, Kerning, LAYER_COLORS, Layer, LayerId,
+    ListType, Margins, ObjectStyle, Page, PageId, PageSide, ParaAttrs, ParaFormat, ParagraphStyle, ParentInfo, RowHeightMode, Rule, Section, Shape,
+    SpanColumns, Spread, SpreadId, Story, StoryId, Stroke, Styles, TabStop, Table, TextFrame, TextFrameOptions, TextWrap, VerticalJustification,
+    story as st,
 };
 use designcraft_geom::corners::{Corner, CornerOptions};
 use designcraft_geom::{Affine, Anchor, PathData, Point, Rect, SubPath};
@@ -818,15 +819,143 @@ impl<'r> Importer<'r> {
     // ---------- stories ----------
 
     fn story(&mut self, id: StoryId, e: &El) -> Story {
-        let mut b =
-            StoryBuilder { text: String::new(), paras: vec![ParaFormat::default()], runs: Vec::new(), fresh: true, last: CharFormat::default() };
+        let mut b = StoryBuilder {
+            text: String::new(),
+            paras: vec![ParaFormat::default()],
+            runs: Vec::new(),
+            fresh: true,
+            last: CharFormat::default(),
+            tables: Vec::new(),
+            after_table: None,
+        };
         self.walk_story(e, &mut b, &ParaFormat::default(), &CharAttrs::default(), &CharFormat::default(), None);
-        let StoryBuilder { text, paras, runs, last, .. } = b;
+        let StoryBuilder { text, mut paras, runs, last, tables: tbls, .. } = b;
         let mut chars: Vec<CharRun> = runs.into_iter().filter(|r| r.len > 0).collect();
         if chars.is_empty() {
             chars.push(CharRun { len: 0, format: last });
         }
-        Story { id, text, paras, chars, frames: vec![], rev: 0 }
+        let mut tables = BTreeMap::new();
+        for (pi, t) in tbls {
+            if let Some(p) = paras.get_mut(pi) {
+                p.table = Some(t.id);
+                tables.insert(t.id, Arc::new(t));
+            }
+        }
+        let mut st = Story { id, text, paras, chars, frames: vec![], rev: 0, tables };
+        // Drop anything inconsistent (e.g. a table sharing a paragraph with another).
+        if st.check().is_err() {
+            st.tables.retain(|_, _| false);
+            for p in &mut st.paras {
+                p.table = None;
+            }
+        }
+        st
+    }
+
+    /// `<Table>`: rows, columns and cells (cell `Name` is `column:row`).
+    fn table(&mut self, e: &El) -> Table {
+        let id = self.alloc();
+        let rows: Vec<&El> = e.find_all("Row").collect();
+        let cols: Vec<&El> = e.find_all("Column").collect();
+        let nr = rows.len().max(1);
+        let nc = cols.len().max(1);
+        let mut t = Table::new(id, nr, nc, 0, 0, 0.0);
+        for (r, re) in rows.iter().enumerate() {
+            let auto = re.boolean("AutoGrow").unwrap_or(true);
+            t.rows[r].mode = if auto { RowHeightMode::AtLeast } else { RowHeightMode::Exactly };
+            t.rows[r].height = if auto { re.num("MinimumHeight").unwrap_or(3.0) } else { re.num("SingleRowHeight").unwrap_or(12.0) };
+        }
+        for (c, ce) in cols.iter().enumerate() {
+            t.columns[c].width = ce.num("SingleColumnWidth").unwrap_or(72.0).max(3.0);
+        }
+        let h = e.num("HeaderRowCount").unwrap_or(0.0) as usize;
+        let f = e.num("FooterRowCount").unwrap_or(0.0) as usize;
+        if h + f < nr {
+            t.set_header_footer(h, f);
+        }
+        let stroke = |me: &mut Self, el: &El, prefix: &str, base: &CellStroke| -> CellStroke {
+            let mut s = base.clone();
+            if let Some(w) = el.num(&format!("{prefix}StrokeWeight")) {
+                s.weight = w.max(0.0);
+            }
+            if let Some(c) = el.get(&format!("{prefix}StrokeColor")) {
+                s.color = me.swatch_ref(c);
+            }
+            if let Some(v) = el.num(&format!("{prefix}StrokeTint")) {
+                s.tint = tint(Some(v)).unwrap_or(1.0);
+            }
+            if let Some(v) = el.get(&format!("{prefix}StrokeType")) {
+                s.kind = names::stroke_type_in(v);
+            }
+            s
+        };
+        t.options.border = stroke(self, e, "TopBorder", &t.options.border);
+        t.options.space_before = e.num("SpaceBefore").unwrap_or(t.options.space_before);
+        t.options.space_after = e.num("SpaceAfter").unwrap_or(t.options.space_after);
+        t.options.repeat_header = e.get("HeaderBehavior") != Some("RepeatOnce");
+        t.options.repeat_footer = e.get("FooterBehavior") != Some("RepeatOnce");
+        for kind in ["Row", "Column"] {
+            let Some(first) = e.num(&format!("Start{kind}FillCount")).filter(|n| *n > 0.0) else { continue };
+            let alt = AltFills {
+                first: first as u32,
+                first_color: e.get(&format!("Start{kind}FillColor")).map(|c| self.swatch_ref(c)).unwrap_or_else(|| swatch::NONE.into()),
+                first_tint: tint(e.num(&format!("Start{kind}FillTint"))).unwrap_or(1.0),
+                next: e.num(&format!("End{kind}FillCount")).unwrap_or(1.0) as u32,
+                next_color: e.get(&format!("End{kind}FillColor")).map(|c| self.swatch_ref(c)).unwrap_or_else(|| swatch::NONE.into()),
+                next_tint: tint(e.num(&format!("End{kind}FillTint"))).unwrap_or(1.0),
+                skip_first: e.num(&format!("SkipFirstAlternatingFill{kind}s")).unwrap_or(0.0) as u32,
+                skip_last: e.num(&format!("SkipLastAlternatingFill{kind}s")).unwrap_or(0.0) as u32,
+            };
+            if kind == "Row" {
+                t.options.alt_rows = Some(alt);
+            } else {
+                t.options.alt_cols = Some(alt);
+            }
+        }
+        let mut regions = Vec::new();
+        for ce in e.find_all("Cell") {
+            let Some((c, r)) =
+                ce.get("Name").and_then(|n| n.split_once(':')).and_then(|(a, b)| Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?)))
+            else {
+                continue;
+            };
+            if r >= nr || c >= nc {
+                continue;
+            }
+            let rs = ce.num("RowSpan").unwrap_or(1.0).max(1.0) as usize;
+            let cs = ce.num("ColumnSpan").unwrap_or(1.0).max(1.0) as usize;
+            let text = self.story(StoryId(0), ce);
+            let mut cell = Cell { text, ..Default::default() };
+            if let Some(fc) = ce.get("FillColor") {
+                cell.fill = self.swatch_ref(fc);
+            }
+            cell.fill_tint = tint(ce.num("FillTint")).unwrap_or(1.0);
+            for (i, k) in ["TopInset", "LeftInset", "BottomInset", "RightInset"].iter().enumerate() {
+                if let Some(v) = ce.num(k) {
+                    cell.insets[i] = v.max(0.0);
+                }
+            }
+            cell.vj = match ce.get("VerticalJustification") {
+                Some("CenterAlign") => VerticalJustification::Center,
+                Some("BottomAlign") => VerticalJustification::Bottom,
+                Some("JustifyAlign") => VerticalJustification::Justify,
+                _ => VerticalJustification::Top,
+            };
+            for (i, side) in ["TopEdge", "LeftEdge", "BottomEdge", "RightEdge"].iter().enumerate() {
+                let base = cell.strokes[i].clone();
+                cell.strokes[i] = stroke(self, ce, side, &base);
+            }
+            if let Some(slot) = t.cell_mut(r, c) {
+                *slot = cell;
+            }
+            if rs > 1 || cs > 1 {
+                regions.push(CellRange { r0: r, c0: c, r1: (r + rs - 1).min(nr - 1), c1: (c + cs - 1).min(nc - 1) });
+            }
+        }
+        for rg in regions {
+            let _ = t.merge(rg);
+        }
+        t
     }
 
     fn walk_story(&mut self, e: &El, b: &mut StoryBuilder, pf: &ParaFormat, pchars: &CharAttrs, cf: &CharFormat, brk: Option<&str>) {
@@ -837,7 +966,7 @@ impl<'r> Importer<'r> {
                         let style = c.get("AppliedParagraphStyle").map(|r| self.para_style_ref(r)).unwrap_or_else(|| st::BASIC_PARAGRAPH.into());
                         let para = self.para_attrs(c);
                         let chars = self.char_attrs(c);
-                        let npf = ParaFormat { style, para, chars: CharAttrs::default() };
+                        let npf = ParaFormat { style, para, chars: CharAttrs::default(), table: None };
                         if b.fresh
                             && let Some(last) = b.paras.last_mut()
                         {
@@ -889,9 +1018,12 @@ impl<'r> Importer<'r> {
                             b.fresh = true;
                         }
                     },
+                    "Table" => {
+                        let t = self.table(c);
+                        b.push_table(t, pf, cf);
+                    }
                     // Not supported yet: skip their content entirely.
                     "Properties"
-                    | "Table"
                     | "Footnote"
                     | "Note"
                     | "Rectangle"
@@ -1373,12 +1505,37 @@ struct StoryBuilder {
     /// The current paragraph has no content yet (its format can still be set by a range).
     fresh: bool,
     last: CharFormat,
+    /// Tables by anchor paragraph index.
+    tables: Vec<(usize, Table)>,
+    /// Content after a table anchor starts a new paragraph (with this format).
+    after_table: Option<ParaFormat>,
 }
 
 impl StoryBuilder {
+    /// A table gets an anchor paragraph of its own.
+    fn push_table(&mut self, t: Table, pf: &ParaFormat, cf: &CharFormat) {
+        let para_empty = self.text.rsplit('\n').next().is_none_or(str::is_empty);
+        if !para_empty {
+            self.after_table = None;
+            self.push("\n", cf);
+            self.paras.push(pf.clone());
+        }
+        self.after_table = None;
+        self.push(&st::TABLE_ANCHOR.to_string(), cf);
+        self.tables.push((self.paras.len() - 1, t));
+        self.after_table = Some(pf.clone());
+        self.fresh = false;
+    }
+
     fn push(&mut self, s: &str, f: &CharFormat) {
         if s.is_empty() {
             return;
+        }
+        if let Some(pf) = self.after_table.take()
+            && !s.starts_with('\n')
+        {
+            self.push("\n", f);
+            self.paras.push(pf);
         }
         self.text.push_str(s);
         if !s.contains('\n') || s.len() > 1 {

@@ -50,6 +50,7 @@ impl Session {
             && let Some(f) = t.frame.or_else(|| st.doc.story(t.story).and_then(|s| s.frames.first().copied()))
         {
             st.selection.items = vec![f];
+            st.selection.cells = None;
         }
     }
 

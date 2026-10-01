@@ -14,11 +14,12 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection (basic), Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
 - PDF export (krilla): real selectable text with embedded font subsets, DeviceCMYK/RGB + spot Separations, bleed boxes, crop/bleed marks + page info, pages or spreads, PDF/A-2b (PDF/X-4 output intent pending) — `file.exportPdf`, File › Export PDF…, `designcraft-cli run --export out.pdf`.
 - IDML interchange (`designcraft-idml`): export and import of swatches, styles, fonts, preferences, parent spreads, spreads/pages, frames, groups, images (embedded or linked), formatted threaded stories — opens in InDesign 2026 and round-trips InDesign-exported files (`file.exportIdml`, `file.openIdml`, File → Export IDML…, CLI `--in x.idml` / `--export x.idml`).
+- Tables (M8): tables anchored in stories (header/footer/body rows, merged cells, per-edge strokes, fills + alternating fills, insets, vertical justification, at-least/exact row heights); composed into the text column (columns scale to fit, rows break across columns/frames with repeating headers/footers, overset); rendered, exported to PDF (real text) and IDML (export + import); Table menu, Table panel, Create Table dialog, caret/typing/Tab navigation and cell selection in cells; `table.*` commands.
 - ~100 commands, all reachable through the JSON control channel; headless CLI rendering to PNG.
 - MCP server (`designcraft-cli mcp [--connect PORT]`, docs/mcp.md): headless engine or the running app; commands, batch, document/story inspection, page renders as images, window screenshots, pointer/keyboard/dialog input.
 - Web build (`apps/designcraft-web`, trunk): the same UI on WebGPU with a WebGL2 fallback; open/place via the browser file picker or drag-and-drop, save/export as downloads.
 
-**Next (in order):** tables · TOC/index/footnotes · PDF/X-4 output intent, bookmarks, tagged PDF · Links panel + relink · EPUB · column-break / default-tab fixes.
+**Next (in order):** table styles / cell styles, text rotation in cells · TOC/index/footnotes · PDF/X-4 output intent, bookmarks, tagged PDF · Links panel + relink · EPUB · column-break / default-tab fixes.
 
 ## Milestones
 
@@ -32,7 +33,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 | M5 | Graphics & links | started |
 | M6 | Files & export (native, IDML, PDF, PNG/JPEG) | in progress (IDML ✅, PDF export) |
 | M7 | Long documents (sections, TOC, index, footnotes, books) | |
-| M8 | Tables | |
+| M8 | Tables | ✅ core (styles, rotation, diagonal lines pending) |
 | M9 | Performance (MT composition, tiles) | |
 | M10 | Find/Change, spelling, Preflight | |
 | M11 | Layout power features (liquid/alternate layouts, data merge) | |

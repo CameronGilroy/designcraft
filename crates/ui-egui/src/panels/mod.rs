@@ -5,6 +5,7 @@ pub mod pages;
 pub mod properties;
 pub mod styles;
 pub mod swatches;
+pub mod table;
 
 use designcraft_doc::{Content, StrokeAlign, WrapMode};
 use designcraft_geom::Rect;

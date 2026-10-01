@@ -329,3 +329,38 @@ fn uri_and_base64_helpers() {
     let data: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
     assert_eq!(base64_decode(&base64_encode(&data)), data);
 }
+
+#[test]
+fn round_trips_tables() {
+    let mut d = Document::new(&NewDocument::default());
+    d.swatches.push(Swatch::color("Brand", Color::rgb(1.0, 0.0, 0.0)));
+    let lid = d.default_layer();
+    let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(40.0, 40.0, 400.0, 400.0), lid, "Intro\nOutro", ParaFormat::default()).unwrap();
+    let mut t = designcraft_doc::Table::new(d.alloc(), 3, 3, 1, 0, 300.0);
+    t.cell_mut(0, 0).unwrap().text.insert(0, "Head");
+    t.cell_mut(0, 0).unwrap().fill = "Brand".into();
+    t.cell_mut(1, 2).unwrap().text.insert(0, "Body\nTwo");
+    t.cell_mut(2, 1).unwrap().vj = designcraft_doc::VerticalJustification::Center;
+    t.rows[2].mode = designcraft_doc::RowHeightMode::Exactly;
+    t.rows[2].height = 30.0;
+    t.columns[0].width = 50.0;
+    t.merge(designcraft_doc::CellRange::new(2, 1, 3, 2)).unwrap();
+    t.options.alt_rows = Some(designcraft_doc::AltFills { first: 1, first_color: "Brand".into(), first_tint: 0.2, ..Default::default() });
+    d.story_mut(sid).unwrap().insert_table(5, t.clone());
+    d.check().unwrap();
+    let back = import_idml(&export_idml(&d)).unwrap();
+    back.check().unwrap();
+    let s = back.stories.values().next().unwrap();
+    assert_eq!(s.text, format!("Intro\n{}\nOutro", st::TABLE_ANCHOR));
+    let bt = s.tables.values().next().unwrap();
+    assert_eq!((bt.nrows(), bt.ncols(), bt.header_rows()), (4, 3, 1));
+    assert_eq!(bt.cell(0, 0).unwrap().text.text, "Head");
+    assert_eq!(bt.cell(0, 0).unwrap().fill, "Brand");
+    assert_eq!(bt.cell(1, 2).unwrap().text.text, "Body\nTwo");
+    assert_eq!(bt.cell(2, 1).unwrap().vj, designcraft_doc::VerticalJustification::Center);
+    assert_eq!((bt.cell(2, 1).unwrap().row_span, bt.cell(2, 1).unwrap().col_span), (2, 2));
+    assert_eq!(bt.rows[2].mode, designcraft_doc::RowHeightMode::Exactly);
+    assert!((bt.rows[2].height - 30.0).abs() < 1e-6);
+    assert!((bt.columns[0].width - 50.0).abs() < 1e-6);
+    assert_eq!(bt.options.alt_rows.as_ref().map(|a| a.first_color.as_str()), Some("Brand"));
+}

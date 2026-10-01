@@ -10,6 +10,7 @@ mod layout;
 mod object;
 pub mod preflight;
 mod style;
+pub mod table;
 pub mod text;
 
 use designcraft_doc::{ItemId, SpreadRef};
@@ -110,6 +111,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(object::specs());
         v.extend(text::specs());
         v.extend(style::specs());
+        v.extend(table::specs());
         v.extend(layout::specs());
         v.extend(inspect::specs());
         v.extend(find::specs());

@@ -186,6 +186,18 @@ pub fn magazine() -> Document {
             ParaAttrs::default(),
             CharAttrs { leading: Some(Leading::Points(10.5)), fill_tint: Some(0.7), ..sans("Regular", 7.5) },
         ));
+        st.paragraph.push(para_style(
+            "Table Head",
+            None,
+            ParaAttrs { hyphenate: Some(false), ..Default::default() },
+            CharAttrs { leading: Some(Leading::Points(10.0)), tracking: Some(40.0), fill: Some("[Paper]".into()), ..sans("Semibold", 7.5) },
+        ));
+        st.paragraph.push(para_style(
+            "Table Body",
+            None,
+            ParaAttrs { hyphenate: Some(false), ..Default::default() },
+            CharAttrs { leading: Some(Leading::Points(11.0)), ..sans("Regular", 8.5) },
+        ));
         st.paragraph.push(para_style("Folio", None, ParaAttrs::default(), CharAttrs { tracking: Some(60.0), ..sans("Semibold", 7.5) }));
         st.paragraph.push(para_style(
             "Cover Title",
@@ -349,6 +361,51 @@ pub fn magazine() -> Document {
     let (f4, _) = text(&mut d, s2, Rect::new(42.0, 610.0, 570.0, 730.0), &BODY[..BODY.find('\n').unwrap_or(BODY.len())], "Body First");
     if let Some(it) = d.item_mut(f4).and_then(Item::text_frame_mut) {
         it.options.columns = 2;
+    }
+    // A spec table in the second column: header row, alternating fills.
+    let sid4 = d.item(f4).and_then(|i| i.text_frame()).map(|t| t.story);
+    let tid = d.alloc();
+    if let Some(st) = sid4.and_then(|sid| d.story_mut(sid)) {
+        let rows = [
+            ["SWATCH", "BUILD", "USED FOR"],
+            ["Ink Plum", "C62 M95 Y30 K25", "Backgrounds, heads"],
+            ["Sunset", "M62 Y78", "Kickers, rules"],
+            ["Cyan", "C100", "Charts, links"],
+            ["Paper Warm", "M3 Y8", "Pull quotes"],
+        ];
+        let mut t = designcraft_doc::Table::new(tid, 4, 3, 1, 0, 258.0);
+        t.columns[0].width = 74.0;
+        t.columns[1].width = 90.0;
+        t.columns[2].width = 94.0;
+        for (r, row) in rows.iter().enumerate() {
+            let style = if r == 0 { "Table Head" } else { "Table Body" };
+            for (c, txt) in row.iter().enumerate() {
+                let cell = t.cell_mut(r, c).expect("cell");
+                *cell = designcraft_doc::Cell::with_text(txt, ParaFormat { style: style.into(), ..Default::default() });
+                cell.insets = [4.0, 6.0, 4.0, 6.0];
+                cell.vj = VerticalJustification::Center;
+                let thin = designcraft_doc::CellStroke { weight: 0.5, color: "Ink Plum".into(), tint: 0.35, ..Default::default() };
+                cell.strokes = [thin.clone(), designcraft_doc::CellStroke::none(), thin, designcraft_doc::CellStroke::none()];
+                if r == 0 {
+                    cell.fill = "Ink Plum".into();
+                }
+            }
+        }
+        t.options.border = designcraft_doc::CellStroke { weight: 1.0, color: "Ink Plum".into(), ..Default::default() };
+        t.options.space_before = 0.0;
+        t.options.alt_rows = Some(designcraft_doc::AltFills {
+            first: 1,
+            first_color: "Paper Warm".into(),
+            first_tint: 1.0,
+            next: 1,
+            next_color: designcraft_color::swatch::NONE.into(),
+            next_tint: 1.0,
+            skip_first: 0,
+            skip_last: 0,
+        });
+        let end = st.len();
+        let anchor = st.insert_table(end, t);
+        st.format_paras(anchor..anchor, |p| p.para.start_paragraph = Some(designcraft_doc::StartParagraph::NextColumn));
     }
     debug_assert!(d.check().is_ok(), "{:?}", d.check());
     d

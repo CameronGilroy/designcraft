@@ -1,7 +1,7 @@
 //! Text editing (Type tool) and character/paragraph formatting.
 
 use designcraft_compose as compose;
-use designcraft_doc::{CharAttrs, Content, ItemId, ParaAttrs, Selection, StoryId, TextSel};
+use designcraft_doc::{CellAddr, CharAttrs, Content, ItemId, ParaAttrs, Selection, StoryId, TextSel};
 use designcraft_geom::Point;
 use serde_json::{Value, json};
 
@@ -16,7 +16,7 @@ pub fn specs() -> Vec<CommandSpec> {
             place(s, p, false)?;
             let st = s.doc_mut()?;
             let Some(t) = st.selection.text else { return ok() };
-            let text = &st.doc.story(t.story).map(|x| x.text.clone()).unwrap_or_default();
+            let text = &st.doc.text_story(t.story, t.cell).map(|x| x.text.clone()).unwrap_or_default();
             let (a, b) = word_bounds(text, t.focus);
             st.selection.text = Some(TextSel { anchor: a, focus: b, ..t });
             ok()
@@ -27,7 +27,7 @@ pub fn specs() -> Vec<CommandSpec> {
             let len = st.doc.story(sid).ok_or_else(|| bad("text.select", "no such story"))?.len();
             let a = (p.get("anchor").and_then(Value::as_u64).unwrap_or(0) as usize).min(len);
             let f = (p.get("focus").and_then(Value::as_u64).map(|v| v as usize).unwrap_or(a)).min(len);
-            st.selection = Selection::text(TextSel { story: sid, anchor: a, focus: f, frame: None });
+            st.selection = Selection::text(TextSel { story: sid, anchor: a, focus: f, frame: None, cell: None });
             st.revision += 1;
             ok()
         }),
@@ -40,6 +40,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 let f = t.frame.or_else(|| st.doc.story(t.story).and_then(|x| x.frames.first().copied()));
                 st.selection.items = f.into_iter().collect();
             }
+            st.selection.cells = None;
             st.revision += 1;
             ok()
         }),
@@ -146,8 +147,8 @@ fn story_of(s: &Session, p: &Value) -> Option<StoryId> {
     st.selection.text.map(|t| t.story)
 }
 
-/// Story byte at spread point `pt` in text frame `frame`.
-fn hit_byte(s: &Session, frame: ItemId, pt: Point) -> Option<(StoryId, usize)> {
+/// Story byte at spread point `pt` in text frame `frame` (in a table cell's story when the point is in a cell).
+fn hit_byte(s: &Session, frame: ItemId, pt: Point) -> Option<(StoryId, usize, Option<CellAddr>)> {
     let st = s.active()?;
     let loc = st.doc.find(frame)?;
     let it = st.doc.item_at(&loc)?;
@@ -156,8 +157,11 @@ fn hit_byte(s: &Session, frame: ItemId, pt: Point) -> Option<(StoryId, usize)> {
     let inner = xf.inverse() * pt;
     let cs = s.cache.get(&st.doc, sid, None);
     let fi = cs.frames.iter().position(|f| f.frame == frame)?;
+    if let Some((table, row, col, b)) = compose::hit_cell(&cs, fi, inner) {
+        return Some((sid, b, Some(CellAddr { table, row, col })));
+    }
     let b = compose::hit(&cs, fi, inner).unwrap_or(0);
-    Some((sid, b))
+    Some((sid, b, None))
 }
 
 fn place(s: &mut Session, p: &Value, extend: bool) -> Result<Value> {
@@ -168,27 +172,60 @@ fn place(s: &mut Session, p: &Value, extend: bool) -> Result<Value> {
     if needs_convert {
         s.execute("object.content", &json!({"ids": [frame.0], "type": "text"}))?;
     }
-    let (sid, b) = hit_byte(s, frame, pt).ok_or_else(|| bad("text.placeCaret", "not a text frame"))?;
+    let (sid, b, cell) = hit_byte(s, frame, pt).ok_or_else(|| bad("text.placeCaret", "not a text frame"))?;
     let st = s.doc_mut()?;
+    // Dragging from one cell into another selects cells.
+    if extend
+        && let (Some(t), Some(c)) = (st.selection.text, cell)
+        && let Some(a) = t.cell
+        && t.story == sid
+        && a.table == c.table
+        && (a.row, a.col) != (c.row, c.col)
+    {
+        let range = designcraft_doc::CellRange::new(a.row, a.col, c.row, c.col);
+        st.selection.cells = Some(designcraft_doc::TableSel { story: sid, table: c.table, range });
+        st.revision += 1;
+        return Ok(json!({"story": sid.0, "cells": range}));
+    }
     let t = match (extend, st.selection.text) {
-        (true, Some(t)) if t.story == sid => TextSel { focus: b, frame: Some(frame), ..t },
-        _ => TextSel { story: sid, anchor: b, focus: b, frame: Some(frame) },
+        (true, Some(t)) if t.story == sid && t.cell == cell => TextSel { focus: b, frame: Some(frame), ..t },
+        _ => TextSel { story: sid, anchor: b, focus: b, frame: Some(frame), cell },
     };
     st.selection = Selection::text(t);
     st.revision += 1;
-    Ok(json!({"story": sid.0, "pos": b}))
+    Ok(json!({"story": sid.0, "pos": b, "cell": cell}))
 }
 
 fn insert(s: &mut Session, p: &Value) -> Result<Value> {
     let text = str_param(p, "text").unwrap_or("").to_string();
+    // Tab in a table cell moves to the next cell (Shift-Tab: `table.prevCell`).
+    if text == "\t" && s.doc()?.selection.text.is_some_and(|t| t.cell.is_some()) {
+        return super::table::step_cell(s, true);
+    }
     let text = if s.prefs.typographers_quotes { smart_quotes(s, &text) } else { text };
     s.edit(|d, sel| {
         let t = sel.text.ok_or_else(|| bad("text.insert", "no insertion point"))?;
-        let st = d.story_mut(t.story).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
+        let st = d.text_story_mut(t.story, t.cell).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
         let r = t.range();
         let r = r.start.min(st.len())..r.end.min(st.len());
+        // Typing next to a table anchor starts a paragraph of its own.
+        let mut text = text.clone();
+        let mut trail = 0;
+        if t.cell.is_none() && !text.is_empty() && st.table_at(r.start).is_some() {
+            let pi = st.para_at(r.start);
+            let pr = st.para_ranges()[pi].clone();
+            let anchor_at = pr.start + st.text[pr.clone()].find(designcraft_doc::TABLE_ANCHOR).unwrap_or(0);
+            if r.start <= anchor_at {
+                if !text.ends_with('\n') {
+                    text.push('\n');
+                    trail = 1;
+                }
+            } else if !text.starts_with('\n') {
+                text.insert(0, '\n');
+            }
+        }
         st.replace(r.clone(), &text);
-        let pos = r.start + text.len();
+        let pos = r.start + text.len() - trail;
         sel.text = Some(TextSel { anchor: pos, focus: pos, ..t });
         Ok(json!({"pos": pos}))
     })
@@ -202,7 +239,7 @@ fn smart_quotes(s: &Session, text: &str) -> String {
         .active()
         .and_then(|st| {
             let t = st.selection.text?;
-            let story = st.doc.story(t.story)?;
+            let story = st.doc.text_story(t.story, t.cell)?;
             story.text[..t.range().start.min(story.len())].chars().last()
         })
         .unwrap_or(' ');
@@ -237,7 +274,7 @@ pub(crate) fn delete_selection(s: &mut Session) -> Result<Value> {
     s.edit(|d, sel| {
         let t = sel.text.ok_or_else(|| bad("text.delete", "no text"))?;
         let r = t.range();
-        if let Some(st) = d.story_mut(t.story) {
+        if let Some(st) = d.text_story_mut(t.story, t.cell) {
             st.delete(r.clone());
         }
         sel.text = Some(TextSel { anchor: r.start, focus: r.start, ..t });
@@ -250,7 +287,7 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     let word = bool_or(p, "word", false);
     s.edit(|d, sel| {
         let t = sel.text.ok_or_else(|| bad("text.delete", "no text"))?;
-        let st = d.story_mut(t.story).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
+        let st = d.text_story_mut(t.story, t.cell).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
         let r = t.range();
         let r = if !r.is_empty() {
             r
@@ -312,9 +349,14 @@ fn move_caret(s: &mut Session, p: &Value) -> Result<Value> {
     let word = bool_or(p, "word", false);
     let st = s.doc()?;
     let t = st.selection.text.ok_or_else(|| bad("text.move", "no caret"))?;
-    let story = st.doc.story(t.story).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
+    let story = st.doc.text_story(t.story, t.cell).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
     let text = story.text.clone();
     let cs = s.cache.get(&st.doc, t.story, None);
+    // In a cell, lines come from the cell's own composition.
+    let cs = match t.cell {
+        Some(c) => compose::find_cell(&cs, c.table, c.row, c.col).map(|(_, _, pc)| pc.text.clone()).unwrap_or(cs),
+        None => cs,
+    };
     let pos = t.focus.min(text.len());
     let collapse_to = |left: bool| if left { t.range().start } else { t.range().end };
     let new = match dir.as_str() {
@@ -360,19 +402,42 @@ fn vertical(cs: &compose::ComposedStory, pos: usize, up: bool) -> Option<usize> 
     compose::hit(cs, *tf, Point::new(x, tl.baseline - 1.0))
 }
 
-/// Ranges and stories a formatting command applies to: the text selection, or whole stories of
-/// the selected text frames.
-fn format_targets(s: &Session) -> Vec<(StoryId, std::ops::Range<usize>)> {
+/// Where a formatting command applies: a story (or a table cell's story) and a byte range.
+#[derive(Clone, Debug)]
+pub(crate) struct Target {
+    pub story: StoryId,
+    pub cell: Option<CellAddr>,
+    pub range: std::ops::Range<usize>,
+}
+
+/// Ranges and stories a formatting command applies to: selected table cells (whole cells), the
+/// text selection, or whole stories of the selected text frames.
+fn format_targets(s: &Session) -> Vec<Target> {
     let Some(st) = s.active() else { return vec![] };
-    if let Some(t) = st.selection.text {
-        return vec![(t.story, t.range())];
+    if let Some(ts) = st.selection.cells
+        && let Some(t) = st.doc.story(ts.story).and_then(|x| x.tables.get(&ts.table))
+    {
+        let mut v = Vec::new();
+        let owners = t.owners();
+        for r in ts.range.r0..=ts.range.r1.min(t.nrows().saturating_sub(1)) {
+            for c in ts.range.c0..=ts.range.c1.min(t.ncols().saturating_sub(1)) {
+                if owners[r * t.ncols() + c] == (r, c) {
+                    let len = t.cell(r, c).map_or(0, |x| x.text.len());
+                    v.push(Target { story: ts.story, cell: Some(CellAddr { table: ts.table, row: r, col: c }), range: 0..len });
+                }
+            }
+        }
+        return v;
     }
-    let mut v = Vec::new();
+    if let Some(t) = st.selection.text {
+        return vec![Target { story: t.story, cell: t.cell, range: t.range() }];
+    }
+    let mut v: Vec<Target> = Vec::new();
     for id in &st.selection.items {
         if let Some(tf) = st.doc.item(*id).and_then(|i| i.text_frame()) {
             let len = st.doc.story(tf.story).map(|x| x.len()).unwrap_or(0);
-            if !v.iter().any(|(s, _)| *s == tf.story) {
-                v.push((tf.story, 0..len));
+            if !v.iter().any(|t| t.story == tf.story) {
+                v.push(Target { story: tf.story, cell: None, range: 0..len });
             }
         }
     }
@@ -388,8 +453,9 @@ pub(crate) fn format_chars(s: &mut Session, attrs: &Value) -> Result<Value> {
     }
     let targets = format_targets(s);
     s.edit(|d, _| {
-        for (sid, r) in &targets {
-            let Some(st) = d.story_mut(*sid) else { continue };
+        for t in &targets {
+            let r = &t.range;
+            let Some(st) = d.text_story_mut(t.story, t.cell) else { continue };
             if r.is_empty() {
                 // Caret: change the typing format (the empty run at the caret).
                 let pos = r.start;
@@ -416,9 +482,9 @@ pub(crate) fn format_paras(s: &mut Session, attrs: &Value) -> Result<Value> {
     }
     let targets = format_targets(s);
     s.edit(|d, _| {
-        for (sid, r) in &targets {
-            if let Some(st) = d.story_mut(*sid) {
-                st.format_paras(r.clone(), |p| p.para.merge(&a));
+        for t in &targets {
+            if let Some(st) = d.text_story_mut(t.story, t.cell) {
+                st.format_paras(t.range.clone(), |p| p.para.merge(&a));
             }
         }
         ok()
@@ -434,8 +500,8 @@ fn step_size(s: &mut Session, delta: f64) -> Result<Value> {
 fn selection_attrs(s: &mut Session, _p: &Value) -> Result<Value> {
     let st = s.doc()?;
     let targets = format_targets(s);
-    let Some((sid, r)) = targets.first().cloned() else { return Ok(Value::Null) };
-    let story = st.doc.story(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+    let Some(Target { story: sid, cell, range: r }) = targets.first().cloned() else { return Ok(Value::Null) };
+    let story = st.doc.text_story(sid, cell).ok_or(designcraft_doc::DocError::NoStory(sid))?;
     let pi = story.para_at(r.start);
     let pf = &story.paras[pi];
     let (pp, base) = st.doc.styles.resolve_para(pf);
@@ -489,6 +555,6 @@ fn fill_placeholder(s: &mut Session, p: &Value) -> Result<Value> {
     })
 }
 
-pub(crate) fn format_targets_pub(s: &Session) -> Vec<(StoryId, std::ops::Range<usize>)> {
+pub(crate) fn format_targets_pub(s: &Session) -> Vec<Target> {
     format_targets(s)
 }

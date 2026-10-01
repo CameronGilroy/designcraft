@@ -569,3 +569,145 @@ fn tabs_without_stops_use_default_half_inch() {
     let b = l.glyphs.iter().find(|g| g.byte == 2).expect("B");
     assert!((b.x - 36.0).abs() < 0.5, "B at {}", b.x);
 }
+
+// ---------- tables ----------
+
+fn table_doc(frame: Rect, t: designcraft_doc::Table) -> (Document, StoryId, ItemId) {
+    let (mut d, sid, fid) = doc_with("Intro", frame, ParaAttrs::default());
+    let st = d.story_mut(sid).unwrap();
+    let end = st.len();
+    st.insert_table(end, t);
+    let end = st.len();
+    st.insert(end, "After");
+    d.check().unwrap();
+    (d, sid, fid)
+}
+
+fn filled(rows: usize, cols: usize, header: usize, width: f64) -> designcraft_doc::Table {
+    let mut t = designcraft_doc::Table::new(77, rows, cols, header, 0, width);
+    for r in 0..t.nrows() {
+        for c in 0..t.ncols() {
+            t.cell_mut(r, c).unwrap().text.insert(0, &format!("R{r}C{c}"));
+        }
+    }
+    t
+}
+
+#[test]
+fn table_rows_fit_their_content() {
+    let mut t = filled(3, 3, 1, 300.0);
+    t.cell_mut(2, 1).unwrap().text.insert(0, &format!("{LOREM} "));
+    t.rows[3].height = 50.0;
+    t.rows[3].mode = designcraft_doc::RowHeightMode::Exactly;
+    let (d, sid, _) = table_doc(Rect::new(0.0, 0.0, 400.0, 1000.0), t);
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    assert!(!cs.is_overset());
+    let ft = &cs.frames[0];
+    assert_eq!(ft.tables.len(), 1);
+    let tf = &ft.tables[0];
+    assert_eq!(tf.cells.len(), 12);
+    let h = |r: usize| tf.cell(r, 0).unwrap().rect.height();
+    // One line of 12 pt text + 4 + 4 insets.
+    assert!(h(0) > 12.0 && h(0) < 25.0, "{}", h(0));
+    // The long cell makes its row taller; all cells in a row share the height.
+    assert!(h(2) > 5.0 * h(0), "{} vs {}", h(2), h(0));
+    assert!((tf.cell(2, 2).unwrap().rect.height() - h(2)).abs() < 1e-9);
+    assert!((h(3) - 50.0).abs() < 1e-9);
+    // Cell text sits inside the cell insets.
+    let c = tf.cell(1, 1).unwrap();
+    let l = &c.text.frames[0].lines[0];
+    assert!(c.origin.x + l.x0 >= c.rect.x0 + 3.99);
+    assert!(c.origin.y + l.baseline < c.rect.y1);
+    // Text after the table is below it.
+    let len = d.story(sid).unwrap().len();
+    let after = ft.lines.iter().find(|l| l.range.start == len - 5).unwrap();
+    assert!(after.baseline > tf.rect.y1);
+    // Strokes: outer border + inner edges.
+    assert!(tf.strokes.len() >= 4 * 3 + 4);
+}
+
+#[test]
+fn table_columns_scale_to_the_text_column() {
+    let (d, sid, _) = table_doc(Rect::new(0.0, 0.0, 200.0, 1000.0), filled(2, 4, 0, 600.0));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let tf = &cs.frames[0].tables[0];
+    assert!((tf.rect.width() - 200.0).abs() < 1e-6, "{}", tf.rect.width());
+    assert!((tf.cell(0, 3).unwrap().rect.x1 - 200.0).abs() < 1e-6);
+    // A narrow table keeps its widths.
+    let (d, sid, _) = table_doc(Rect::new(0.0, 0.0, 400.0, 1000.0), filled(2, 2, 0, 100.0));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    assert!((cs.frames[0].tables[0].rect.width() - 100.0).abs() < 1e-6);
+}
+
+#[test]
+fn table_rows_break_across_frames_with_header_repeat() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (f1, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(0.0, 0.0, 300.0, 150.0), lid, "", ParaFormat::default()).unwrap();
+    let (f2, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(0.0, 200.0, 300.0, 350.0), lid, "", ParaFormat::default()).unwrap();
+    d.thread(f1, f2).unwrap();
+    d.story_mut(sid).unwrap().insert_table(0, filled(9, 2, 1, 300.0));
+    d.check().unwrap();
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    assert!(!cs.is_overset(), "overset at {:?}", cs.overset_at);
+    let (a, b) = (&cs.frames[0].tables, &cs.frames[1].tables);
+    assert_eq!((a.len(), b.len()), (1, 1));
+    // Every body row appears exactly once; the header is repeated in the second frame.
+    let body: Vec<usize> = a[0].cells.iter().chain(b[0].cells.iter()).filter(|c| c.row > 0 && c.col == 0).map(|c| c.row).collect();
+    assert_eq!(body, (1..10).collect::<Vec<_>>());
+    assert!(!a[0].cell(0, 0).unwrap().repeated);
+    assert!(b[0].cell(0, 0).unwrap().repeated);
+    assert!((b[0].rect.y0 - 200.0).abs() < 1e-6, "{}", b[0].rect.y0);
+    assert!(a[0].rect.y1 <= 150.0 + 1e-6);
+    assert!(a[0].first && !a[0].last && b[0].last);
+    // Without header repeat the second fragment starts with a body row.
+    let st = d.story_mut(sid).unwrap();
+    st.table_mut(77).unwrap().options.repeat_header = false;
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    assert!(cs.frames[1].tables[0].cell(0, 0).is_none());
+    // Too little room: overset.
+    let st = d.story_mut(sid).unwrap();
+    let t = st.table_mut(77).unwrap();
+    t.insert_rows(5, 30);
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    assert!(cs.is_overset());
+}
+
+#[test]
+fn table_cells_hit_test_and_place_carets() {
+    let (d, sid, _) = table_doc(Rect::new(0.0, 0.0, 300.0, 1000.0), filled(2, 3, 0, 300.0));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let c = cs.frames[0].tables[0].cell(1, 2).unwrap().clone();
+    let p = Point::new(c.rect.x1 - 2.0, c.rect.center().y);
+    let (t, r, col, b) = hit_cell(&cs, 0, p).unwrap();
+    assert_eq!((t, r, col), (77, 1, 2));
+    assert_eq!(b, "R1C2".len());
+    let (fi, x, bl, _, _) = cell_caret(&cs, 77, 1, 2, 0).unwrap();
+    assert_eq!(fi, 0);
+    assert!(c.rect.contains(Point::new(x + 0.1, bl - 1.0)));
+    // Outside every cell: no cell.
+    assert!(hit_cell(&cs, 0, Point::new(1.0, 1.0)).is_none());
+    // The anchor has a caret position (after the table).
+    let a = d.story(sid).unwrap().table_anchor(77).unwrap();
+    assert!(caret(&cs, a).is_some());
+}
+
+#[test]
+fn table_fills_and_merged_cells() {
+    let mut t = filled(4, 3, 1, 300.0);
+    t.options.alt_rows = Some(designcraft_doc::AltFills { first: 1, next: 1, ..Default::default() });
+    t.cell_mut(0, 0).unwrap().fill = "[Black]".into();
+    t.merge(designcraft_doc::CellRange::new(1, 1, 2, 2)).unwrap();
+    let (d, sid, _) = table_doc(Rect::new(0.0, 0.0, 300.0, 1000.0), t);
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let tf = &cs.frames[0].tables[0];
+    assert!(tf.cell(0, 0).unwrap().fill.is_some());
+    assert!(tf.cell(0, 1).unwrap().fill.is_none(), "header rows don't alternate");
+    assert!(tf.cell(1, 0).unwrap().fill.is_some());
+    assert!(tf.cell(2, 0).unwrap().fill.is_none());
+    let m = tf.cell(1, 1).unwrap();
+    let both = tf.cell(1, 0).unwrap().rect.height() + tf.cell(2, 0).unwrap().rect.height();
+    assert!((m.rect.height() - both).abs() < 1e-6);
+    assert!(tf.cell(2, 2).is_none());
+    assert_eq!(tf.cells.len(), 15 - 3);
+}

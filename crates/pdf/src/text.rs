@@ -61,6 +61,9 @@ impl Exporter<'_> {
                 self.fill_rect(s, d.rect, c);
             }
         }
+        if !ft.tables.is_empty() {
+            self.tables(s, ft);
+        }
         let mut deco: Vec<(u32, Rect)> = Vec::new();
         for l in &ft.lines {
             let gs = &l.glyphs;
@@ -101,6 +104,51 @@ impl Exporter<'_> {
             let st = &cs.styles[si as usize];
             if let Some(c) = self.swatch_color(&st.fill, st.fill_tint) {
                 self.fill_rect(s, r, c);
+            }
+        }
+    }
+
+    /// Table fragments: cell fills, cell text (real text), edges and the border.
+    fn tables(&mut self, s: &mut Surface, ft: &FrameText) {
+        for t in &ft.tables {
+            for c in &t.cells {
+                if let Some((sw, tint)) = &c.fill
+                    && let Some(col) = self.swatch_color(sw, *tint)
+                {
+                    self.fill_rect(s, c.rect, col);
+                }
+            }
+            for c in &t.cells {
+                if let Some(cft) = c.text.frames.first() {
+                    s.push_transform(&tf(Affine::translate(c.origin.to_vec2())));
+                    self.frame_text(s, &c.text, cft, &c.source);
+                    s.pop();
+                }
+            }
+            for seg in &t.strokes {
+                let st = &seg.stroke;
+                let Some(col) = self.swatch_color(&st.color, st.tint) else { continue };
+                let (cap, dash) = match &st.kind {
+                    designcraft_doc::StrokeType::Dashed { pattern } if pattern.iter().any(|v| *v > 0.0) => {
+                        let mut pat: Vec<f32> = pattern.iter().map(|v| v.max(0.0) as f32).collect();
+                        if pat.len() % 2 == 1 {
+                            pat.extend(pat.clone());
+                        }
+                        (krilla::paint::LineCap::Butt, Some(krilla::paint::StrokeDash { array: pat, offset: 0.0 }))
+                    }
+                    designcraft_doc::StrokeType::Dotted => {
+                        (krilla::paint::LineCap::Round, Some(krilla::paint::StrokeDash { array: vec![0.0, (st.weight * 2.0) as f32], offset: 0.0 }))
+                    }
+                    _ => (krilla::paint::LineCap::Square, None),
+                };
+                let mut bp = BezPath::new();
+                bp.move_to(seg.a);
+                bp.line_to(seg.b);
+                let Some(p) = to_path(&bp) else { continue };
+                s.set_fill(None);
+                s.set_stroke(Some(Stroke { paint: col.into(), width: st.weight as f32, line_cap: cap, dash, ..Default::default() }));
+                s.draw_path(&p);
+                s.set_stroke(None);
             }
         }
     }

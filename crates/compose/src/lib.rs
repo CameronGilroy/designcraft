@@ -13,6 +13,7 @@ pub mod breaker;
 mod cache;
 pub mod hyphen;
 pub mod shape;
+pub mod table;
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -28,6 +29,7 @@ use designcraft_geom::{Point, Rect};
 use crate::breaker::{Break, Spacing};
 pub use crate::cache::Cache;
 use crate::shape::{Glyph, StyleTable, SubstCtx};
+pub use crate::table::{PlacedCell, StrokeSeg, TableFrag, cell_caret, find_cell, hit_cell};
 
 /// Character appearance shared by many glyphs (indexed from [`PlacedGlyph::style`]).
 #[derive(Clone, Debug, PartialEq)]
@@ -103,6 +105,8 @@ pub struct FrameText {
     pub columns: Vec<Rect>,
     /// Height the text needs (for auto-sizing), from the text area top.
     pub content_height: f64,
+    /// Table fragments placed in this frame (each also has a glyph-less line in `lines`).
+    pub tables: Vec<TableFrag>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -265,6 +269,40 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         info.truncate(pi);
         let pf = &story.paras[pi];
         let (pp, base_chars) = doc.styles.resolve_para(pf);
+        if let Some(t) = story.para_table(pi) {
+            if cur.last_baseline.is_some() {
+                match pp.start_paragraph {
+                    StartParagraph::NextColumn => cur.next_column(&cols),
+                    StartParagraph::NextFrame | StartParagraph::NextPage | StartParagraph::NextOddPage | StartParagraph::NextEvenPage => {
+                        cur.next_frame()
+                    }
+                    StartParagraph::Anywhere => {}
+                }
+            }
+            let at_top = cur.last_baseline.is_none();
+            let start_at = (cur.fi, cur.col);
+            let anchor = prange.start + story.text[prange.clone()].find(story::TABLE_ANCHOR).unwrap_or(0);
+            if !table::place_table(doc, t, anchor, pi, &pp, frames, &cols, &mut cur, &mut out, opts) {
+                out.overset_at = Some(prange.start);
+                break 'paras;
+            }
+            info.push(ParaInfo {
+                start: start_at,
+                at_top,
+                end: (cur.fi, cur.col),
+                lines: 1,
+                lines_in_end_col: 1,
+                keep_with_next: 0,
+                keep_together: false,
+                keep_all: false,
+                keep_first: 1,
+                keep_last: 1,
+            });
+            list_counter = 0;
+            cur.pending += pp.space_after;
+            pi += 1;
+            continue;
+        }
         // Bullets & numbering: generated prefix (shaped as its own glyphs, mapped to the paragraph start).
         let sub = SubstCtx {
             page_name: opts.page_name.clone().or_else(|| frames.get(cur.fi.min(frames.len().saturating_sub(1))).and_then(|f| f.page_name.clone())),
@@ -548,7 +586,12 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             let p = ft_prev_end(&out.overset_at, story.text.len());
             ft.range = p..p;
         }
+        let before: Vec<f64> = ft.tables.iter().map(|t| ft.lines.get(t.line).map_or(0.0, |l| l.baseline)).collect();
         vertical_justify(ft, f);
+        for (t, b) in ft.tables.iter_mut().zip(before) {
+            let now = ft.lines.get(t.line).map_or(b, |l| l.baseline);
+            t.shift(now - b);
+        }
     }
     // Frame ranges for empty frames after the text: start at the end of the text shown.
     let mut last_end = 0;
@@ -611,19 +654,21 @@ struct Snapshot {
     list_counter: u32,
     lines: usize,
     decos: usize,
+    tables: usize,
 }
 
 impl Snapshot {
     fn take(out: &ComposedStory, cur: &Cursor, list_counter: u32) -> Snapshot {
-        let (lines, decos) = out.frames.get(cur.fi).map_or((0, 0), |f| (f.lines.len(), f.decos.len()));
-        Snapshot { cur: cur.clone(), list_counter, lines, decos }
+        let (lines, decos, tables) = out.frames.get(cur.fi).map_or((0, 0, 0), |f| (f.lines.len(), f.decos.len(), f.tables.len()));
+        Snapshot { cur: cur.clone(), list_counter, lines, decos, tables }
     }
     fn restore(&self, out: &mut ComposedStory, cur: &mut Cursor, list_counter: &mut u32) {
         let fi = self.cur.fi;
         for (i, f) in out.frames.iter_mut().enumerate().skip(fi) {
-            let (l, d) = if i == fi { (self.lines, self.decos) } else { (0, 0) };
+            let (l, d, t) = if i == fi { (self.lines, self.decos, self.tables) } else { (0, 0, 0) };
             f.lines.truncate(l);
             f.decos.truncate(d);
+            f.tables.truncate(t);
         }
         *cur = self.cur.clone();
         *list_counter = self.list_counter;
@@ -1108,6 +1153,7 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
         || breaker::is_forced(g.ch)
         || g.ch == story::INDENT_HERE
         || g.ch == story::RIGHT_INDENT_TAB
+        || g.ch == story::TABLE_ANCHOR
         || g.ch == shape::SOFT_HYPHEN);
     PlacedGlyph {
         face: g.face.clone(),

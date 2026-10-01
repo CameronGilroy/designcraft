@@ -17,6 +17,7 @@ pub mod page;
 pub mod selection;
 pub mod story;
 pub mod styles;
+pub mod table;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -31,6 +32,7 @@ pub use page::*;
 pub use selection::*;
 pub use story::*;
 pub use styles::*;
+pub use table::*;
 
 use designcraft_color::Swatch;
 use designcraft_geom::Unit;

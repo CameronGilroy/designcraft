@@ -300,7 +300,7 @@ fn frame_create(s: &mut Session, p: &Value) -> Result<Value> {
                 it.shape = sh;
             }
             *sel = if caret {
-                Selection::text(TextSel { story: sid, anchor: text.len(), focus: text.len(), frame: Some(id) })
+                Selection::text(TextSel { story: sid, anchor: text.len(), focus: text.len(), frame: Some(id), cell: None })
             } else {
                 Selection::items(vec![id])
             };

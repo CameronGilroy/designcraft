@@ -226,6 +226,7 @@ impl Document {
                         last.len += 1;
                     }
                     st.chars.extend(other.chars.iter().filter(|r| r.len > 0).cloned());
+                    st.tables.extend(other.tables.iter().map(|(k, v)| (*k, v.clone())));
                     st.rev += 1;
                 }
                 let at = st.frames.iter().position(|f| *f == from).map_or(st.frames.len(), |p| p + 1);
@@ -344,12 +345,13 @@ impl Document {
     /// Replace a story's text and formatting wholesale (agents / import).
     pub fn set_story_text(&mut self, sid: StoryId, text: &str) -> Result<()> {
         let st = self.story_mut(sid).ok_or(DocError::NoStory(sid))?;
-        let para = st.paras.first().cloned().unwrap_or_default();
+        let para = st.paras.first().cloned().map(|p| ParaFormat { table: None, ..p }).unwrap_or_default();
         let fmt = st.chars.first().map(|r| r.format.clone()).unwrap_or_default();
         let n = text.matches('\n').count() + 1;
         st.text = text.to_string();
         st.paras = vec![para; n];
         st.chars = vec![CharRun { len: text.len(), format: fmt }];
+        st.tables.clear();
         st.rev += 1;
         Ok(())
     }

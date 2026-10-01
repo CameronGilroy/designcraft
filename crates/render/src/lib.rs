@@ -465,6 +465,9 @@ impl Renderer {
                 ctx.fill_rect(&d.rect);
             }
         }
+        if !ft.tables.is_empty() {
+            self.draw_tables(ctx, f, ft, xf);
+        }
         let scale = (f.view * xf).determinant().abs().sqrt();
         // Batch glyph outlines per run style into one path (in frame inner space).
         let mut batches: HashMap<u32, BezPath> = HashMap::new();
@@ -532,6 +535,48 @@ impl Renderer {
             ctx.set_paint(color_of(&c, if si == u32::MAX { 0.5 } else { 1.0 }));
             ctx.fill_rect(&r);
         }
+    }
+}
+
+impl Renderer {
+    /// Table fragments: cell fills, cell text, then cell edges and the border.
+    fn draw_tables(&mut self, ctx: &mut RenderContext, f: &Frame, ft: &FrameText, xf: Affine) {
+        let doc = f.doc;
+        for t in &ft.tables {
+            for c in &t.cells {
+                if let Some((sw, tint)) = &c.fill
+                    && let Some(col) = doc.resolve_color(sw, *tint)
+                {
+                    ctx.set_transform(f.view * xf);
+                    ctx.set_paint(color_of(&col, 1.0));
+                    // Overlap neighbours by half a device pixel so adjacent fills show no seams.
+                    let h = 0.5 * f.px;
+                    ctx.fill_rect(&c.rect.inflate(h, h));
+                }
+            }
+            for c in &t.cells {
+                if let Some(cft) = c.text.frames.first() {
+                    self.draw_text(ctx, f, &c.text, cft, xf * Affine::translate(c.origin.to_vec2()));
+                }
+            }
+            ctx.set_transform(f.view * xf);
+            for s in &t.strokes {
+                let Some(col) = doc.resolve_color(&s.stroke.color, s.stroke.tint) else { continue };
+                ctx.set_paint(color_of(&col, 1.0));
+                ctx.set_stroke(cell_stroke(&s.stroke));
+                ctx.stroke_path(&kurbo::Line::new(s.a, s.b).to_path(0.1));
+            }
+        }
+    }
+}
+
+/// Kurbo stroke for a table edge.
+fn cell_stroke(s: &designcraft_doc::CellStroke) -> kurbo::Stroke {
+    let st = kurbo::Stroke::new(s.weight).with_caps(kurbo::Cap::Square);
+    match &s.kind {
+        StrokeType::Dashed { pattern } if !pattern.is_empty() => st.with_caps(kurbo::Cap::Butt).with_dashes(0.0, pattern.iter().copied()),
+        StrokeType::Dotted => st.with_dashes(0.0, [0.0, s.weight * 2.0]).with_caps(kurbo::Cap::Round),
+        _ => st,
     }
 }
 
@@ -709,5 +754,40 @@ mod tests {
         assert!(dark > 50, "text pixels: {dark}");
         let _ = fid;
         assert!(r.stats.glyphs >= 15);
+    }
+
+    #[test]
+    fn renders_tables() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 336.0, 400.0), lid, "", ParaFormat::default()).unwrap();
+        let mut t = designcraft_doc::Table::new(5, 3, 3, 1, 0, 300.0);
+        for c in 0..3 {
+            let cell = t.cell_mut(0, c).unwrap();
+            cell.fill = "C=100 M=0 Y=0 K=0".into();
+            cell.text.insert(0, "Head");
+            t.cell_mut(2, c).unwrap().text.insert(0, "WWWWWWWW");
+        }
+        d.story_mut(sid).unwrap().insert_table(0, t);
+        let cache = Cache::new();
+        let cs = cache.get(&d, sid, None);
+        let tf = &cs.frames[0].tables[0];
+        let head = tf.cell(0, 1).unwrap().rect;
+        let body = tf.cell(2, 0).unwrap().rect;
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let img = r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions::default()).unwrap();
+        // Header fill (cyan) near the right edge of the middle header cell.
+        let c = img.pixel((head.x1 - 3.0) as u32, (head.y0 + 3.0) as u32);
+        assert!(c[0] < 80 && c[2] > 150, "{c:?}");
+        // The table border (black) on the left edge.
+        let e = img.pixel(body.x0.round() as u32, body.center().y as u32);
+        assert!(e[0] < 200, "{e:?}");
+        // Cell text drew dark pixels inside the body cell.
+        let dark = ((body.x0 + 5.0) as u32..(body.x1 - 2.0) as u32)
+            .flat_map(|x| ((body.y0 + 2.0) as u32..(body.y1 - 2.0) as u32).map(move |y| (x, y)))
+            .filter(|&(x, y)| img.pixel(x, y)[0] < 100)
+            .count();
+        assert!(dark > 30, "cell text pixels: {dark}");
     }
 }

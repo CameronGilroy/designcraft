@@ -16,6 +16,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Command Palette…", Some("Cmd+K"), "{}"),
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
+    ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
+    ("app.tablePanel", "Table Panel", Some("Shift+F9"), "{}"),
     ("app.storyEditor", "Edit in Story Editor", Some("Cmd+Y"), "{story?}"),
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "{}"),
     ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "{}"),
@@ -37,7 +39,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
         "window.panel",
         "Show Panel",
         None,
-        "{panel: properties|pages|layers|swatches|paragraphStyles|characterStyles|stroke|character|paragraph|textWrap|links}",
+        "{panel: properties|pages|layers|swatches|paragraphStyles|characterStyles|stroke|character|paragraph|textWrap|links|table}",
     ),
     ("window.controlBar", "Control", Some("Cmd+Alt+6"), "{}"),
     ("window.toolsDoubleColumn", "Tools: Double Column", None, "{}"),
@@ -145,7 +147,37 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "<",
         ],
     ),
-    ("Table", &[]),
+    (
+        "Table",
+        &[
+            "ui:app.insertTableDialog",
+            "cmd:table.convertFromText",
+            "cmd:table.convertToText",
+            "-",
+            ">Insert",
+            "cmd:table.insertRowAbove",
+            "cmd:table.insertRowBelow",
+            "cmd:table.insertColumnLeft",
+            "cmd:table.insertColumnRight",
+            "<",
+            ">Delete",
+            "cmd:table.deleteRow",
+            "cmd:table.deleteColumn",
+            "cmd:table.delete",
+            "<",
+            ">Select",
+            "cmd:table.selectRow",
+            "cmd:table.selectColumn",
+            "cmd:table.selectTable",
+            "<",
+            "-",
+            "cmd:table.merge",
+            "cmd:table.unmerge",
+            "cmd:table.distributeColumns",
+            "-",
+            "ui:app.tablePanel",
+        ],
+    ),
     (
         "View",
         &[
@@ -220,6 +252,17 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "app.findChange" => {
             app.ui.dialog = Some(crate::dialogs::Dialog::new("findChange", json!({})));
+            Ok(Value::Null)
+        }
+        "app.insertTableDialog" => {
+            if app.session.active().is_none_or(|d| d.selection.text.is_none()) {
+                return Some(Err("place the insertion point in a text frame to create a table".into()));
+            }
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("insertTable", p.clone()));
+            Ok(Value::Null)
+        }
+        "app.tablePanel" => {
+            app.ui.open_panel = if app.ui.open_panel.as_deref() == Some("table") { None } else { Some("table".into()) };
             Ok(Value::Null)
         }
         "app.exportPdf" => export_pdf(app, p),
