@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use designcraft_doc::{ItemId, Selection, SpreadRef};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::{CommandSpec, bool_or, cmd, has_doc, has_selection, ids_param, ok};
 use crate::{HistoryEntry, Result, Session};
