@@ -825,7 +825,15 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
                 let _ = app.run("text.insert", json!({"text": t}));
             }
             egui::Event::Paste(t) if wants_text => {
-                let _ = app.run("text.insert", json!({"text": t}));
+                let _ = app.run("text.insert", json!({"text": t.replace("\r\n", "\n").replace('\r', "\n")}));
+            }
+            egui::Event::Copy | egui::Event::Cut if wants_text => {
+                if let Some(t) = selected_text(app) {
+                    ui.ctx().copy_text(t);
+                    if matches!(e, egui::Event::Cut) {
+                        let _ = app.run("text.delete", json!({}));
+                    }
+                }
             }
             egui::Event::Key { key, pressed: true, modifiers, .. } => {
                 let k = match key {
@@ -893,4 +901,16 @@ fn draw_hidden_characters(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc
             }
         }
     }
+}
+
+/// Plain text of the current text selection (story markers resolved to readable characters).
+pub fn selected_text(app: &DesignApp) -> Option<String> {
+    let st = app.session.active()?;
+    let t = st.selection.text?;
+    let story = st.doc.story(t.story)?;
+    let s = story.slice(t.range());
+    if s.is_empty() {
+        return None;
+    }
+    Some(s.replace(designcraft_doc::story::FORCED_LINE_BREAK, "\n"))
 }

@@ -479,8 +479,8 @@ pub fn shortcuts(app: &mut DesignApp, ctx: &egui::Context) {
                 if !m.command && !m.alt && !m.shift && typing {
                     continue;
                 }
-                if id == "edit.clear" {
-                    continue; // Delete is handled by the active tool.
+                if id == "edit.clear" || (typing && matches!(id, "edit.copy" | "edit.cut" | "edit.paste" | "edit.pasteInPlace")) {
+                    continue; // Handled by the active tool / text clipboard events.
                 }
                 fired = Some(id);
                 break;
