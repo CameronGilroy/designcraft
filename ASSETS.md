@@ -29,6 +29,6 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `assets/fonts/SourceSerif4-Semibold.ttf` | Frank Grießhammer / Adobe (released as open source) | https://github.com/adobe-fonts/source-serif | OFL-1.1 (`assets/fonts/OFL-SourceSerif4.txt`) | Open-source typeface |
 | `docs/images/page-2.png` | DesignCraft contributors | screenshot/render of DesignCraft itself (sample document generated in code) | MIT OR Apache-2.0 | Original; no Adobe UI |
 | `docs/images/page-3.png` | DesignCraft contributors | screenshot/render of DesignCraft itself (sample document generated in code) | MIT OR Apache-2.0 | Original; no Adobe UI |
+| `docs/images/page-4.png` | DesignCraft contributors | screenshot/render of DesignCraft itself (sample document generated in code) | MIT OR Apache-2.0 | Original; no Adobe UI |
 | `docs/images/page-cover.png` | DesignCraft contributors | screenshot/render of DesignCraft itself (sample document generated in code) | MIT OR Apache-2.0 | Original; no Adobe UI |
 | `docs/images/ui-spread.png` | DesignCraft contributors | screenshot/render of DesignCraft itself (sample document generated in code) | MIT OR Apache-2.0 | Original; no Adobe UI |
-| `docs/images/ui-typing.png` | DesignCraft contributors | screenshot/render of DesignCraft itself (sample document generated in code) | MIT OR Apache-2.0 | Original; no Adobe UI |
