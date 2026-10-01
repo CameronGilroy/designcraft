@@ -232,8 +232,8 @@ pub fn apply(ctx: &egui::Context, t: &Tokens) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::NULL, *t));
     let text_styles: std::collections::BTreeMap<TextStyle, FontId> = [
         (TextStyle::Small, FontId::proportional(10.0)),
-        (TextStyle::Body, FontId::proportional(11.5)),
-        (TextStyle::Button, FontId::proportional(11.5)),
+        (TextStyle::Body, FontId::proportional(11.0)),
+        (TextStyle::Button, FontId::proportional(11.0)),
         (TextStyle::Heading, FontId::new(15.0, FontFamily::Name("semibold".into()))),
         (TextStyle::Monospace, FontId::monospace(11.5)),
     ]

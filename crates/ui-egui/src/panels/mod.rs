@@ -32,6 +32,12 @@ pub struct SelInfo {
     pub kind: &'static str,
     pub is_graphic: bool,
     pub is_text: bool,
+    /// Stroke type id (`solid`, `dashed`, `thickThin`, …).
+    pub stroke_kind: String,
+    /// Uniform corner (shape, size) — the first corner.
+    pub corner: (designcraft_geom::corners::CornerShape, f64),
+    pub wrap_invert: bool,
+    pub locked: bool,
 }
 
 pub fn sel_info(app: &DesignApp) -> Option<SelInfo> {
@@ -72,6 +78,13 @@ pub fn sel_info(app: &DesignApp) -> Option<SelInfo> {
         kind: first.default_label(),
         is_graphic: matches!(first.content, Content::Graphic(_)),
         is_text: first.is_text_frame(),
+        stroke_kind: serde_json::to_value(&first.stroke.kind)
+            .ok()
+            .and_then(|v| v.get("kind").and_then(Value::as_str).map(str::to_string).or_else(|| v.as_str().map(str::to_string)))
+            .unwrap_or_else(|| "solid".into()),
+        corner: (first.corners.corners[0].shape, first.corners.corners[0].size),
+        wrap_invert: first.wrap.invert,
+        locked: first.locked,
     })
 }
 

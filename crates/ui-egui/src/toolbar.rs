@@ -157,58 +157,169 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     }
 }
 
-/// Fill/stroke proxy squares with default/swap, and apply color / gradient / none.
+/// The area under the tools (InDesign 2026 §3 group 5): mini Default Fill/Stroke and Swap, the
+/// overlapping Fill/Stroke proxy, Formatting affects container / text, the Apply None well, a
+/// utility button and the Screen Mode well.
 fn fill_stroke_proxy(app: &mut DesignApp, ui: &mut egui::Ui, width: f32) {
     let t = Tokens::get(ui.ctx());
     let info = crate::panels::sel_info(app);
     let doc = app.session.active().map(|d| d.doc.clone());
-    let (r, _) = ui.allocate_exact_size(vec2(width, 40.0), Sense::hover());
-    let base = egui::pos2(r.center().x - 15.0, r.min.y + 4.0);
-    let fill_r = egui::Rect::from_min_size(base, vec2(20.0, 20.0));
-    let stroke_r = egui::Rect::from_min_size(base + vec2(10.0, 10.0), vec2(20.0, 20.0));
-    let (fc, fg) = match (&doc, &info) {
-        (Some(d), Some(i)) => crate::widgets::swatch_colors(d, &i.fill, 1.0),
-        _ => (None, None),
+    let stroke_front_id = egui::Id::new("proxy_stroke_front");
+    let text_id = egui::Id::new("proxy_text");
+    let stroke_front: bool = ui.data(|d| d.get_temp(stroke_front_id)).unwrap_or(false);
+    let text_mode: bool = ui.data(|d| d.get_temp(text_id)).unwrap_or(false);
+    let (fill_sw, stroke_sw) = match &info {
+        Some(i) => (i.fill.clone(), i.stroke.clone()),
+        None => ("[None]".to_string(), "[Black]".to_string()),
     };
-    let (sc, _) = match (&doc, &info) {
-        (Some(d), Some(i)) => crate::widgets::swatch_colors(d, &i.stroke, 1.0),
-        _ => (Some(Color32::BLACK), None),
+    let x0 = ui.max_rect().min.x + (width - 30.0) / 2.0;
+    // Row 1: default colours + swap.
+    let (row, _) = ui.allocate_exact_size(vec2(width, 11.0), Sense::hover());
+    let def = egui::Rect::from_min_size(egui::pos2(x0, row.min.y), vec2(10.0, 10.0));
+    icons::paint(ui.painter(), def, "default-colors", t.icon);
+    if ui.interact(def, ui.id().with("proxy_default"), Sense::click()).on_hover_text("Default Fill and Stroke (D)").clicked() {
+        let _ = app.run("object.fill", json!({"swatch": "[None]"}));
+        let _ = app.run("object.stroke", json!({"swatch": "[Black]"}));
+    }
+    let swap = egui::Rect::from_min_size(egui::pos2(x0 + 19.0, row.min.y), vec2(11.0, 11.0));
+    icons::paint(ui.painter(), swap, "swap", t.icon);
+    if ui.interact(swap, ui.id().with("proxy_swap_btn"), Sense::click()).on_hover_text("Swap Fill and Stroke (Shift+X)").clicked() {
+        let _ = app.run("object.fill", json!({"swatch": stroke_sw}));
+        let _ = app.run("object.stroke", json!({"swatch": fill_sw}));
+    }
+    ui.add_space(2.0);
+    // Proxy: 19.5 pt squares, fill top-left, stroke bottom-right.
+    let (r, _) = ui.allocate_exact_size(vec2(width, 31.0), Sense::hover());
+    let fill_r = egui::Rect::from_min_size(egui::pos2(x0, r.min.y), vec2(19.5, 19.5));
+    let stroke_r = egui::Rect::from_min_size(egui::pos2(x0 + 10.0, r.min.y + 10.0), vec2(19.5, 19.5));
+    let (fc, fg) = match &doc {
+        Some(d) => crate::widgets::swatch_colors(d, &fill_sw, 1.0),
+        None => (None, None),
     };
+    let sc = doc.as_ref().and_then(|d| crate::widgets::swatch_colors(d, &stroke_sw, 1.0).0);
     let p = ui.painter();
-    // Stroke square (ring) behind, fill square in front.
-    match sc {
-        Some(c) => {
-            p.rect_filled(stroke_r, 0.0, c);
-            p.rect_filled(stroke_r.shrink(5.0), 0.0, t.panel);
-        }
-        None => crate::widgets::paint_chip(p, stroke_r, None, None),
-    }
-    p.rect_stroke(stroke_r, 0.0, Stroke::new(1.0, t.input_border), StrokeKind::Inside);
-    crate::widgets::paint_chip(p, fill_r, fc, fg);
-    p.rect_stroke(fill_r, 0.0, Stroke::new(1.0, t.input_border), StrokeKind::Inside);
-    let resp = ui.interact(r, ui.id().with("proxy_swap"), Sense::click());
-    if resp.double_clicked() {
-        let _ = app.run("window.panel", json!({"panel": "swatches"}));
-    }
-    // Apply Color / Gradient / None, stacked (InDesign 2026 single column).
-    ui.vertical_centered(|ui| {
-        ui.spacing_mut().item_spacing.y = 2.0;
-        for (icon, tip, sw) in [("fill-proxy", "Apply Color (,)", "[Black]"), ("none", "Apply None (/)", "[None]")] {
-            if tool_button(ui, icon, false, tip).clicked() && !sw.is_empty() {
-                let _ = app.run("object.fill", json!({"swatch": sw}));
+    let paint_stroke = |p: &egui::Painter| {
+        match sc {
+            Some(c) => {
+                p.rect_filled(stroke_r, 0.0, c);
+                p.rect_filled(stroke_r.shrink(5.5), 0.0, t.panel);
+                p.rect_stroke(stroke_r.shrink(5.5), 0.0, Stroke::new(1.0, t.border), StrokeKind::Outside);
+            }
+            None => {
+                crate::widgets::paint_chip(p, stroke_r, None, None);
+                p.rect_filled(stroke_r.shrink(5.5), 0.0, t.panel);
             }
         }
-        ui.add_space(4.0);
-        let r = ui.available_rect_before_wrap();
-        ui.painter().line_segment([egui::pos2(r.min.x + 6.0, r.min.y), egui::pos2(r.max.x - 6.0, r.min.y)], Stroke::new(1.0, t.divider));
-        ui.add_space(4.0);
-        let preview = app.ui.screen_mode == crate::ScreenMode::Preview;
-        let tip = if preview { "Preview (W)" } else { "Normal (W)" };
-        if tool_button(ui, if preview { "screen-preview" } else { "screen-normal" }, true, tip).clicked() {
-            app.ui.screen_mode = if preview { crate::ScreenMode::Normal } else { crate::ScreenMode::Preview };
+        p.rect_stroke(stroke_r, 0.0, Stroke::new(1.0, t.border), StrokeKind::Outside);
+    };
+    let paint_fill = |p: &egui::Painter| {
+        crate::widgets::paint_chip(p, fill_r, fc, fg);
+        p.rect_stroke(fill_r, 0.0, Stroke::new(1.0, t.border), StrokeKind::Outside);
+    };
+    if stroke_front {
+        paint_fill(p);
+        paint_stroke(p);
+    } else {
+        paint_stroke(p);
+        paint_fill(p);
+    }
+    let fresp = ui.interact(fill_r, ui.id().with("proxy_fill"), Sense::click()).on_hover_text("Fill (X)");
+    let sresp = ui.interact(stroke_r.translate(vec2(0.0, 0.0)), ui.id().with("proxy_stroke"), Sense::click()).on_hover_text("Stroke (X)");
+    if fresp.clicked() || sresp.clicked() {
+        let front =
+            if stroke_front { !fresp.clicked() } else { sresp.clicked() && !fill_r.contains(sresp.interact_pointer_pos().unwrap_or_default()) };
+        ui.data_mut(|d| d.insert_temp(stroke_front_id, front));
+    }
+    if fresp.double_clicked() || sresp.double_clicked() {
+        let _ = app.run("window.panel", json!({"panel": "swatches"}));
+    }
+    ui.add_space(3.0);
+    // Formatting affects container / text.
+    let (row, _) = ui.allocate_exact_size(vec2(width, 13.0), Sense::hover());
+    for (k, (icon, tip)) in
+        [("format-container", "Formatting affects container (J)"), ("format-text", "Formatting affects text (J)")].into_iter().enumerate()
+    {
+        let r = egui::Rect::from_min_size(egui::pos2(x0 - 1.0 + k as f32 * 18.0, row.min.y), vec2(13.0, 13.0));
+        let on = text_mode == (k == 1);
+        if on {
+            ui.painter().rect(r, 1.5, t.well, Stroke::new(1.0, t.well_rim), StrokeKind::Inside);
+        }
+        icons::paint(ui.painter(), r.shrink(1.5), icon, if on { t.text_strong } else { t.icon });
+        if ui.interact(r, ui.id().with(("proxy_fmt", k)), Sense::click()).on_hover_text(tip).clicked() {
+            ui.data_mut(|d| d.insert_temp(text_id, k == 1));
+        }
+    }
+    ui.add_space(5.0);
+    // Apply None well (flyout: Apply Color / Gradient / None).
+    let (row, _) = ui.allocate_exact_size(vec2(width, 21.0), Sense::hover());
+    let well = egui::Rect::from_center_size(egui::pos2(row.min.x + width / 2.0, row.center().y), vec2(28.0, 21.0));
+    let resp = ui.interact(well, ui.id().with("proxy_apply"), Sense::click()).on_hover_text("Apply None (/)");
+    ui.painter().rect(well, 2.0, t.well, Stroke::new(1.0, t.well_rim), StrokeKind::Outside);
+    let chip = egui::Rect::from_center_size(well.center(), vec2(14.0, 14.0));
+    crate::widgets::paint_chip(ui.painter(), chip, None, None);
+    flyout_triangle(ui.painter(), well, t.icon);
+    let target = if stroke_front { "object.stroke" } else { "object.fill" };
+    if resp.clicked() {
+        let _ = app.run(target, json!({"swatch": "[None]"}));
+    }
+    egui::Popup::context_menu(&resp).show(|ui| {
+        for (label, sw) in [("Apply Color", "[Black]"), ("Apply None", "[None]")] {
+            if ui.button(label).clicked() {
+                let _ = app.run(target, json!({"swatch": sw}));
+                ui.close();
+            }
         }
     });
-    let _ = width;
+    ui.add_space(6.0);
+    separator(ui, &t);
+    // Utility (frame options).
+    ui.vertical_centered(|ui| {
+        if tool_button(ui, "frame-options", false, "Text Frame Options").clicked() {
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("textFrameOptions", json!({})));
+        }
+    });
+    separator(ui, &t);
+    // Screen Mode well with flyout.
+    let (row, _) = ui.allocate_exact_size(vec2(width, 22.0), Sense::hover());
+    let well = egui::Rect::from_center_size(egui::pos2(row.min.x + width / 2.0, row.center().y), vec2(28.0, 21.0));
+    let resp = ui.interact(well, ui.id().with("screen_mode"), Sense::click());
+    ui.painter().rect(well, 2.0, t.well, Stroke::new(1.0, t.well_rim), StrokeKind::Outside);
+    let preview = app.ui.screen_mode == crate::ScreenMode::Preview;
+    icons::paint(
+        ui.painter(),
+        egui::Rect::from_center_size(well.center(), vec2(15.0, 15.0)),
+        if preview { "screen-preview" } else { "screen-normal" },
+        t.text_strong,
+    );
+    flyout_triangle(ui.painter(), well, t.icon);
+    let resp = resp.on_hover_text(if preview { "Preview (W)" } else { "Normal (W)" });
+    if resp.clicked() {
+        let _ = app.run("view.togglePreview", json!({}));
+    }
+    egui::Popup::context_menu(&resp).show(|ui| {
+        for (label, mode) in [("Normal", "normal"), ("Preview", "preview"), ("Bleed", "bleed"), ("Slug", "slug"), ("Presentation", "presentation")] {
+            if ui.button(label).clicked() {
+                let _ = app.run("view.screenMode", json!({"mode": mode}));
+                ui.close();
+            }
+        }
+    });
+}
+
+fn flyout_triangle(p: &egui::Painter, r: egui::Rect, c: Color32) {
+    let q = r.right_bottom() - vec2(2.0, 2.0);
+    p.add(egui::Shape::convex_polygon(vec![q, q - vec2(4.0, 0.0), q - vec2(0.0, 4.0)], c, Stroke::NONE));
+}
+
+fn separator(ui: &mut egui::Ui, t: &Tokens) {
+    ui.add_space(4.0);
+    let r = ui.available_rect_before_wrap();
+    ui.painter().line_segment(
+        [egui::pos2(r.min.x + 6.0, r.min.y), egui::pos2(r.max.x - 6.0, r.min.y)],
+        Stroke::new(1.0, Color32::from_rgb(0x4c, 0x4b, 0x4b)),
+    );
+    let _ = t;
+    ui.add_space(5.0);
 }
 
 /// A Tools-panel button: 24 pt pitch; the active tool sits in a 28×20 pt `#303030` well with a rim.

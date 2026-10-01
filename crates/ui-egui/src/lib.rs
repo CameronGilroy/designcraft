@@ -15,6 +15,7 @@ pub mod menus;
 pub mod panels;
 pub mod render_worker;
 pub mod story_editor;
+pub mod taskbar;
 pub mod theme;
 pub mod toolbar;
 pub mod widgets;
@@ -90,6 +91,16 @@ pub struct UiState {
     pub dock_expanded: bool,
     pub units: Unit,
     pub workspace: String,
+    /// Transform reference point (0..8, row-major; 0 = top-left).
+    pub ref_point: u8,
+    /// Align To target (`selection`, `keyObject`, `margins`, `page`, `spread`).
+    pub align_to: String,
+    /// Properties > Text Style tab: 0 = Paragraph Styles, 1 = Character Styles.
+    pub text_style_tab: u8,
+    pub guides_locked: bool,
+    pub smart_guides: bool,
+    /// Window > Contextual Task Bar.
+    pub task_bar: bool,
     #[serde(skip)]
     pub status: String,
     #[serde(skip)]
@@ -119,6 +130,12 @@ impl Default for UiState {
             dock_expanded: true,
             units: Unit::Picas,
             workspace: "Essentials".into(),
+            ref_point: 0,
+            align_to: "selection".into(),
+            text_style_tab: 0,
+            guides_locked: false,
+            smart_guides: true,
+            task_bar: true,
             status: String::new(),
             dialog: None,
             palette: None,
