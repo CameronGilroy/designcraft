@@ -12,9 +12,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use designcraft_color::BlendMode as DcBlend;
-use designcraft_compose::{Cache, ComposedStory, FrameText};
-use designcraft_doc::{AssetId, Content, Document, Item, PageSide, SpreadRef, StrokeAlign, StrokeType};
-use designcraft_fonts::FontDb;
+use designcraft_compose::{Cache, ComposedStory};
+use designcraft_doc::{Content, Document, Item, PageSide, SpreadRef, StoryId, StrokeAlign, StrokeType};
 use designcraft_geom::corners;
 use designcraft_geom::{Affine, BezPath, Rect, Shape, Vec2};
 use vello_cpu::kurbo;
@@ -22,6 +21,10 @@ use vello_cpu::peniko::{self, BlendMode, Compose, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
 pub use vello_cpu;
+
+mod fx;
+pub mod images;
+mod text;
 
 /// A rendered image (premultiplied RGBA8, row-major).
 #[derive(Clone)]
@@ -115,11 +118,14 @@ pub struct FrameStats {
     pub micros: u64,
 }
 
-/// Reusable renderer (keeps the render context and decoded images).
+/// Reusable renderer: keeps the render context, the frame-space glyph paths of composed text
+/// and (process-wide) decoded images between renders.
 pub struct Renderer {
     ctx: Option<RenderContext>,
     resources: Resources,
-    images: HashMap<(AssetId, usize), Arc<Pixmap>>,
+    glyphs: text::GlyphCache,
+    /// Composed stories looked up during the current render.
+    stories: HashMap<(StoryId, Option<String>), Arc<ComposedStory>>,
     pub threads: u16,
     pub stats: FrameStats,
 }
@@ -130,13 +136,18 @@ impl Default for Renderer {
     }
 }
 
-struct Frame<'a> {
+#[derive(Clone, Copy)]
+pub(crate) struct Frame<'a> {
     doc: &'a Document,
     cache: &'a Cache,
     view: Affine,
+    /// Visible area in spread space.
     visible: Rect,
+    /// Size of a device pixel in points.
     px: f64,
     opts: &'a RenderOptions,
+    /// Drawing into a multithreaded context (no filter layers).
+    mt: bool,
 }
 
 pub fn default_threads() -> u16 {
@@ -155,7 +166,25 @@ pub fn default_threads() -> u16 {
 
 impl Renderer {
     pub fn new() -> Self {
-        Self { ctx: None, resources: Resources::new(), images: HashMap::new(), threads: default_threads(), stats: FrameStats::default() }
+        Self {
+            ctx: None,
+            resources: Resources::new(),
+            glyphs: text::GlyphCache::default(),
+            stories: HashMap::new(),
+            threads: default_threads(),
+            stats: FrameStats::default(),
+        }
+    }
+
+    /// Drop cached glyph paths (they are rebuilt on demand).
+    pub fn clear_caches(&mut self) {
+        self.glyphs.clear();
+        self.stories.clear();
+    }
+
+    /// Number of text frames whose glyph paths are cached.
+    pub fn cached_frames(&self) -> usize {
+        self.glyphs.len()
     }
 
     /// Render the given spreads into a `width`×`height` image with `view` (canvas → pixels).
@@ -173,13 +202,16 @@ impl Renderer {
         let w = width.clamp(1, u16::MAX as u32) as u16;
         let h = height.clamp(1, u16::MAX as u32) as u16;
         let mut ctx = match self.ctx.take() {
-            Some(mut c) if c.width() == w && c.height() == h => {
+            Some(mut c) if c.width() == w && c.height() == h && c.render_settings().num_threads == self.threads => {
                 c.reset();
                 c
             }
             _ => RenderContext::new_with(w, h, vello_cpu::RenderSettings { num_threads: self.threads, ..Default::default() }),
         };
+        let mt = ctx.render_settings().num_threads > 0;
         self.stats = FrameStats::default();
+        self.stories.clear();
+        self.glyphs.tick();
         if let Some(bg) = opts.background {
             ctx.set_transform(Affine::IDENTITY);
             ctx.set_paint(peniko::Color::from_rgba8(bg[0], bg[1], bg[2], bg[3]));
@@ -196,15 +228,17 @@ impl Renderer {
             if !rect_overlaps(bounds.inflate(2000.0, 2000.0), visible) {
                 continue;
             }
-            let f = Frame { doc, cache, view: sview, visible, px, opts };
+            let f = Frame { doc, cache, view: sview, visible, px, opts, mt };
             self.draw_spread(&mut ctx, &f, pl.spread);
         }
         ctx.flush();
-        let mut pm = Pixmap::new(w, h);
-        ctx.render(&mut pm, &mut self.resources);
+        // Render straight into the returned buffer (no extra copy of the frame).
+        let mut pixels = vec![0u8; w as usize * h as usize * 4];
+        ctx.render(vello_cpu::PixmapMut::new(w, h, &mut pixels).expect("buffer size"), &mut self.resources);
         self.ctx = Some(ctx);
+        self.stories.clear();
         self.stats.micros = now().saturating_sub(start);
-        Rendered { width: w as u32, height: h as u32, pixels: pm.data_as_u8_slice().to_vec() }
+        Rendered { width: w as u32, height: h as u32, pixels }
     }
 
     /// Render one document page (absolute index) at `scale` px/pt, optionally including bleed.
@@ -308,33 +342,53 @@ impl Renderer {
             }
             return;
         }
-        if !rect_overlaps(vb, f.visible) && !matches!(it.content, Content::Text(_)) {
+        // Composed text stays inside its frame apart from glyph overhang (italics, swashes, big
+        // initials), so text frames get a margin rather than being exempt from culling.
+        let margin = match it.content {
+            Content::Text(_) => 36.0 + 0.25 * vb.width().max(vb.height()),
+            _ => 0.0,
+        };
+        let fx_outset = if it.effects.any() { fx::outset(it) } else { 0.0 };
+        if !rect_overlaps(vb.inflate(margin + fx_outset, margin + fx_outset), f.visible) {
             return;
         }
         self.stats.items += 1;
-        let doc = f.doc;
         let bp = if it.corners.is_none() { it.path.to_bezpath() } else { corners::apply(&it.path, &it.corners) };
         let layered = it.opacity < 0.999 || it.blend != DcBlend::Normal;
         if layered {
             ctx.set_transform(Affine::IDENTITY);
             ctx.push_layer(None, Some(blend_mode(it.blend)), Some(it.opacity), None, None);
         }
-        // Drop shadow (simple offset silhouette).
-        if it.effects.drop_shadow.on {
-            let ds = &it.effects.drop_shadow;
-            let a = ds.angle.to_radians();
-            let off = Vec2::new(-a.cos() * ds.distance, a.sin() * ds.distance);
-            if let Some(c) = doc.resolve_color(&ds.color, 1.0) {
-                ctx.set_transform(f.view * Affine::translate(off) * xf);
-                ctx.set_paint(color_of(&c, ds.opacity));
-                ctx.fill_path(&bp);
-            }
+        if it.effects.any() {
+            self.draw_item_fx(ctx, f, it, &bp, xf, page_name);
+        } else {
+            self.draw_body(ctx, f, it, &bp, xf, page_name);
         }
+        if layered {
+            ctx.pop_layer();
+        }
+    }
+
+    /// The composed story for a frame (memoised for the current render: the cache lookup
+    /// validates the whole thread each time).
+    fn story(&mut self, f: &Frame, sid: StoryId, page_name: Option<&str>) -> Arc<ComposedStory> {
+        let key = (sid, page_name.map(str::to_string));
+        if let Some(cs) = self.stories.get(&key) {
+            return cs.clone();
+        }
+        let cs = f.cache.get(f.doc, sid, page_name);
+        self.stories.insert(key, cs.clone());
+        cs
+    }
+
+    /// Fill, content and stroke of a leaf item (no opacity, blend or effects).
+    pub(crate) fn draw_body(&mut self, ctx: &mut RenderContext, f: &Frame, it: &Item, bp: &BezPath, xf: Affine, page_name: Option<&str>) {
+        let doc = f.doc;
         // Fill.
         if !it.fill.is_none() {
             ctx.set_transform(f.view * xf);
             if set_fill_paint(ctx, doc, &it.fill.swatch, it.fill.tint, bp.bounding_box(), it.fill.gradient_angle) && it.path.is_closed() {
-                ctx.fill_path(&bp);
+                ctx.fill_path(bp);
             }
             ctx.reset_paint_transform();
         }
@@ -342,12 +396,12 @@ impl Renderer {
         match &it.content {
             Content::Graphic(g) => {
                 ctx.set_transform(f.view * xf);
-                ctx.push_clip_layer(&bp);
+                ctx.push_clip_layer(bp);
                 self.draw_graphic(ctx, f, g, xf);
                 ctx.pop_layer();
             }
             Content::Text(tf) => {
-                let cs = f.cache.get(doc, tf.story, page_name);
+                let cs = self.story(f, tf.story, page_name);
                 if let Some(ft) = cs.frame(it.id) {
                     self.draw_text(ctx, f, &cs, ft, xf);
                 }
@@ -356,10 +410,7 @@ impl Renderer {
         }
         // Stroke.
         if !it.stroke.is_none() {
-            self.draw_stroke(ctx, f, it, &bp, xf);
-        }
-        if layered {
-            ctx.pop_layer();
+            self.draw_stroke(ctx, f, it, bp, xf);
         }
     }
 
@@ -417,30 +468,7 @@ impl Renderer {
         let Some(asset) = f.doc.assets.get(&g.asset) else { return };
         // Pick a mip level close to the on-screen size.
         let on_screen = (f.view * xf * g.xf).determinant().abs().sqrt();
-        let full = match self.images.get(&(g.asset, 0)) {
-            Some(p) => p.clone(),
-            None => {
-                let Some(pm) = decode_pixmap(&asset.data) else { return };
-                let pm = Arc::new(pm);
-                self.images.insert((g.asset, 0), pm.clone());
-                pm
-            }
-        };
-        let ppt = full.width() as f64 / g.size.0.max(1e-6); // pixels per point
-        let need = on_screen * 1.0; // pixels per point on screen
-        let mut level = 0usize;
-        let mut pm = full.clone();
-        while ppt / (1 << (level + 1)) as f64 >= need * 1.2 && pm.width() > 64 && pm.height() > 64 && level < 8 {
-            level += 1;
-            pm = match self.images.get(&(g.asset, level)) {
-                Some(p) => p.clone(),
-                None => {
-                    let half = Arc::new(halve(&pm));
-                    self.images.insert((g.asset, level), half.clone());
-                    half
-                }
-            };
-        }
+        let Some(pm) = images::mip(&asset.data, g.size.0, on_screen) else { return };
         let rect = Rect::new(0.0, 0.0, g.size.0, g.size.1);
         ctx.set_transform(f.view * xf * g.xf);
         let sx = g.size.0 / pm.width().max(1) as f64;
@@ -452,142 +480,6 @@ impl Renderer {
         ctx.set_paint_transform(Affine::scale_non_uniform(sx, sy));
         ctx.fill_rect(&rect);
         ctx.reset_paint_transform();
-    }
-
-    fn draw_text(&mut self, ctx: &mut RenderContext, f: &Frame, cs: &ComposedStory, ft: &FrameText, xf: Affine) {
-        let db = FontDb::global();
-        let doc = f.doc;
-        // Decorations under text (shading) and rules.
-        for d in &ft.decos {
-            if let Some(c) = doc.resolve_color(&d.color, d.tint) {
-                ctx.set_transform(f.view * xf);
-                ctx.set_paint(color_of(&c, 1.0));
-                ctx.fill_rect(&d.rect);
-            }
-        }
-        if !ft.tables.is_empty() {
-            self.draw_tables(ctx, f, ft, xf);
-        }
-        let scale = (f.view * xf).determinant().abs().sqrt();
-        // Batch glyph outlines per run style into one path (in frame inner space).
-        let mut batches: HashMap<u32, BezPath> = HashMap::new();
-        let mut lines_deco: Vec<(u32, kurbo::Rect)> = Vec::new();
-        for l in &ft.lines {
-            let greek = f.opts.greek_below_px > 0.0 && l.ascent * scale < f.opts.greek_below_px;
-            if greek {
-                if let (Some(a), Some(_)) = (l.glyphs.first(), l.glyphs.last()) {
-                    let r = kurbo::Rect::new(a.x, l.baseline - l.ascent * 0.5, l.end_x, l.baseline);
-                    lines_deco.push((u32::MAX, r));
-                }
-                continue;
-            }
-            for g in &l.glyphs {
-                if !g.visible {
-                    continue;
-                }
-                let style = &cs.styles[g.style as usize];
-                if style.underline || style.strikethrough {
-                    let w = style.size / 14.0;
-                    if style.underline {
-                        lines_deco
-                            .push((g.style, kurbo::Rect::new(g.x, l.baseline + style.size * 0.12, g.x + g.adv, l.baseline + style.size * 0.12 + w)));
-                    }
-                    if style.strikethrough {
-                        lines_deco
-                            .push((g.style, kurbo::Rect::new(g.x, l.baseline - style.size * 0.3, g.x + g.adv, l.baseline - style.size * 0.3 + w)));
-                    }
-                }
-                let outline = db.outline(&g.face, g.gid);
-                if outline.elements().is_empty() {
-                    continue;
-                }
-                let skew = if style.skew != 0.0 { Affine::new([1.0, 0.0, -style.skew.to_radians().tan(), 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
-                let a = Affine::translate((g.x, l.baseline + g.y)) * skew * Affine::scale_non_uniform(g.sx, g.sy);
-                let b = batches.entry(g.style).or_default();
-                for el in outline.elements() {
-                    b.push(transform_el(a, *el));
-                }
-                self.stats.glyphs += 1;
-            }
-        }
-        ctx.set_transform(f.view * xf);
-        for (si, bp) in &batches {
-            let st = &cs.styles[*si as usize];
-            if let Some(c) = doc.resolve_color(&st.fill, st.fill_tint) {
-                ctx.set_paint(color_of(&c, 1.0));
-                ctx.fill_path(bp);
-            }
-            if st.stroke != designcraft_color::swatch::NONE
-                && let Some(c) = doc.resolve_color(&st.stroke, st.stroke_tint)
-            {
-                ctx.set_paint(color_of(&c, 1.0));
-                ctx.set_stroke(kurbo::Stroke::new(st.stroke_weight));
-                ctx.stroke_path(bp);
-            }
-        }
-        for (si, r) in lines_deco {
-            let c = if si == u32::MAX {
-                designcraft_color::Color::gray(0.35)
-            } else {
-                let st = &cs.styles[si as usize];
-                doc.resolve_color(&st.fill, st.fill_tint).unwrap_or(designcraft_color::Color::BLACK)
-            };
-            ctx.set_paint(color_of(&c, if si == u32::MAX { 0.5 } else { 1.0 }));
-            ctx.fill_rect(&r);
-        }
-    }
-}
-
-impl Renderer {
-    /// Table fragments: cell fills, cell text, then cell edges and the border.
-    fn draw_tables(&mut self, ctx: &mut RenderContext, f: &Frame, ft: &FrameText, xf: Affine) {
-        let doc = f.doc;
-        for t in &ft.tables {
-            for c in &t.cells {
-                if let Some((sw, tint)) = &c.fill
-                    && let Some(col) = doc.resolve_color(sw, *tint)
-                {
-                    ctx.set_transform(f.view * xf);
-                    ctx.set_paint(color_of(&col, 1.0));
-                    // Overlap neighbours by half a device pixel so adjacent fills show no seams.
-                    let h = 0.5 * f.px;
-                    ctx.fill_rect(&c.rect.inflate(h, h));
-                }
-            }
-            for c in &t.cells {
-                if let Some(cft) = c.text.frames.first() {
-                    self.draw_text(ctx, f, &c.text, cft, xf * Affine::translate(c.origin.to_vec2()));
-                }
-            }
-            ctx.set_transform(f.view * xf);
-            for s in &t.strokes {
-                let Some(col) = doc.resolve_color(&s.stroke.color, s.stroke.tint) else { continue };
-                ctx.set_paint(color_of(&col, 1.0));
-                ctx.set_stroke(cell_stroke(&s.stroke));
-                ctx.stroke_path(&kurbo::Line::new(s.a, s.b).to_path(0.1));
-            }
-        }
-    }
-}
-
-/// Kurbo stroke for a table edge.
-fn cell_stroke(s: &designcraft_doc::CellStroke) -> kurbo::Stroke {
-    let st = kurbo::Stroke::new(s.weight).with_caps(kurbo::Cap::Square);
-    match &s.kind {
-        StrokeType::Dashed { pattern } if !pattern.is_empty() => st.with_caps(kurbo::Cap::Butt).with_dashes(0.0, pattern.iter().copied()),
-        StrokeType::Dotted => st.with_dashes(0.0, [0.0, s.weight * 2.0]).with_caps(kurbo::Cap::Round),
-        _ => st,
-    }
-}
-
-fn transform_el(a: Affine, el: kurbo::PathEl) -> kurbo::PathEl {
-    use kurbo::PathEl::*;
-    match el {
-        MoveTo(p) => MoveTo(a * p),
-        LineTo(p) => LineTo(a * p),
-        QuadTo(p1, p2) => QuadTo(a * p1, a * p2),
-        CurveTo(p1, p2, p3) => CurveTo(a * p1, a * p2, a * p3),
-        ClosePath => ClosePath,
     }
 }
 

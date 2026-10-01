@@ -1,17 +1,17 @@
 //! Paragraph → styled, positioned glyphs (before line breaking).
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use designcraft_doc::{Capitalization, CharProps, Kerning, Leading, Position, Story, Styles, story};
-use designcraft_fonts::{Feature, FontDb, FontFace, ShapedGlyph, feature};
+use designcraft_fonts::{FaceRef, Feature, FontDb, FontFace, ShapedGlyph, feature};
 
 use crate::RunStyle;
 
 /// One glyph with every character attribute applied, in points.
 #[derive(Clone, Debug)]
 pub struct Glyph {
-    pub face: Arc<FontFace>,
+    pub face: FaceRef,
     pub gid: u32,
     /// Story byte offset of the cluster and its byte length (0 for generated glyphs).
     pub byte: usize,
@@ -230,10 +230,28 @@ fn shape_run(
 }
 
 type WordMap = HashMap<Box<str>, Arc<[ShapedGlyph]>>;
+type WordKey = (u32, bool, String);
 
-/// Shaped words (font units) by (face, caps, features), then text.
-static WORD_CACHE: Mutex<Vec<((u32, bool, String), WordMap)>> = Mutex::new(Vec::new());
+/// Shaped words (font units) by (face, caps, features), then text. Lookups take read locks and
+/// misses are shaped outside any lock, so parallel composition doesn't serialize here.
+static WORD_CACHE: RwLock<Vec<(WordKey, Arc<RwLock<WordMap>>)>> = RwLock::new(Vec::new());
 const WORD_CACHE_MAX: usize = 50_000;
+
+fn word_map(key: WordKey) -> Arc<RwLock<WordMap>> {
+    if let Some((_, m)) = WORD_CACHE.read().unwrap_or_else(|e| e.into_inner()).iter().find(|e| e.0 == key) {
+        return m.clone();
+    }
+    let mut w = WORD_CACHE.write().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, m)) = w.iter().find(|e| e.0 == key) {
+        return m.clone();
+    }
+    if w.len() > 64 {
+        w.clear();
+    }
+    let m = Arc::new(RwLock::new(HashMap::new()));
+    w.push((key, m.clone()));
+    m
+}
 
 /// Shape `src` word by word through a cache (like a browser's word cache): the text is split
 /// after each U+0020 so repeated words are shaped once. Shaping does not cross word spaces in the
@@ -243,34 +261,31 @@ fn shape_cached(face: &FontFace, src: &str, feats: &[Feature], caps: bool) -> Ve
     if src.len() < 2 || !src.contains(' ') {
         return designcraft_fonts::shape(face, src, feats, map);
     }
-    let fkey = format!("{feats:?}");
-    let mut out = Vec::with_capacity(src.len());
-    let mut guard = WORD_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    let key = (face.id(), caps, fkey);
-    let idx = match guard.iter().position(|e| e.0 == key) {
-        Some(i) => i,
-        None => {
-            if guard.len() > 64 {
-                guard.clear();
-            }
-            guard.push((key, HashMap::new()));
-            guard.len() - 1
-        }
+    let words = word_map((face.id(), caps, format!("{feats:?}")));
+    let pieces: Vec<&str> = src.split_inclusive(' ').collect();
+    let mut found: Vec<Option<Arc<[ShapedGlyph]>>> = {
+        let r = words.read().unwrap_or_else(|e| e.into_inner());
+        pieces.iter().map(|p| r.get(*p).cloned()).collect()
     };
-    let cache = &mut guard[idx].1;
-    if cache.len() > WORD_CACHE_MAX {
-        cache.clear();
+    let mut fresh: Vec<(Box<str>, Arc<[ShapedGlyph]>)> = Vec::new();
+    for (k, f) in found.iter_mut().enumerate() {
+        if f.is_none() {
+            let g: Arc<[ShapedGlyph]> = designcraft_fonts::shape(face, pieces[k], feats, map).into();
+            fresh.push((pieces[k].into(), g.clone()));
+            *f = Some(g);
+        }
     }
+    if !fresh.is_empty() {
+        let mut w = words.write().unwrap_or_else(|e| e.into_inner());
+        if w.len() + fresh.len() > WORD_CACHE_MAX {
+            w.clear();
+        }
+        w.extend(fresh);
+    }
+    let mut out = Vec::with_capacity(src.len());
     let mut start = 0;
-    for piece in src.split_inclusive(' ') {
-        let glyphs = match cache.get(piece) {
-            Some(g) => g.clone(),
-            None => {
-                let g: Arc<[ShapedGlyph]> = designcraft_fonts::shape(face, piece, feats, map).into();
-                cache.insert(piece.into(), g.clone());
-                g
-            }
-        };
+    for (piece, glyphs) in pieces.iter().zip(found) {
+        let glyphs = glyphs.unwrap_or_else(|| Arc::from(Vec::new()));
         out.extend(glyphs.iter().map(|g| ShapedGlyph { cluster: g.cluster + start, ..*g }));
         start += piece.len();
     }
@@ -300,7 +315,7 @@ fn effective_size(p: &CharProps) -> (f64, f64) {
 fn control_glyph(face: &Arc<FontFace>, p: &CharProps, auto_leading: f64, style: u32, byte: usize, ch: char) -> Glyph {
     let (size, k, ascent, descent, leading, cap, xh, shift) = metrics(face, p, auto_leading);
     Glyph {
-        face: face.clone(),
+        face: FaceRef::of(face),
         gid: face.glyph_for(' '),
         byte,
         len: ch.len_utf8(),
@@ -346,6 +361,7 @@ fn shape_segment(
     let space = face.advance(face.glyph_for(' ')) * k * hs;
     let shaped: Vec<ShapedGlyph> = shape_cached(face, src, &feats, caps);
     let n = shaped.len();
+    let fref = FaceRef::of(face);
     for (gi, sg) in shaped.iter().enumerate() {
         let (byte, len, ch) = if replacement.is_some() {
             (range.start, if gi == 0 { range.len() } else { 0 }, text[range.start..].chars().next().unwrap_or(' '))
@@ -364,7 +380,7 @@ fn shape_segment(
         // Only the first glyph of a cluster owns the bytes (so ranges partition the text).
         let first_in_cluster = gi == 0 || shaped[gi - 1].cluster != sg.cluster;
         out.push(Glyph {
-            face: face.clone(),
+            face: fref,
             gid: sg.gid,
             byte,
             len: if first_in_cluster || replacement.is_some() { len } else { 0 },

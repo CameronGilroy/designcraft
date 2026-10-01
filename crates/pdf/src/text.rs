@@ -211,7 +211,7 @@ impl Exporter<'_> {
         if fill.is_none() && stroke.is_none() {
             return;
         }
-        let face = g0.face.clone();
+        let face = g0.face;
         let size = g0.sy * face.upem;
         let hs = g0.sx / g0.sy;
         let skew = if st.skew != 0.0 { Affine::new([1.0, 0.0, -st.skew.to_radians().tan(), 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };

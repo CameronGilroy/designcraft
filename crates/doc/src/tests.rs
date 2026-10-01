@@ -78,6 +78,16 @@ fn page_names_follow_sections() {
     assert_eq!(d.page_name(1), "2");
     assert_eq!(d.page_name(2), "A-i");
     assert_eq!(d.page_name(4), "A-iii");
+    // A section that continues numbering.
+    d.sections.push(Section {
+        start: 5,
+        start_number: None,
+        style: NumberStyle::Arabic,
+        prefix: String::new(),
+        marker: String::new(),
+        include_prefix: false,
+    });
+    assert_eq!(d.page_name(5), "4");
 }
 
 #[test]

@@ -11,15 +11,17 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - UI (egui): application bar + menus, Control panel (object and text modes), Tools panel with flyouts, document tabs, rulers, pasteboard, guides (margins, columns, bleed, baseline grid), frame edges, selection handles, text ports and threads, Properties / Pages / Layers dock, Swatches, Styles, Character, Paragraph, Stroke, Text Wrap panels, New Document dialog, ⌘K palette, 4 brightness themes.
 - Pen tool, Direct Selection anchor/handle editing, rotate from corners, Rotate/Scale/Shear tools, Eyedropper, snapping & smart guides, Align/Distribute, Find/Change (text + GREP), Story Editor, Paragraph Style Options, Effects panel, hidden characters, native macOS menu bar, measured InDesign 2026 look (Medium Dark).
 - Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection, Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
-- Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection (basic), Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
 - PDF export (krilla): real selectable text with embedded font subsets, DeviceCMYK/RGB + spot Separations, bleed boxes, crop/bleed marks + page info, pages or spreads, PDF/A-2b (PDF/X-4 output intent pending) — `file.exportPdf`, File › Export PDF…, `designcraft-cli run --export out.pdf`.
 - IDML interchange (`designcraft-idml`): export and import of swatches, styles, fonts, preferences, parent spreads, spreads/pages, frames, groups, images (embedded or linked), formatted threaded stories — opens in InDesign 2026 and round-trips InDesign-exported files (`file.exportIdml`, `file.openIdml`, File → Export IDML…, CLI `--in x.idml` / `--export x.idml`).
 - Tables (M8): tables anchored in stories (header/footer/body rows, merged cells, per-edge strokes, fills + alternating fills, insets, vertical justification, at-least/exact row heights); composed into the text column (columns scale to fit, rows break across columns/frames with repeating headers/footers, overset); rendered, exported to PDF (real text) and IDML (export + import); Table menu, Table panel, Create Table dialog, caret/typing/Tab navigation and cell selection in cells; `table.*` commands.
-- ~100 commands, all reachable through the JSON control channel; headless CLI rendering to PNG.
+- Hyperlinks (text or frames → URL / e-mail / page) and bookmarks, exported as PDF link annotations and outline.
+- EPUB 3 (reflowable) export: stories in reading order, CSS from paragraph/character styles, images, navigation (`file.exportEpub`, CLI `--export x.epub`).
+- Data Merge (CSV or JSON rows, `<<Field>>` placeholders), spell checking (public-domain Moby list + document dictionary, suggestions), Step and Repeat (count or grid), snippets, object styles, Numbering & Section Options.
+- ~170 commands, all reachable through the JSON control channel; headless CLI rendering to PNG.
 - MCP server (`designcraft-cli mcp [--connect PORT]`, docs/mcp.md): headless engine or the running app; commands, batch, document/story inspection, page renders as images, window screenshots, pointer/keyboard/dialog input.
 - Web build (`apps/designcraft-web`, trunk): the same UI on WebGPU with a WebGL2 fallback; open/place via the browser file picker or drag-and-drop, save/export as downloads.
 
-**Next (in order):** table styles / cell styles, text rotation in cells · TOC/index/footnotes · PDF/X-4 output intent, bookmarks, tagged PDF · Links panel + relink · EPUB · column-break / default-tab fixes.
+**Next (in order):** table/cell styles, text rotation in cells · TOC, text variables, footnotes · PDF/X-4 output intent, tagged PDF · Links panel + relink · UI for Data Merge/spelling/hyperlinks.
 
 ## Milestones
 
@@ -32,11 +34,11 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 | M4 | Color & effects | started |
 | M5 | Graphics & links | started |
 | M6 | Files & export (native, IDML, PDF, PNG/JPEG) | in progress (IDML ✅, PDF export) |
-| M7 | Long documents (sections, TOC, index, footnotes, books) | |
-| M8 | Tables | ✅ core (styles, rotation, diagonal lines pending) |
+| M7 | Long documents (sections, TOC, index, footnotes, books) | started (sections, hyperlinks, bookmarks) |
+| M8 | Tables | ✅ core (table/cell styles, rotation, diagonal lines pending) |
 | M9 | Performance (MT composition, tiles) | |
-| M10 | Find/Change, spelling, Preflight | |
-| M11 | Layout power features (liquid/alternate layouts, data merge) | |
-| M12 | Interactive & digital (EPUB, HTML, interactive PDF) | |
+| M10 | Find/Change, spelling, Preflight | in progress (Find/Change ✅, spelling ✅, Preflight) |
+| M11 | Layout power features (liquid/alternate layouts, data merge) | started (data merge, step & repeat, snippets) |
+| M12 | Interactive & digital (EPUB, HTML, interactive PDF) | started (EPUB, PDF links/bookmarks) |
 | M13 | Automation (scripts, batch) | |
 | M14 | 1.0 polish & packaging | |

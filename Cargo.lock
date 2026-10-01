@@ -843,9 +843,14 @@ dependencies = [
 name = "designcraft-cli"
 version = "0.1.0"
 dependencies = [
+ "designcraft-color",
+ "designcraft-compose",
  "designcraft-doc",
  "designcraft-engine",
+ "designcraft-format",
+ "designcraft-geom",
  "designcraft-mcp",
+ "designcraft-pdf",
  "designcraft-render",
  "serde_json",
 ]
@@ -894,6 +899,7 @@ dependencies = [
  "designcraft-color",
  "designcraft-compose",
  "designcraft-doc",
+ "designcraft-epub",
  "designcraft-fonts",
  "designcraft-format",
  "designcraft-geom",
@@ -910,6 +916,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "designcraft-epub"
+version = "0.1.0"
+dependencies = [
+ "designcraft-color",
+ "designcraft-doc",
+ "zip",
 ]
 
 [[package]]
