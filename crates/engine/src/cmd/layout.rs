@@ -187,10 +187,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 let p = p.clone();
                 s.edit(|d, _| {
                     d.sections.retain(|x| x.start != start || start == 0);
-                    if p.get("remove").and_then(Value::as_bool).unwrap_or(false) {
-                        if start != 0 {
-                            return ok();
-                        }
+                    if p.get("remove").and_then(Value::as_bool).unwrap_or(false) && start != 0 {
+                        return ok();
                     }
                     let mut sec = d.sections.iter().find(|x| x.start == start).cloned().unwrap_or(designcraft_doc::Section {
                         start,
