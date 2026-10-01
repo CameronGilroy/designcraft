@@ -46,7 +46,7 @@ vello_common = { version = "0.2", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "tiff"] }
 krilla = "0.8"
 quick-xml = "0.38"
-zip = { version = "2.6", default-features = false, features = ["deflate"] }
+zip = { version = "3", default-features = false, features = ["deflate"] }
 
 # ui
 egui = "0.36"

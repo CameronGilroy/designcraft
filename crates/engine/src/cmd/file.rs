@@ -44,28 +44,11 @@ pub fn specs() -> Vec<CommandSpec> {
 }
 
 pub fn to_bytes(d: &Document) -> Vec<u8> {
-    // Assets are embedded as base64 alongside the JSON document.
-    let mut v = serde_json::to_value(d).unwrap_or_default();
-    let assets: serde_json::Map<String, Value> = d.assets.iter().map(|(k, a)| (k.0.to_string(), Value::from(base64_encode(&a.data)))).collect();
-    v["assetData"] = Value::Object(assets);
-    v["format"] = json!({"name": "designcraft", "version": 1});
-    serde_json::to_vec(&v).unwrap_or_default()
+    designcraft_format::save(d).unwrap_or_default()
 }
 
 pub fn from_bytes(b: &[u8]) -> Result<Document> {
-    let v: Value = serde_json::from_slice(b).map_err(|e| EngineError::Other(format!("not a DesignCraft document: {e}")))?;
-    let mut d: Document = serde_json::from_value(v.clone()).map_err(|e| EngineError::Other(format!("bad document: {e}")))?;
-    if let Some(data) = v.get("assetData").and_then(Value::as_object) {
-        for (k, s) in data {
-            if let (Ok(id), Some(s)) = (k.parse::<u64>(), s.as_str())
-                && let Some(a) = d.assets.get_mut(&AssetId(id))
-            {
-                Arc::make_mut(a).data = Arc::new(base64_decode(s));
-            }
-        }
-    }
-    d.check()?;
-    Ok(d)
+    designcraft_format::load(b).map_err(|e| EngineError::Other(e.to_string()))
 }
 
 fn file_new(s: &mut Session, p: &Value) -> Result<Value> {
