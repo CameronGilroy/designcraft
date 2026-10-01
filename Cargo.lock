@@ -843,9 +843,14 @@ dependencies = [
 name = "designcraft-cli"
 version = "0.1.0"
 dependencies = [
+ "designcraft-color",
+ "designcraft-compose",
  "designcraft-doc",
  "designcraft-engine",
+ "designcraft-format",
+ "designcraft-geom",
  "designcraft-mcp",
+ "designcraft-pdf",
  "designcraft-render",
  "serde_json",
 ]

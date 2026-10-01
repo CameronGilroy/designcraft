@@ -375,12 +375,67 @@ impl Default for DropShadow {
     }
 }
 
+/// Inner shadow: a blurred, offset shadow inside the object's edge.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct InnerShadow {
+    pub on: bool,
+    pub color: String,
+    pub opacity: f32,
+    pub angle: f64,
+    pub distance: f64,
+    pub size: f64,
+    /// Percentage (0–100) of `size` that hardens the edge instead of blurring it.
+    pub choke: f64,
+}
+
+impl Default for InnerShadow {
+    fn default() -> Self {
+        InnerShadow { on: false, color: designcraft_color::swatch::BLACK.into(), opacity: 0.75, angle: 135.0, distance: 7.0, size: 7.0, choke: 0.0 }
+    }
+}
+
+/// Outer glow: a blurred silhouette around the object, without offset.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct OuterGlow {
+    pub on: bool,
+    pub color: String,
+    pub opacity: f32,
+    pub size: f64,
+    /// Percentage (0–100) of `size` that grows the silhouette instead of blurring it.
+    pub spread: f64,
+}
+
+impl Default for OuterGlow {
+    fn default() -> Self {
+        OuterGlow { on: false, color: designcraft_color::swatch::BLACK.into(), opacity: 0.75, size: 7.0, spread: 0.0 }
+    }
+}
+
+fn is_default<T: Default + PartialEq>(v: &T) -> bool {
+    *v == T::default()
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Effects {
+    /// Drop shadow. `size` is the blur size; `spread` is a percentage (0–100) of it that grows
+    /// the silhouette instead of blurring it.
     pub drop_shadow: DropShadow,
     /// Basic feather width (0 = off).
     pub feather: f64,
+    #[serde(skip_serializing_if = "is_default")]
+    pub inner_shadow: InnerShadow,
+    #[serde(skip_serializing_if = "is_default")]
+    pub outer_glow: OuterGlow,
+}
+
+impl Effects {
+    /// Any effect drawn with soft (raster) filters?
+    pub fn any(&self) -> bool {
+        self.drop_shadow.on || self.feather > 0.0 || self.inner_shadow.on || self.outer_glow.on
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
