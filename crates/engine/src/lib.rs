@@ -140,6 +140,8 @@ pub struct Session {
     pub clipboard: Option<Arc<Document>>,
     /// Requests for the UI (dialogs, view changes) produced by tools/commands.
     pub ui_requests: Vec<UiRequest>,
+    /// Graphic loaded in the place cursor: (asset, natural size in points).
+    pub loaded: Option<(designcraft_doc::AssetId, (f64, f64))>,
     pub(crate) untitled: u32,
 }
 
@@ -160,6 +162,7 @@ impl Session {
             journal: vec![],
             clipboard: None,
             ui_requests: vec![],
+            loaded: None,
             untitled: 0,
         }
     }

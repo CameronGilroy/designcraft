@@ -181,6 +181,30 @@ fn rotate_scale_shear_and_eyedropper() {
     s.execute("transform.shear", &json!({"ids": [b], "angle": 20})).unwrap();
 }
 
+#[test]
+fn place_gun_click_drag_and_into_frame() {
+    use designcraft_tools::{PointerEvent, PointerKind};
+    let mut s = session();
+    let png = designcraft_render::Rendered { width: 40, height: 20, pixels: vec![200; 40 * 20 * 4] }.to_png();
+    let b64 = cmd::base64_encode(&png);
+    s.execute("place.load", &json!({"base64": b64, "name": "a.png"})).unwrap();
+    assert_eq!(s.tool_id(), "placeGun");
+    let v = ViewInfo { zoom: 1.0 };
+    s.pointer(&PointerEvent::new(PointerKind::Down, 100.0, 100.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 180.0, 300.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 180.0, 300.0), v).unwrap();
+    let st = s.doc().unwrap();
+    let it = st.doc.spreads[0].items.last().unwrap();
+    // Dragged 80×200 → fit proportionally: 80×40.
+    assert_eq!(it.bounds(), designcraft_geom::Rect::new(100.0, 100.0, 180.0, 140.0));
+    assert_eq!(s.tool_id(), "selection");
+    // Into an empty frame.
+    let f = s.execute("frame.create", &json!({"rect": [300, 300, 400, 400], "content": "graphic"})).unwrap()["id"].as_u64().unwrap();
+    s.execute("place.load", &json!({"base64": b64})).unwrap();
+    s.execute("place.drop", &json!({"frame": f})).unwrap();
+    assert!(matches!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(f)).unwrap().content, designcraft_doc::Content::Graphic(_)));
+}
+
 /// Unicode text per page, through hayro's interpreter (ToUnicode / ActualText).
 fn pdf_text(bytes: &[u8]) -> Vec<String> {
     use hayro_interpret::font::Glyph;

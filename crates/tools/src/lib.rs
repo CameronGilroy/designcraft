@@ -243,6 +243,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "shear" => Box::new(xform::XformTool::new("shear")),
         "eyedropper" => Box::new(xform::EyedropperTool),
         "hand" => Box::new(nav::HandTool::default()),
+        "placeGun" => Box::new(nav::PlaceGun::default()),
         "zoom" => Box::new(nav::ZoomTool),
         other => Box::new(NoopTool(tool_info(other).map(|t| t.id).unwrap_or("selection"))),
     }

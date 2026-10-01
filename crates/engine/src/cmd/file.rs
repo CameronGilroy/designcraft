@@ -32,6 +32,16 @@ pub fn specs() -> Vec<CommandSpec> {
             ok()
         }),
         cmd!(
+            "place.load",
+            "Load Place Cursor",
+            [],
+            None,
+            "{path | base64, name?} — load a graphic into the place cursor (then click/drag with the placeGun tool)",
+            has_doc,
+            place_load
+        ),
+        cmd!("place.drop", "Place Loaded Graphic", [], None, "{spread?, x, y, rect?: [x0,y0,x1,y1], frame?: id}", has_doc, place_drop),
+        cmd!(
             "file.place",
             "Place…",
             ["File"],
@@ -238,4 +248,83 @@ pub fn base64_decode(s: &str) -> Vec<u8> {
         }
     }
     out
+}
+
+fn read_source(p: &Value) -> Result<(Vec<u8>, String, Option<String>)> {
+    if let Some(b) = str_param(p, "base64") {
+        return Ok((base64_decode(b), str_param(p, "name").unwrap_or("image").to_string(), None));
+    }
+    let path = str_param(p, "path").ok_or_else(|| bad("place", "missing `path` or `base64`"))?;
+    #[cfg(not(target_arch = "wasm32"))]
+    let b = std::fs::read(path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+    #[cfg(target_arch = "wasm32")]
+    let b: Vec<u8> = vec![];
+    let name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.into());
+    Ok((b, name, Some(path.to_string())))
+}
+
+fn place_load(s: &mut Session, p: &Value) -> Result<Value> {
+    let (bytes, name, link) = read_source(p)?;
+    let (pw, ph) = designcraft_render::image_size(&bytes).ok_or_else(|| bad("place.load", "unsupported or corrupt image"))?;
+    let aid = s.edit(|d, _| {
+        let aid = AssetId(d.alloc());
+        let mime = designcraft_render::image_mime(&bytes).to_string();
+        d.assets
+            .insert(aid, Arc::new(Asset { id: aid, name: name.clone(), mime, link: link.clone(), data: Arc::new(bytes), pixels: Some((pw, ph)) }));
+        Ok(aid)
+    })?;
+    s.loaded = Some((aid, (pw as f64, ph as f64)));
+    s.set_tool("placeGun");
+    Ok(json!({"asset": aid.0, "name": name, "width": pw, "height": ph}))
+}
+
+fn place_drop(s: &mut Session, p: &Value) -> Result<Value> {
+    let (aid, (nw, nh)) = s.loaded.ok_or_else(|| bad("place.drop", "nothing loaded in the place cursor"))?;
+    let sr = super::spread_param(p, "spread");
+    let lid = s.doc()?.active_layer;
+    let frame = super::id_param(p, "frame");
+    let rect = super::rect_param(p, "rect");
+    let (x, y) = (super::f64_or(p, "x", 0.0), super::f64_or(p, "y", 0.0));
+    let r = s.edit(|d, sel| {
+        let id = match frame {
+            Some(fid) => {
+                let it = d.item_mut(fid).ok_or(designcraft_doc::DocError::NoItem(fid))?;
+                let r = it.inner_bounds();
+                let k = (r.width() / nw).max(r.height() / nh);
+                it.content = Content::Graphic(Graphic {
+                    asset: aid,
+                    size: (nw, nh),
+                    xf: Affine::translate((r.x0 + (r.width() - nw * k) / 2.0, r.y0 + (r.height() - nh * k) / 2.0)) * Affine::scale(k),
+                    auto_fit: designcraft_doc::Fitting::FillProportionally,
+                });
+                fid
+            }
+            None => {
+                // Drag: fit proportionally into the dragged rect; click: actual size at the point.
+                let (frame_r, k) = match rect {
+                    Some(r) if r.width() > 2.0 && r.height() > 2.0 => {
+                        let k = (r.width() / nw).min(r.height() / nh);
+                        (Rect::new(r.x0, r.y0, r.x0 + nw * k, r.y0 + nh * k), k)
+                    }
+                    _ => (Rect::new(x, y, x + nw, y + nh), 1.0),
+                };
+                let id = ItemId(d.alloc());
+                let mut it = Item::new(id, lid, Shape::Rectangle, shapes::rectangle(frame_r));
+                it.object_style = d.styles.default_graphic_frame.clone();
+                it.content = Content::Graphic(Graphic {
+                    asset: aid,
+                    size: (nw, nh),
+                    xf: Affine::translate((frame_r.x0, frame_r.y0)) * Affine::scale(k),
+                    auto_fit: Default::default(),
+                });
+                d.insert_item(sr, it, None)?;
+                id
+            }
+        };
+        *sel = Selection::items(vec![id]);
+        Ok(json!({"id": id.0}))
+    })?;
+    s.loaded = None;
+    s.set_tool("selection");
+    Ok(r)
 }
