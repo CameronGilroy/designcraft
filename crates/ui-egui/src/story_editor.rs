@@ -34,7 +34,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     ui.vertical(|ui| {
                         ui.set_width(130.0);
                         for (i, r) in story.para_ranges().iter().enumerate() {
-                            let lines = (story.text[r.clone()].len() / 60).max(0) + 1;
+                            let lines = story.text[r.clone()].len() / 60 + 1;
                             let style = &story.paras[i].style;
                             ui.label(egui::RichText::new(style).size(11.0).color(t.text_dim));
                             for _ in 1..lines {
