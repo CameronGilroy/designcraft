@@ -16,6 +16,7 @@ enum Drag {
     Pending { start: Point, hit: bool },
     Move { start: Point, origin_spread: SpreadRef, bounds0: Option<Rect> },
     Resize { handle: usize, start: Point, from: Rect, spread: SpreadRef },
+    Rotate { center: Point, start_angle: f64 },
     Marquee { start: Point, cur: Point },
     Anchor { id: u64, si: usize, ai: usize, handle: Option<&'static str>, start: Point },
 }
@@ -75,6 +76,21 @@ fn handle_at(cx: &ToolContext, p: Point) -> Option<usize> {
     let b = cx.selection_bounds()?;
     let tol = cx.tol(5.0);
     handles(b).iter().position(|h| (h.x - p.x).abs() <= tol && (h.y - p.y).abs() <= tol)
+}
+
+/// Just outside a corner handle of the selection → rotate.
+fn rotate_zone(cx: &ToolContext, p: Point) -> Option<Point> {
+    let b = cx.selection_bounds()?;
+    let inner = cx.tol(5.0);
+    let outer = cx.tol(18.0);
+    for c in [Point::new(b.x0, b.y0), Point::new(b.x1, b.y0), Point::new(b.x1, b.y1), Point::new(b.x0, b.y1)] {
+        let d = (c - p).hypot();
+        let outside = p.x < b.x0 || p.x > b.x1 || p.y < b.y0 || p.y > b.y1;
+        if d > inner && d <= outer && outside {
+            return Some(b.center());
+        }
+    }
+    None
 }
 
 /// New rect when dragging `handle` of `from` to `p`.
@@ -168,6 +184,13 @@ impl Tool for SelectionTool {
                     self.drag = Drag::Anchor { id, si, ai, handle, start: p };
                     return vec![Action::Begin(if handle.is_some() { "Move Direction Handle".into() } else { "Move Anchor".into() })];
                 }
+                if !self.direct
+                    && handle_at(cx, p).is_none()
+                    && let Some(center) = rotate_zone(cx, p)
+                {
+                    self.drag = Drag::Rotate { center, start_angle: (p - center).atan2() };
+                    return vec![Action::Begin("Rotate".into())];
+                }
                 if let Some(h) = handle_at(cx, p).filter(|_| !self.direct)
                     && let (Some(b), Some(first)) = (cx.selection_bounds(), cx.selection.items.first())
                     && let Some(loc) = cx.doc.find(*first)
@@ -249,6 +272,14 @@ impl Tool for SelectionTool {
                     self.drag = Drag::Marquee { start, cur: p };
                     vec![]
                 }
+                Drag::Rotate { center, start_angle } => {
+                    let mut a = ((p - center).atan2() - start_angle).to_degrees();
+                    if ev.mods.shift {
+                        a = (a / 45.0).round() * 45.0;
+                    }
+                    // Screen y points down: a positive screen angle is clockwise.
+                    vec![Action::Preview("transform.rotate".into(), json!({"angle": -a}))]
+                }
                 Drag::Anchor { id, si, ai, handle, start } => {
                     let d = p - start;
                     let mut params = json!({"id": id, "anchors": [[si, ai]], "dx": d.x, "dy": d.y});
@@ -263,7 +294,7 @@ impl Tool for SelectionTool {
                 self.guides.clear();
                 let d = std::mem::replace(&mut self.drag, Drag::None);
                 match d {
-                    Drag::Move { .. } | Drag::Resize { .. } | Drag::Anchor { .. } => vec![Action::Commit],
+                    Drag::Move { .. } | Drag::Resize { .. } | Drag::Anchor { .. } | Drag::Rotate { .. } => vec![Action::Commit],
                     Drag::Marquee { start, cur } => {
                         let r = Rect::from_points(start, cur);
                         // Items whose bounds intersect the marquee.
@@ -331,10 +362,12 @@ impl Tool for SelectionTool {
         match self.drag {
             Drag::Move { .. } => return Cursor::Move,
             Drag::Resize { handle, .. } => return handle_cursor(handle),
+            Drag::Rotate { .. } => return Cursor::Rotate,
             _ => {}
         }
         match handle_at(cx, p) {
             Some(h) => handle_cursor(h),
+            None if rotate_zone(cx, p).is_some() => Cursor::Rotate,
             None => Cursor::Arrow,
         }
     }

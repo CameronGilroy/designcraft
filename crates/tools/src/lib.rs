@@ -16,6 +16,7 @@ mod pen;
 pub mod select;
 pub mod snap;
 mod text;
+mod xform;
 
 use designcraft_compose::Cache;
 use designcraft_doc::{Document, Item, ItemId, Selection, SpreadRef};
@@ -237,6 +238,10 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "rectangleFrame" | "ellipseFrame" | "polygonFrame" | "rectangle" | "ellipse" | "polygon" | "line" => Box::new(frame::FrameTool::new(id)),
         "type" => Box::new(text::TypeTool::default()),
         "pen" => Box::new(pen::PenTool::default()),
+        "rotate" => Box::new(xform::XformTool::new("rotate")),
+        "scale" => Box::new(xform::XformTool::new("scale")),
+        "shear" => Box::new(xform::XformTool::new("shear")),
+        "eyedropper" => Box::new(xform::EyedropperTool),
         "hand" => Box::new(nav::HandTool::default()),
         "zoom" => Box::new(nav::ZoomTool),
         other => Box::new(NoopTool(tool_info(other).map(|t| t.id).unwrap_or("selection"))),

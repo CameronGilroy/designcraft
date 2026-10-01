@@ -28,6 +28,46 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("transform.move", "Move", ["Object", "Transform"], None, "{dx, dy, copy?: bool, ids?, toSpread?}", has_selection, transform_move),
         cmd!("transform.resize", "Resize", [], None, "{from: rect, to: rect, content?: bool (scale content), ids?}", has_selection, transform_resize),
         cmd!("transform.rotate", "Rotate", ["Object", "Transform"], None, "{angle (degrees, CCW), ids?}", has_selection, transform_rotate),
+        cmd!("transform.scale", "Scale", ["Object", "Transform"], None, "{sx, sy, ids?} (about the selection centre)", has_selection, |s, p| {
+            let sx = f64_or(p, "sx", 1.0);
+            let sy = f64_or(p, "sy", sx);
+            if sx.abs() < 1e-4 || sy.abs() < 1e-4 {
+                return Err(bad("transform.scale", "scale too small"));
+            }
+            apply_about_center(s, p, Affine::scale_non_uniform(sx, sy))
+        }),
+        cmd!("transform.shear", "Shear", ["Object", "Transform"], None, "{angle (degrees), ids?}", has_selection, |s, p| {
+            let a = f64_or(p, "angle", 0.0).clamp(-85.0, 85.0).to_radians().tan();
+            apply_about_center(s, p, Affine::new([1.0, 0.0, a, 1.0, 0.0, 0.0]))
+        }),
+        cmd!(
+            "object.matchAttributes",
+            "Apply Attributes (Eyedropper)",
+            [],
+            None,
+            "{from: id, ids?} — copy fill, stroke, corners, opacity, effects, wrap",
+            has_selection,
+            |s, p| {
+                let from = super::id_param(p, "from").ok_or_else(|| bad("object.matchAttributes", "missing from"))?;
+                let src = s.doc()?.doc.item(from).cloned().ok_or(designcraft_doc::DocError::NoItem(from))?;
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        if i.id == src.id {
+                            return;
+                        }
+                        i.fill = src.fill.clone();
+                        i.stroke = src.stroke.clone();
+                        i.corners = src.corners;
+                        i.opacity = src.opacity;
+                        i.blend = src.blend;
+                        i.effects = src.effects.clone();
+                    },
+                    false,
+                )
+            }
+        ),
         cmd!("transform.flip", "Flip", ["Object", "Transform"], None, "{axis: horizontal|vertical, ids?}", has_selection, |s, p| {
             let h = str_param(p, "axis") != Some("vertical");
             apply_about_center(s, p, if h { Affine::scale_non_uniform(-1.0, 1.0) } else { Affine::scale_non_uniform(1.0, -1.0) })

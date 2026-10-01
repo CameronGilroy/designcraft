@@ -162,3 +162,21 @@ fn pen_draws_and_direct_selection_edits() {
     let a = s.doc().unwrap().doc.item(id).unwrap().path.subpaths[0].anchors[0].p;
     assert_eq!(a, designcraft_geom::Point::new(90.0, 80.0));
 }
+
+#[test]
+fn rotate_scale_shear_and_eyedropper() {
+    let mut s = session();
+    let a = s.execute("frame.create", &json!({"rect": [100, 100, 200, 150], "content": "unassigned"})).unwrap()["id"].as_u64().unwrap();
+    s.execute("object.fill", &json!({"swatch": "C=100 M=0 Y=0 K=0"})).unwrap();
+    let b = s.execute("frame.create", &json!({"rect": [300, 100, 340, 140], "content": "unassigned"})).unwrap()["id"].as_u64().unwrap();
+    s.execute("transform.rotate", &json!({"ids": [a], "angle": 90})).unwrap();
+    let r = s.doc().unwrap().doc.item(designcraft_doc::ItemId(a)).unwrap().bounds();
+    assert!((r.width() - 50.0).abs() < 1e-6 && (r.height() - 100.0).abs() < 1e-6, "{r:?}");
+    s.execute("transform.scale", &json!({"ids": [b], "sx": 2.0})).unwrap();
+    let r = s.doc().unwrap().doc.item(designcraft_doc::ItemId(b)).unwrap().bounds();
+    assert!((r.width() - 80.0).abs() < 1e-6, "{r:?}");
+    s.execute("selection.set", &json!({"ids": [b]})).unwrap();
+    s.execute("object.matchAttributes", &json!({"from": a})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(b)).unwrap().fill.swatch, "C=100 M=0 Y=0 K=0");
+    s.execute("transform.shear", &json!({"ids": [b], "angle": 20})).unwrap();
+}
