@@ -36,6 +36,9 @@ impl Dialog {
                 fields.entry(k).or_insert(v);
             }
         }
+        if id == "paragraphStyleOptions" {
+            fields.entry("section".to_string()).or_insert(json!("general"));
+        }
         if id == "frameSize" {
             for k in ["width", "height"] {
                 if let Some(v) = fields.get(k).and_then(Value::as_f64) {
@@ -95,6 +98,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "textFrameOptions" => "Text Frame Options",
         "documentSetup" => "Document Setup",
         "findChange" => "Find/Change",
+        "paragraphStyleOptions" => "Paragraph Style Options",
         _ => "Dialog",
     };
     egui::Modal::new(egui::Id::new("dialog")).show(ctx, |ui| {
@@ -221,6 +225,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     ui.label(egui::RichText::new(st).color(crate::theme::Tokens::get(ui.ctx()).text_dim));
                 }
             }
+            "paragraphStyleOptions" => paragraph_style_options(app, ui, &mut d),
             "goToPage" => {
                 ui.horizontal(|ui| {
                     ui.label("Page");
@@ -327,7 +332,236 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             json!({"columns": d.n("columns").unwrap_or(1.0) as u64, "gutter": d.m("gutter").unwrap_or(12.0), "inset": d.m("inset").unwrap_or(0.0), "verticalJustification": d.s("verticalJustification")}),
         ),
         "documentSetup" => app.run("layout.documentSetup", json!({"width": d.m("width"), "height": d.m("height")})),
+        "paragraphStyleOptions" => {
+            let name = d.s("name");
+            let mut para = serde_json::Map::new();
+            let mut chars = serde_json::Map::new();
+            for (k, v) in &d.fields {
+                if let Some(a) = k.strip_prefix("p.") {
+                    para.insert(a.into(), v.clone());
+                } else if let Some(a) = k.strip_prefix("c.") {
+                    chars.insert(a.into(), v.clone());
+                }
+            }
+            let mut params = json!({"name": name, "para": para, "chars": chars});
+            let based = d.s("basedOn");
+            if !based.is_empty() {
+                params["basedOn"] = if based == "[No Paragraph Style]" { Value::Null } else { json!(based) };
+            }
+            let rename = d.s("rename");
+            if !rename.is_empty() && rename != name {
+                params["rename"] = json!(rename);
+            }
+            app.run("style.paragraph.edit", params)
+        }
         "findChange" => app.run("find.change", json!({"find": d.s("find"), "change": d.s("change"), "grep": d.b("grep"), "caseSensitive": d.b("caseSensitive"), "wholeWord": d.b("wholeWord"), "scope": d.s("scope")})),
         other => Err(format!("unknown dialog {other}")),
     }
+}
+
+/// Paragraph Style Options: sections in a left list (like InDesign), fields on the right.
+/// Edited values are stored as `p.<attr>` / `c.<attr>` fields and applied on OK.
+fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    let name = d.s("name");
+    let Some(st) = app.session.active() else { return };
+    let Some(style) = st.doc.styles.para(&name).cloned() else {
+        ui.label(format!("No style named {name}"));
+        return;
+    };
+    let names: Vec<String> = st.doc.styles.paragraph.iter().map(|p| p.name.clone()).filter(|n| *n != name).collect();
+    let (pp, cp) = st.doc.styles.resolve_para_style(&name);
+    let units = st.doc.settings.horizontal_units;
+    let pv = serde_json::to_value(&pp).unwrap_or_default();
+    let cv = serde_json::to_value(&cp).unwrap_or_default();
+    let cur = |d: &Dialog, k: &str, base: &Value| d.fields.get(k).cloned().unwrap_or_else(|| base.clone());
+    ui.set_min_width(560.0);
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(170.0);
+            for (id, label) in [
+                ("general", "General"),
+                ("chars", "Basic Character Formats"),
+                ("indents", "Indents and Spacing"),
+                ("hyph", "Hyphenation"),
+                ("justify", "Justification"),
+                ("color", "Character Color"),
+            ] {
+                if ui.selectable_label(d.s("section") == id, label).clicked() {
+                    d.fields.insert("section".into(), json!(id));
+                }
+            }
+        });
+        ui.separator();
+        ui.vertical(|ui| match d.s("section").as_str() {
+            "chars" => {
+                egui::Grid::new("psc").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("Font Family:");
+                    let fam = cur(d, "c.fontFamily", &cv["fontFamily"]).as_str().unwrap_or("").to_string();
+                    egui::ComboBox::from_id_salt("psfam").selected_text(&fam).width(200.0).show_ui(ui, |ui| {
+                        for f in designcraft_fonts::FontDb::global().families() {
+                            if ui.selectable_label(f == fam, &f).clicked() {
+                                d.fields.insert("c.fontFamily".into(), json!(f));
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Font Style:");
+                    let sty = cur(d, "c.fontStyle", &cv["fontStyle"]).as_str().unwrap_or("").to_string();
+                    egui::ComboBox::from_id_salt("pssty").selected_text(&sty).width(200.0).show_ui(ui, |ui| {
+                        for s in designcraft_fonts::FontDb::global().styles(&fam) {
+                            if ui.selectable_label(s == sty, &s).clicked() {
+                                d.fields.insert("c.fontStyle".into(), json!(s));
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    for (label, key, suffix) in [("Size:", "size", " pt"), ("Tracking:", "tracking", "")] {
+                        ui.label(label);
+                        let v = cur(d, &format!("c.{key}"), &cv[key]).as_f64();
+                        if let Some(n) = crate::widgets::number(ui, &format!("ps{key}"), v, suffix, 80.0, 2) {
+                            d.fields.insert(format!("c.{key}"), json!(n));
+                        }
+                        ui.end_row();
+                    }
+                    ui.label("Leading:");
+                    let lv = match cur(d, "c.leading", &cv["leading"]) {
+                        v if v["kind"] == "points" => v["value"].as_f64(),
+                        _ => None,
+                    };
+                    if let Some(n) = crate::widgets::number(ui, "pslead", lv, " pt", 80.0, 2) {
+                        d.fields.insert("c.leading".into(), json!({"kind": "points", "value": n}));
+                    }
+                    ui.end_row();
+                });
+            }
+            "indents" => {
+                egui::Grid::new("psi").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("Alignment:");
+                    let a: designcraft_doc::Align = serde_json::from_value(cur(d, "p.align", &pv["align"])).unwrap_or_default();
+                    egui::ComboBox::from_id_salt("psalign").selected_text(a.label()).width(240.0).show_ui(ui, |ui| {
+                        for al in designcraft_doc::Align::ALL {
+                            if ui.selectable_label(al == a, al.label()).clicked() {
+                                d.fields.insert("p.align".into(), serde_json::to_value(al).unwrap_or_default());
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    for (label, key) in [
+                        ("Left Indent:", "leftIndent"),
+                        ("First Line Indent:", "firstLineIndent"),
+                        ("Right Indent:", "rightIndent"),
+                        ("Space Before:", "spaceBefore"),
+                        ("Space After:", "spaceAfter"),
+                    ] {
+                        ui.label(label);
+                        let v = cur(d, &format!("p.{key}"), &pv[key]).as_f64();
+                        if let Some(n) = crate::widgets::measure(ui, &format!("ps{key}"), v, units, 80.0) {
+                            d.fields.insert(format!("p.{key}"), json!(n));
+                        }
+                        ui.end_row();
+                    }
+                });
+            }
+            "hyph" => {
+                let mut h = cur(d, "p.hyphenate", &pv["hyphenate"]).as_bool().unwrap_or(true);
+                if ui.checkbox(&mut h, "Hyphenate").changed() {
+                    d.fields.insert("p.hyphenate".into(), json!(h));
+                }
+                egui::Grid::new("psh").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    for (label, key) in [
+                        ("Words with at Least:", "hyphMinWord"),
+                        ("After First:", "hyphAfterFirst"),
+                        ("Before Last:", "hyphBeforeLast"),
+                        ("Hyphen Limit:", "hyphLimit"),
+                    ] {
+                        ui.label(label);
+                        let v = cur(d, &format!("p.{key}"), &pv[key]).as_f64();
+                        if let Some(n) = crate::widgets::number(ui, &format!("ps{key}"), v, "", 60.0, 0) {
+                            d.fields.insert(format!("p.{key}"), json!(n.max(0.0) as u64));
+                        }
+                        ui.end_row();
+                    }
+                });
+            }
+            "justify" => {
+                egui::Grid::new("psj").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("");
+                    ui.label("Minimum");
+                    ui.label("Desired");
+                    ui.label("Maximum");
+                    ui.end_row();
+                    for (label, base) in [("Word Spacing:", "wordSpace"), ("Letter Spacing:", "letterSpace"), ("Glyph Scaling:", "glyphScale")] {
+                        ui.label(label);
+                        for suffix in ["Min", "Desired", "Max"] {
+                            let key = format!("{base}{suffix}");
+                            let v = cur(d, &format!("p.{key}"), &pv[key.as_str()]).as_f64().map(|x| x * 100.0);
+                            if let Some(n) = crate::widgets::number(ui, &format!("ps{key}"), v, "%", 60.0, 0) {
+                                d.fields.insert(format!("p.{key}"), json!(n / 100.0));
+                            }
+                        }
+                        ui.end_row();
+                    }
+                    ui.label("Composer:");
+                    let single = cur(d, "p.composer", &pv["composer"]).as_str() == Some("singleLine");
+                    if ui.selectable_label(!single, "Paragraph Composer").clicked() {
+                        d.fields.insert("p.composer".into(), json!("paragraph"));
+                    }
+                    if ui.selectable_label(single, "Single-line Composer").clicked() {
+                        d.fields.insert("p.composer".into(), json!("singleLine"));
+                    }
+                    ui.end_row();
+                });
+            }
+            "color" => {
+                let cur_fill = cur(d, "c.fill", &cv["fill"]).as_str().unwrap_or("").to_string();
+                let swatches: Vec<String> = st.doc.swatches.iter().map(|s| s.name.clone()).collect();
+                egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                    for sw in swatches {
+                        let (c, g) = crate::widgets::swatch_colors(&st.doc, &sw, 1.0);
+                        ui.horizontal(|ui| {
+                            let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                            crate::widgets::paint_chip(ui.painter(), r, c, g);
+                            if ui.selectable_label(sw == cur_fill, &sw).clicked() {
+                                d.fields.insert("c.fill".into(), json!(sw));
+                            }
+                        });
+                    }
+                });
+            }
+            _ => {
+                egui::Grid::new("psg").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("Style Name:");
+                    if !d.fields.contains_key("rename") {
+                        d.fields.insert("rename".into(), json!(name));
+                    }
+                    let mut rn = d.s("rename");
+                    if ui.add(egui::TextEdit::singleline(&mut rn).desired_width(220.0)).changed() {
+                        d.fields.insert("rename".into(), json!(rn));
+                    }
+                    ui.end_row();
+                    ui.label("Based On:");
+                    let based = d
+                        .fields
+                        .get("basedOn")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .or(style.based_on.clone())
+                        .unwrap_or_else(|| "[No Paragraph Style]".into());
+                    egui::ComboBox::from_id_salt("psbased").selected_text(&based).width(220.0).show_ui(ui, |ui| {
+                        for n in &names {
+                            if ui.selectable_label(*n == based, n).clicked() {
+                                d.fields.insert("basedOn".into(), json!(n));
+                            }
+                        }
+                    });
+                    ui.end_row();
+                });
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(format!("{} {} {:.1} pt · {}", cp.font_family, cp.font_style, cp.size, pp.align.label()))
+                        .color(crate::theme::Tokens::get(ui.ctx()).text_dim),
+                );
+            }
+        });
+    });
 }

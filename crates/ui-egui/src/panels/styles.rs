@@ -36,7 +36,9 @@ fn list(app: &mut DesignApp, ui: &mut egui::Ui, para: bool) {
             ui.painter().rect_filled(row, 0.0, t.hover);
         }
         ui.painter().text(row.min + vec2(8.0, 11.0), egui::Align2::LEFT_CENTER, n, egui::FontId::proportional(12.5), t.text);
-        if resp.clicked() {
+        if resp.double_clicked() && para {
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("paragraphStyleOptions", json!({"name": n})));
+        } else if resp.clicked() {
             let cmd = if para { "style.paragraph.apply" } else { "style.character.apply" };
             let clear = ui.input(|i| i.modifiers.alt);
             let _ = app.run(cmd, json!({"name": n, "clearOverrides": clear}));
