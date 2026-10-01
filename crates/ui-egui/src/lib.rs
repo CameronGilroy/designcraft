@@ -5,6 +5,7 @@
 //! the control channel ([`control`]) share that entry point.
 #![forbid(unsafe_code)]
 
+pub mod about;
 pub mod canvas;
 pub mod chrome;
 pub mod control;
@@ -101,6 +102,10 @@ pub struct UiState {
     pub smart_guides: bool,
     /// Window > Contextual Task Bar.
     pub task_bar: bool,
+    /// Help › About DesignCraft is open.
+    pub about: bool,
+    /// URLs to open in the browser on the next frame (Help links, About, start screen).
+    pub pending_urls: Vec<String>,
     #[serde(skip)]
     pub status: String,
     #[serde(skip)]
@@ -136,6 +141,8 @@ impl Default for UiState {
             guides_locked: false,
             smart_guides: true,
             task_bar: true,
+            about: false,
+            pending_urls: Vec::new(),
             status: String::new(),
             dialog: None,
             palette: None,
@@ -450,7 +457,11 @@ impl DesignApp {
         dock::flyout(self, &ctx);
         story_editor::show(self, &ctx);
         dialogs::show(self, &ctx);
+        about::show(self, &ctx);
         menus::palette(self, &ctx);
+        for url in std::mem::take(&mut self.ui.pending_urls) {
+            ctx.open_url(egui::OpenUrl::new_tab(url));
+        }
         self.perf.frame_ms = now_ms() - t0;
     }
 

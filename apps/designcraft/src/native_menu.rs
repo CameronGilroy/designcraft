@@ -8,7 +8,7 @@ use std::str::FromStr;
 use designcraft_ui_egui::DesignApp;
 use designcraft_ui_egui::menus::{self, Item};
 use muda::accelerator::Accelerator;
-use muda::{AboutMetadata, CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use serde_json::Value;
 
 enum Handle {
@@ -37,11 +37,12 @@ impl NativeMenu {
         let mut counter = 0usize;
         // Application menu.
         let app_menu = Submenu::new("DesignCraft", true);
+        // Our own About splash (with the community links) instead of the stock panel.
+        let about = MenuItem::with_id("dc-about", "About DesignCraft", true, None);
+        let discord = MenuItem::with_id("dc-discord", "Join the ArtCraft Discord…", true, None);
         let _ = app_menu.append_items(&[
-            &PredefinedMenuItem::about(
-                None,
-                Some(AboutMetadata { name: Some("DesignCraft".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default() }),
-            ),
+            &about,
+            &discord,
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::services(None),
             &PredefinedMenuItem::separator(),
@@ -51,6 +52,8 @@ impl NativeMenu {
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::quit(None),
         ]);
+        items.insert("dc-about".into(), ("help.about".into(), serde_json::Value::Null, Handle::Plain(about)));
+        items.insert("dc-discord".into(), ("help.discord".into(), serde_json::Value::Null, Handle::Plain(discord)));
         let _ = menu.append(&app_menu);
         for (title, entries) in menus::menu_tree() {
             let sub = Submenu::new(title, true);

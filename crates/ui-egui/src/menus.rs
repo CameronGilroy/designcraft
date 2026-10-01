@@ -43,6 +43,13 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ),
     ("window.controlBar", "Control", Some("Cmd+Alt+6"), "{}"),
     ("window.taskBar", "Contextual Task Bar", None, "{}"),
+    ("help.discord", "Join the ArtCraft Discord…", None, "{} — opens https://discord.gg/artcraft in the browser"),
+    ("help.appPage", "DesignCraft Website…", None, "{} — opens https://getartcraft.com/apps/designcraft"),
+    ("help.github", "DesignCraft on GitHub…", None, "{} — opens https://github.com/storytold/designcraft"),
+    ("help.issues", "Report an Issue…", None, "{} — opens the GitHub issue tracker"),
+    ("help.website", "ArtCraft Website…", None, "{} — opens https://getartcraft.com"),
+    ("help.app", "ArtCraft App Page…", None, "{app} — opens https://getartcraft.com/apps/{app} (e.g. photocraft)"),
+    ("help.about", "About DesignCraft", None, "{open?: true} — the About splash with community links (open: false closes it)"),
     ("window.toolsDoubleColumn", "Tools: Double Column", None, "{}"),
     (
         "window.workspace",
@@ -201,7 +208,21 @@ pub const MENUS: &[(&str, &[&str])] = &[
         ],
     ),
     ("Window", &["ui:window.controlBar", "ui:window.taskBar", "ui:window.toolsDoubleColumn", "-", "ui:window.panel", "-", "ui:window.brightness"]),
-    ("Help", &["cmd:file.newSample"]),
+    (
+        "Help",
+        &[
+            "ui:help.discord",
+            "-",
+            "ui:help.appPage",
+            "ui:help.github",
+            "ui:help.issues",
+            "ui:help.website",
+            "-",
+            "cmd:file.newSample",
+            "-",
+            "ui:help.about",
+        ],
+    ),
 ];
 
 pub fn ui_label(id: &str) -> Option<(&'static str, Option<&'static str>)> {
@@ -341,6 +362,23 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "window.controlBar" => flag(&mut app.ui.control_bar),
         "window.taskBar" => flag(&mut app.ui.task_bar),
+        "help.about" => {
+            app.ui.about = p.get("open").and_then(Value::as_bool).unwrap_or(true);
+            Ok(json!(app.ui.about))
+        }
+        "help.app" => match p.get("app").and_then(Value::as_str) {
+            Some(slug) if !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
+                let url = format!("{}/apps/{slug}", designcraft_engine::links::WEBSITE);
+                app.ui.pending_urls.push(url.clone());
+                Ok(json!({"url": url}))
+            }
+            _ => Err("help.app: give `app` (e.g. \"photocraft\")".into()),
+        },
+        h if h.starts_with("help.") && designcraft_engine::links::get(&h[5..]).is_some() => {
+            let url = designcraft_engine::links::get(&h[5..]).unwrap_or_default().to_string();
+            app.ui.pending_urls.push(url.clone());
+            Ok(json!({"url": url}))
+        }
         "window.toolsDoubleColumn" => flag(&mut app.ui.tools_double_column),
         "window.workspace" => {
             let name = p.get("name").and_then(Value::as_str).unwrap_or("Essentials");

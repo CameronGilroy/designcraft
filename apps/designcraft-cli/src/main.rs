@@ -6,6 +6,7 @@
 //! designcraft-cli mcp [--connect PORT] [--sample]  # MCP server over stdio (docs/mcp.md)
 //! designcraft-cli perf [--pages N] [--frames N] [--chars N] [--images N] [--runs N] [--strict]  # budgets on a synthetic stress document
 //! designcraft-cli bench FILE [--runs N]  # the same measurements on one document
+//! designcraft-cli links                   # Discord, website, app page and GitHub links
 //! ```
 use std::process::ExitCode;
 
@@ -26,9 +27,20 @@ fn main() -> ExitCode {
         Some("mcp") => report(mcp(&args[1..])),
         Some("perf") => report(perf::perf(&args[1..])),
         Some("bench") => report(perf::bench(&args[1..])),
+        Some("links") => {
+            use designcraft_engine::links::*;
+            println!("Discord   {DISCORD}\nWebsite   {WEBSITE}\nApp page  {APP_PAGE}\nGitHub    {GITHUB}\nIssues    {ISSUES}");
+            ExitCode::SUCCESS
+        }
         _ => {
             eprintln!(
-                "usage: designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--pdf-options JSON] [--export OUT] [--all-pages DIR]\n       designcraft-cli commands\n       designcraft-cli mcp [--connect PORT] [--sample]\n       designcraft-cli perf [--pages N] [--runs N] [--strict]\n       designcraft-cli bench FILE [--runs N]"
+                "usage: designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--pdf-options JSON] [--export OUT] [--all-pages DIR]\n       designcraft-cli commands\n       designcraft-cli mcp [--connect PORT] [--sample]\n       designcraft-cli perf [--pages N] [--runs N] [--strict]\n       designcraft-cli bench FILE [--runs N]\n       designcraft-cli links"
+            );
+            eprintln!(
+                "\nCommunity: {}  ·  {}  ·  {}",
+                designcraft_engine::links::DISCORD,
+                designcraft_engine::links::APP_PAGE,
+                designcraft_engine::links::GITHUB
             );
             ExitCode::FAILURE
         }

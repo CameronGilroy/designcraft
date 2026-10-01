@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod cmd;
+pub mod links;
 pub mod sample;
 mod tooling;
 
