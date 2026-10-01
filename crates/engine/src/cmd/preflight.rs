@@ -98,10 +98,8 @@ pub fn check(s: &Session, min_ppi: f64) -> Vec<Issue> {
                             }
                         }
                     },
-                    Content::Text(tf) => {
-                        if d.story(tf.story).is_some_and(|s| s.is_empty()) {
-                            out.push(Issue { severity: "warning", kind: "emptyText", message: "Empty text frame".into(), item: Some(it.id.0), page });
-                        }
+                    Content::Text(tf) if d.story(tf.story).is_some_and(|s| s.is_empty()) => {
+                        out.push(Issue { severity: "warning", kind: "emptyText", message: "Empty text frame".into(), item: Some(it.id.0), page });
                     }
                     _ => {}
                 }
