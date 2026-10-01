@@ -1,7 +1,7 @@
 //! Headless DesignCraft.
 //!
 //! ```text
-//! designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT.png|.jpg|.pdf|.designcraft] [--pdf-options JSON] [--all-pages DIR]
+//! designcraft-cli run [--in FILE.designcraft|FILE.idml | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT.png|.jpg|.pdf|.designcraft|.idml] [--pdf-options JSON] [--all-pages DIR]
 //! designcraft-cli commands            # list every command (JSON)
 //! designcraft-cli mcp [--connect PORT] [--sample]  # MCP server over stdio (docs/mcp.md)
 //! ```
@@ -141,6 +141,11 @@ fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn export(s: &mut Session, out: &str, page: usize, scale: f64) -> Result<(), String> {
+    if out.to_ascii_lowercase().ends_with(".idml") {
+        let r = s.execute("file.exportIdml", &json!({"path": out})).map_err(|e| e.to_string())?;
+        eprintln!("wrote {out} ({} bytes)", r["bytes"]);
+        return Ok(());
+    }
     if out.ends_with(".designcraft") {
         s.execute("file.saveAs", &json!({"path": out})).map_err(|e| e.to_string())?;
         eprintln!("saved {out}");

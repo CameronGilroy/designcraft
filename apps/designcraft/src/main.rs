@@ -84,7 +84,9 @@ fn services() -> Services {
             let d = if purpose == "place" {
                 d.add_filter("Graphics", &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff"])
             } else {
-                d.add_filter("DesignCraft", &["designcraft"])
+                d.add_filter("DesignCraft or IDML", &["designcraft", "idml"])
+                    .add_filter("DesignCraft", &["designcraft"])
+                    .add_filter("InDesign Markup (IDML)", &["idml"])
             };
             d.pick_file().map(|p| p.to_string_lossy().to_string())
         })),

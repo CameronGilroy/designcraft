@@ -18,6 +18,7 @@ designcraft-render = { workspace = true }
 designcraft-format = { workspace = true }
 designcraft-pdf = { workspace = true }
 designcraft-tools = { workspace = true }
+designcraft-idml = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

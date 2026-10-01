@@ -313,7 +313,8 @@ impl DesignApp {
         let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
         for (name, bytes) in files {
             let b64 = designcraft_engine::cmd::base64_encode(&bytes);
-            let r = if name.to_ascii_lowercase().ends_with(".designcraft") {
+            let lower = name.to_ascii_lowercase();
+            let r = if lower.ends_with(".designcraft") || lower.ends_with(".idml") {
                 let title = name.rsplit_once('.').map_or(name.as_str(), |(stem, _)| stem);
                 self.run("file.openBytes", json!({"name": title, "base64": b64}))
             } else {
@@ -368,7 +369,8 @@ impl DesignApp {
                 if p.is_empty() {
                     continue;
                 }
-                let cmd = if p.ends_with(".designcraft") { "file.open" } else { "file.place" };
+                let lp = p.to_ascii_lowercase();
+                let cmd = if lp.ends_with(".designcraft") || lp.ends_with(".idml") { "file.open" } else { "file.place" };
                 let _ = self.run(cmd, json!({"path": p}));
             }
         }

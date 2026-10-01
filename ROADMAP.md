@@ -13,11 +13,12 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection, Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
 - Tools: Selection (click, marquee, move, Alt-duplicate, resize handles), Direct Selection (basic), Type (draw frame, click caret, select, type), Rectangle/Ellipse/Polygon (+ frame variants), Line, Hand, Zoom.
 - PDF export (krilla): real selectable text with embedded font subsets, DeviceCMYK/RGB + spot Separations, bleed boxes, crop/bleed marks + page info, pages or spreads, PDF/A-2b (PDF/X-4 output intent pending) — `file.exportPdf`, File › Export PDF…, `designcraft-cli run --export out.pdf`.
+- IDML interchange (`designcraft-idml`): export and import of swatches, styles, fonts, preferences, parent spreads, spreads/pages, frames, groups, images (embedded or linked), formatted threaded stories — opens in InDesign 2026 and round-trips InDesign-exported files (`file.exportIdml`, `file.openIdml`, File → Export IDML…, CLI `--in x.idml` / `--export x.idml`).
 - ~100 commands, all reachable through the JSON control channel; headless CLI rendering to PNG.
 - MCP server (`designcraft-cli mcp [--connect PORT]`, docs/mcp.md): headless engine or the running app; commands, batch, document/story inspection, page renders as images, window screenshots, pointer/keyboard/dialog input.
 - Web build (`apps/designcraft-web`, trunk): the same UI on WebGPU with a WebGL2 fallback; open/place via the browser file picker or drag-and-drop, save/export as downloads.
 
-**Next (in order):** IDML import/export · dictionary hyphenation · native format as zip · tables · PDF/X-4 output intent, bookmarks, tagged PDF · Links panel + relink · Preflight panel · TOC/index/footnotes · EPUB.
+**Next (in order):** IDML tables/footnotes/anchored objects · dictionary hyphenation · native format as zip · tables · PDF/X-4 output intent, bookmarks, tagged PDF · Links panel + relink · Preflight panel · TOC/index/footnotes · EPUB.
 
 ## Milestones
 
@@ -29,7 +30,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 | M3 | Styles (nested/GREP, bullets, keeps, span columns) | started |
 | M4 | Color & effects | started |
 | M5 | Graphics & links | started |
-| M6 | Files & export (native, IDML, PDF, PNG/JPEG) | in progress (PDF export) |
+| M6 | Files & export (native, IDML, PDF, PNG/JPEG) | in progress (IDML ✅, PDF export) |
 | M7 | Long documents (sections, TOC, index, footnotes, books) | |
 | M8 | Tables | |
 | M9 | Performance (MT composition, tiles) | |

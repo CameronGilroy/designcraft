@@ -12,6 +12,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.saveDialog", "Save As…", Some("Cmd+Shift+S"), "{}"),
     ("app.save", "Save", Some("Cmd+S"), "{}"),
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
+    ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Command Palette…", Some("Cmd+K"), "{}"),
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
@@ -65,6 +66,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "ui:app.exportPdf",
             "ui:app.exportPng",
+            "ui:app.exportIdml",
             "-",
             "cmd:layout.documentSetup",
         ],
@@ -202,6 +204,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(Value::Null)
         }
         "app.exportPng" => export_png(app, p),
+        "app.exportIdml" => export_idml(app, p),
         "app.storyEditor" => {
             let sid = p.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId).or_else(|| {
                 let st = app.session.active()?;
@@ -355,6 +358,26 @@ fn export_png(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
     let Some(path) = path else { return Ok(Value::Null) };
     match app.services.write.as_mut() {
         Some(w) => w(&path, &png).map(|_| json!({"path": path, "width": img.width, "height": img.height})),
+        None => Err("no writer".into()),
+    }
+}
+
+/// File › Export IDML…: ask for a path, export through `file.exportIdml` and write the bytes with
+/// the platform writer (a download on the web).
+fn export_idml(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
+    let st = app.session.active().ok_or("no document")?;
+    let path = match p.get("path").and_then(Value::as_str) {
+        Some(s) => Some(s.to_string()),
+        None => {
+            let name = format!("{}.idml", st.doc.title);
+            app.services.pick_save.as_mut().and_then(|f| f(&name))
+        }
+    };
+    let Some(path) = path else { return Ok(Value::Null) };
+    let r = app.run("file.exportIdml", json!({}))?;
+    let bytes = designcraft_engine::cmd::base64_decode(r["base64"].as_str().unwrap_or_default());
+    match app.services.write.as_mut() {
+        Some(w) => w(&path, &bytes).map(|_| json!({"path": path, "bytes": bytes.len()})),
         None => Err("no writer".into()),
     }
 }

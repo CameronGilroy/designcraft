@@ -17,8 +17,8 @@ pub fn specs() -> Vec<CommandSpec> {
             always, file_new),
         cmd!(noundo "file.newSample", "Sample Document", ["Help"], None, "{} — a multi-page magazine sample", always, file_sample),
         cmd!(query "file.presets", "Document Presets", [], None, "{}", always, |_, _| Ok(serde_json::to_value(PRESETS).unwrap_or_default())),
-        cmd!(noundo "file.open", "Open…", ["File"], Some("Cmd+O"), "{path} — .designcraft (JSON)", always, file_open),
-        cmd!(noundo "file.openBytes", "Open Bytes", [], None, "{name, base64}", always, file_open_bytes),
+        cmd!(noundo "file.open", "Open…", ["File"], Some("Cmd+O"), "{path} — .designcraft or .idml", always, file_open),
+        cmd!(noundo "file.openBytes", "Open Bytes", [], None, "{name, base64} — DesignCraft JSON or an IDML package", always, file_open_bytes),
         cmd!(noundo "file.save", "Save", ["File"], Some("Cmd+S"), "{path?}", has_doc, file_save),
         cmd!(noundo "file.saveAs", "Save As…", ["File"], Some("Cmd+Shift+S"), "{path}", has_doc, file_save),
         cmd!(query "file.serialize", "Serialize", [], None, "{} → {json}", has_doc, |s, _| Ok(json!({"json": String::from_utf8_lossy(&to_bytes(&s.doc()?.doc)).to_string()}))),
@@ -105,6 +105,9 @@ fn file_open(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_param(p, "path").ok_or_else(|| bad("file.open", "missing `path`"))?;
     #[cfg(not(target_arch = "wasm32"))]
     {
+        if path.to_ascii_lowercase().ends_with(".idml") {
+            return super::interchange::open_idml(s, p);
+        }
         let bytes = std::fs::read(path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
         let d = from_bytes(&bytes)?;
         let i = s.add_document(DocState::new(d, Some(path.to_string())));
@@ -119,6 +122,10 @@ fn file_open(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn file_open_bytes(s: &mut Session, p: &Value) -> Result<Value> {
     let b = base64_decode(str_param(p, "base64").unwrap_or(""));
+    // IDML packages are recognised by their stored `mimetype` first entry.
+    if designcraft_idml::is_idml(&b) {
+        return super::interchange::open_idml(s, p);
+    }
     let mut d = from_bytes(&b)?;
     if let Some(n) = str_param(p, "name") {
         d.title = n.to_string();

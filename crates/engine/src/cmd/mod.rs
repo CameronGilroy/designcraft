@@ -5,6 +5,7 @@ mod export;
 mod file;
 mod find;
 mod inspect;
+pub mod interchange;
 mod layout;
 mod object;
 pub mod preflight;
@@ -103,6 +104,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
     SPECS.get_or_init(|| {
         let mut v = Vec::new();
         v.extend(file::specs());
+        v.extend(interchange::specs());
         v.extend(export::specs());
         v.extend(edit::specs());
         v.extend(object::specs());
