@@ -495,6 +495,10 @@ pub fn shortcuts(app: &mut DesignApp, ctx: &egui::Context) {
             let name = key.name();
             let sc = if modifiers.shift { format!("Shift+{name}") } else { name.to_string() };
             if let Some(tool) = designcraft_tools::tool_for_shortcut(&sc) {
+                log::debug!("tool shortcut {sc} -> {tool}");
+                if std::env::var_os("DESIGNCRAFT_DEBUG_KEYS").is_some() {
+                    eprintln!("tool shortcut {sc} ({key:?}, {modifiers:?}) -> {tool}");
+                }
                 app.select_tool(tool);
             } else if key == egui::Key::Escape && app.session.tool_id() != "selection" && !app.session.tool_busy() {
                 app.select_tool("selection");

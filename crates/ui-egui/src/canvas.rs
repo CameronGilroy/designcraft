@@ -196,6 +196,9 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     if !preview {
         draw_guides(app, &painter, &xf, &doc, &layout, &t);
         draw_frames(app, &painter, &xf, &doc, &layout);
+        if app.ui.hidden_characters {
+            draw_hidden_characters(app, &painter, &xf, &doc, &layout);
+        }
     }
     draw_selection(app, &painter, &xf, &doc, &layout);
     draw_tool_overlays(app, &painter, &xf);
@@ -852,4 +855,42 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
         }
     }
     let _ = DVec2::ZERO;
+}
+
+/// View → Show Hidden Characters: ¶ paragraph ends, » tabs, · spaces, ¬ forced line breaks, # end of story.
+fn draw_hidden_characters(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document, layout: &CanvasLayout) {
+    for story in doc.stories.values() {
+        let cs = app.session.cache.get(doc, story.id, None);
+        for ft in &cs.frames {
+            let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { continue };
+            let m = a * it.xf;
+            let col = layer_color(doc, it);
+            for l in &ft.lines {
+                let size = (l.ascent * 0.75 * xf.zoom).clamp(6.0, 40.0) as f32;
+                let font = egui::FontId::proportional(size);
+                for g in &l.glyphs {
+                    if g.len == 0 {
+                        continue;
+                    }
+                    let ch = story.text[g.byte.min(story.text.len())..].chars().next().unwrap_or(' ');
+                    let mark = match ch {
+                        ' ' => "·",
+                        '\t' => "»",
+                        '\u{2028}' => "¬",
+                        '\u{A0}' => "°",
+                        _ => continue,
+                    };
+                    let p = xf.to_screen(m * Point::new(g.x + if ch == ' ' { g.adv / 2.0 } else { 0.0 }, l.baseline));
+                    let align = if ch == ' ' { egui::Align2::CENTER_BOTTOM } else { egui::Align2::LEFT_BOTTOM };
+                    painter.text(p, align, mark, font.clone(), col);
+                }
+                if l.last_in_para {
+                    let end = l.range.end;
+                    let mark = if end >= story.text.len() { "#" } else { "¶" };
+                    let p = xf.to_screen(m * Point::new(l.end_x + 1.0, l.baseline));
+                    painter.text(p, egui::Align2::LEFT_BOTTOM, mark, font.clone(), col);
+                }
+            }
+        }
+    }
 }
