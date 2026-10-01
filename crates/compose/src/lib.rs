@@ -461,16 +461,25 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 // Column / frame / page break characters.
                 if b.forced && e < glyphs.len() + 1 {
                     let brk = glyphs.get(g0 + b.next.saturating_sub(1)).map(|g| g.ch);
-                    match brk {
+                    let jumped = match brk {
                         Some(story::COLUMN_BREAK) => {
                             cur.next_column(&cols);
-                            col_first_line = line_no;
+                            true
                         }
                         Some(story::FRAME_BREAK) | Some(story::PAGE_BREAK) => {
                             cur.next_frame();
-                            col_first_line = line_no;
+                            true
                         }
-                        _ => {}
+                        _ => false,
+                    };
+                    if jumped {
+                        // The rest of the paragraph continues in the new column/frame: re-break it there.
+                        col_first_line = line_no;
+                        if k + 1 < breaks.len() {
+                            g0 += b.next;
+                            moved = true;
+                            break;
+                        }
                     }
                 }
             }

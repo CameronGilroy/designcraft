@@ -547,3 +547,25 @@ fn perf_compose_300k_story() {
         assert!(ms < 300.0, "composition took {ms:.1} ms");
     }
 }
+
+#[test]
+fn column_break_moves_following_text() {
+    let text = format!("First column text.{}Second column text.", designcraft_doc::story::COLUMN_BREAK);
+    let (mut d, sid, fid) = doc_with(&text, Rect::new(0.0, 0.0, 400.0, 300.0), ParaAttrs::default());
+    d.item_mut(fid).unwrap().text_frame_mut().unwrap().options.columns = 2;
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let lines = all_lines(&cs);
+    assert_eq!(lines.len(), 2, "{}", lines.len());
+    assert_eq!(lines[0].column, 0);
+    assert_eq!(lines[1].column, 1);
+    assert!(lines[1].baseline < 20.0, "second column starts at the top");
+}
+
+#[test]
+fn tabs_without_stops_use_default_half_inch() {
+    let (d, sid, _) = doc_with("A\tB", Rect::new(0.0, 0.0, 300.0, 100.0), ParaAttrs::default());
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let l = &cs.frames[0].lines[0];
+    let b = l.glyphs.iter().find(|g| g.byte == 2).expect("B");
+    assert!((b.x - 36.0).abs() < 0.5, "B at {}", b.x);
+}
