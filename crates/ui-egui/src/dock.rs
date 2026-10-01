@@ -15,6 +15,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     ("stroke", "Stroke", "panel-stroke"),
     ("swatches", "Swatches", "panel-swatches"),
     ("color", "Color", "panel-color"),
+    ("effects", "Effects", "panel-effects"),
     ("paragraphStyles", "Paragraph Styles", "panel-pstyles"),
     ("characterStyles", "Character Styles", "panel-cstyles"),
     ("character", "Character", "panel-character"),
@@ -114,6 +115,7 @@ pub fn flyout(app: &mut DesignApp, ctx: &egui::Context) {
                     "textWrap" => panels::properties::wrap_panel(app, ui),
                     "align" => panels::properties::align_panel(app, ui),
                     "color" => panels::swatches::color_panel(app, ui),
+                    "effects" => panels::properties::effects_panel(app, ui),
                     "links" => panels::properties::links_panel(app, ui),
                     _ => panels::properties::info_panel(app, ui),
                 });

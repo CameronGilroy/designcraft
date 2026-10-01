@@ -594,3 +594,71 @@ pub fn info_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     }
     ui.label(egui::RichText::new(format!("Render {:.1} ms", app.perf.render_ms)).color(t.text_dim));
 }
+
+pub fn effects_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let Some(st) = app.session.active() else { return };
+    let Some(it) = st.selection.items.first().and_then(|i| st.doc.item(*i)).cloned() else {
+        ui.label("Select an object.");
+        return;
+    };
+    use designcraft_color::BlendMode as B;
+    const MODES: [B; 16] = [
+        B::Normal,
+        B::Multiply,
+        B::Screen,
+        B::Overlay,
+        B::SoftLight,
+        B::HardLight,
+        B::ColorDodge,
+        B::ColorBurn,
+        B::Darken,
+        B::Lighten,
+        B::Difference,
+        B::Exclusion,
+        B::Hue,
+        B::Saturation,
+        B::Color,
+        B::Luminosity,
+    ];
+    ui.horizontal(|ui| {
+        egui::ComboBox::from_id_salt("blend").selected_text(it.blend.label()).width(130.0).show_ui(ui, |ui| {
+            for m in MODES {
+                if ui.selectable_label(m == it.blend, m.label()).clicked() {
+                    let _ = app.run("object.opacity", json!({"opacity": it.opacity, "blend": m}));
+                }
+            }
+        });
+        caption(ui, "Opacity");
+        if let Some(v) = number(ui, "eop", Some(it.opacity as f64 * 100.0), "%", 46.0, 0) {
+            let _ = app.run("object.opacity", json!({"opacity": (v / 100.0).clamp(0.0, 1.0)}));
+        }
+    });
+    divider(ui);
+    let ds = it.effects.drop_shadow.clone();
+    let mut on = ds.on;
+    if ui.checkbox(&mut on, "Drop Shadow").changed() {
+        let _ = app.run("object.dropShadow", json!({"on": on}));
+    }
+    if ds.on {
+        egui::Grid::new("dsg").num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
+            caption(ui, "Distance");
+            if let Some(v) = number(ui, "dsd", Some(ds.distance), " pt", 56.0, 1) {
+                let _ = app.run("object.dropShadow", json!({"on": true, "distance": v}));
+            }
+            caption(ui, "Angle");
+            if let Some(v) = number(ui, "dsa", Some(ds.angle), "°", 50.0, 0) {
+                let _ = app.run("object.dropShadow", json!({"on": true, "angle": v}));
+            }
+            ui.end_row();
+            caption(ui, "Opacity");
+            if let Some(v) = number(ui, "dso", Some(ds.opacity as f64 * 100.0), "%", 56.0, 0) {
+                let _ = app.run("object.dropShadow", json!({"on": true, "opacity": v / 100.0}));
+            }
+            caption(ui, "Size");
+            if let Some(v) = number(ui, "dss", Some(ds.size), " pt", 50.0, 1) {
+                let _ = app.run("object.dropShadow", json!({"on": true, "size": v}));
+            }
+            ui.end_row();
+        });
+    }
+}
