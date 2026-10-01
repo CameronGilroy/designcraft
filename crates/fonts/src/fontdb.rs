@@ -57,6 +57,57 @@ pub struct FontFace {
     pub cap_height: f64,
     pub x_height: f64,
     pub shaper: harfrust::ShaperData,
+    /// Basic Multilingual Plane coverage bitset, built on first use.
+    bmp: std::sync::OnceLock<Box<[u64]>>,
+}
+
+/// A cheap `Copy` handle to a face. Faces are never unloaded, so the handle lives for the rest of
+/// the process; unlike cloning an `Arc`, copying it touches no shared reference count (which made
+/// parallel composition scale negatively).
+#[derive(Clone, Copy)]
+pub struct FaceRef(&'static FontFace);
+
+impl FaceRef {
+    /// The handle for a loaded face (memoised per face).
+    pub fn of(face: &Arc<FontFace>) -> FaceRef {
+        static LEAKED: RwLock<Vec<Option<&'static FontFace>>> = RwLock::new(Vec::new());
+        let id = face.id as usize;
+        if let Some(Some(f)) = LEAKED.read().unwrap_or_else(|e| e.into_inner()).get(id) {
+            return FaceRef(f);
+        }
+        let mut w = LEAKED.write().unwrap_or_else(|e| e.into_inner());
+        if w.len() <= id {
+            w.resize(id + 1, None);
+        }
+        let f: &'static FontFace = w[id].unwrap_or_else(|| {
+            let keep: &'static Arc<FontFace> = Box::leak(Box::new(face.clone()));
+            keep
+        });
+        w[id] = Some(f);
+        FaceRef(f)
+    }
+    pub fn get(self) -> &'static FontFace {
+        self.0
+    }
+}
+
+impl std::ops::Deref for FaceRef {
+    type Target = FontFace;
+    fn deref(&self) -> &FontFace {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for FaceRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl PartialEq for FaceRef {
+    fn eq(&self, o: &FaceRef) -> bool {
+        self.0.id == o.0.id
+    }
 }
 
 impl std::fmt::Debug for FontFace {
@@ -88,6 +139,21 @@ impl FontFace {
     }
     /// Does the face map `c` to a glyph?
     pub fn covers(&self, c: char) -> bool {
+        let cp = c as u32;
+        if cp < 0x1_0000 {
+            let bits = self.bmp.get_or_init(|| {
+                let mut b = vec![0u64; 1024].into_boxed_slice();
+                if let Some(f) = self.skrifa() {
+                    for (cp, _) in f.charmap().mappings() {
+                        if cp < 0x1_0000 {
+                            b[(cp / 64) as usize] |= 1 << (cp % 64);
+                        }
+                    }
+                }
+                b
+            });
+            return bits[(cp / 64) as usize] & (1 << (cp % 64)) != 0;
+        }
         self.skrifa().is_some_and(|f| f.charmap().map(c).is_some())
     }
     /// Units per em.
@@ -223,6 +289,7 @@ fn make_face(bytes: FontBytes, index: u32, family: String, style: String) -> Opt
         shaper,
         bytes,
         index,
+        bmp: std::sync::OnceLock::new(),
     })
 }
 

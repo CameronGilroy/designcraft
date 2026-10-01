@@ -170,6 +170,77 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
+        cmd!(
+            "layout.section",
+            "Numbering & Section Options…",
+            ["Layout"],
+            None,
+            "{page (1-based; starts a section there), startNumber?: n|null (continue), style?: arabic|upperRoman|lowerRoman|upperLetters|lowerLetters, prefix?, includePrefix?, marker?, remove?: bool}",
+            has_doc,
+            |s, p| {
+                let page = p.get("page").and_then(Value::as_u64).ok_or_else(|| bad("layout.section", "missing page"))? as usize;
+                let n = s.doc()?.doc.page_count();
+                if page == 0 || page > n {
+                    return Err(bad("layout.section", format!("no page {page}")));
+                }
+                let start = page - 1;
+                let p = p.clone();
+                s.edit(|d, _| {
+                    d.sections.retain(|x| x.start != start || start == 0);
+                    if p.get("remove").and_then(Value::as_bool).unwrap_or(false) && start != 0 {
+                        return ok();
+                    }
+                    let mut sec = d.sections.iter().find(|x| x.start == start).cloned().unwrap_or(designcraft_doc::Section {
+                        start,
+                        start_number: None,
+                        style: Default::default(),
+                        prefix: String::new(),
+                        marker: String::new(),
+                        include_prefix: false,
+                    });
+                    match p.get("startNumber") {
+                        Some(Value::Null) => sec.start_number = None,
+                        Some(v) => sec.start_number = v.as_u64().map(|v| v.max(1) as u32),
+                        None => {}
+                    }
+                    if let Some(v) = p.get("style") {
+                        sec.style = serde_json::from_value(v.clone()).map_err(|e| bad("layout.section", e.to_string()))?;
+                    }
+                    if let Some(v) = p.get("prefix").and_then(Value::as_str) {
+                        sec.prefix = v.into();
+                    }
+                    if let Some(v) = p.get("includePrefix").and_then(Value::as_bool) {
+                        sec.include_prefix = v;
+                    }
+                    if let Some(v) = p.get("marker").and_then(Value::as_str) {
+                        sec.marker = v.into();
+                    }
+                    d.sections.retain(|x| x.start != start);
+                    d.sections.push(sec);
+                    d.sections.sort_by_key(|x| x.start);
+                    Ok(json!({"names": (0..d.page_count()).map(|i| d.page_name(i)).collect::<Vec<_>>()}))
+                })
+            }
+        ),
+        cmd!("layer.move", "Move Layer", [], None, "{id, to: index (0 = top/frontmost)}", has_doc, |s, p| {
+            let id = LayerId(p.get("id").and_then(Value::as_u64).unwrap_or(0));
+            let to = p.get("to").and_then(Value::as_u64).unwrap_or(0) as usize;
+            s.edit(|d, _| {
+                let i = d.layers.iter().position(|l| l.id == id).ok_or_else(|| bad("layer.move", "no such layer"))?;
+                let l = d.layers.remove(i);
+                let to = to.min(d.layers.len());
+                d.layers.insert(to, l);
+                ok()
+            })
+        }),
+        cmd!(noundo "layer.selectItems", "Select All on Layer", [], None, "{id}", has_doc, |s, p| {
+            let id = LayerId(p.get("id").and_then(Value::as_u64).unwrap_or(0));
+            let st = s.doc_mut()?;
+            let ids: Vec<_> = st.doc.spreads.iter().flat_map(|sp| sp.items.iter().filter(|i| i.layer == id && !i.locked).map(|i| i.id)).collect();
+            st.selection = designcraft_doc::Selection::items(ids);
+            st.revision += 1;
+            ok()
+        }),
         cmd!("layer.new", "New Layer…", [], None, "{name?}", has_doc, |s, p| {
             let name = str_param(p, "name").map(str::to_string);
             let r = s.edit(|d, _| {

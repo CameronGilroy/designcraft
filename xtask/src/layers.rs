@@ -42,6 +42,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("render", Class::Layer(3)),
     ("pdf", Class::Layer(3)),
     ("idml", Class::Layer(3)),
+    ("epub", Class::Layer(3)),
     ("format", Class::Layer(3)),
     ("tools", Class::Layer(4)),
     ("engine", Class::Layer(5)),

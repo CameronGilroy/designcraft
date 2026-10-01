@@ -7,9 +7,33 @@ use super::{CommandSpec, bad, cmd, has_doc, str_param};
 use crate::{EngineError, Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![cmd!(noundo "file.exportPdf", "Export PDF…", ["File"], None,
+    vec![
+        cmd!(noundo "file.exportPdf", "Export PDF…", ["File"], None,
         "{path?, pages?: \"1-3,5\" | [1,3] (1-based positions; default all), spreads?: bool, bleed?: bool (document bleed), marks?: bool | {crop?, bleed?, pageInfo?, weight?, offset?}, standard?: \"none\"|\"x4\"|\"a2b\", compressImages?: bool, title?, author?} → {path, bytes, pages, warnings} (no path: {base64, …})",
-        has_doc, export_pdf)]
+        has_doc, export_pdf),
+        cmd!(noundo "file.exportEpub", "Export EPUB (Reflowable)…", ["File"], None,
+        "{path?, title?, author?, language?: \"en\"} → {path, bytes} (no path: {base64, bytes})",
+        has_doc, export_epub),
+    ]
+}
+
+fn export_epub(s: &mut Session, p: &Value) -> Result<Value> {
+    let st = s.doc()?;
+    let opts = designcraft_epub::EpubOptions {
+        title: p.get("title").and_then(Value::as_str).map(str::to_string),
+        author: p.get("author").and_then(Value::as_str).map(str::to_string),
+        language: p.get("language").and_then(Value::as_str).unwrap_or("en").to_string(),
+        identifier: None,
+    };
+    let bytes = designcraft_epub::export_epub(&st.doc, &opts).map_err(|e| crate::EngineError::Other(e.to_string()))?;
+    match p.get("path").and_then(Value::as_str) {
+        Some(path) => {
+            #[cfg(not(target_arch = "wasm32"))]
+            std::fs::write(path, &bytes).map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))?;
+            Ok(serde_json::json!({"path": path, "bytes": bytes.len()}))
+        }
+        None => Ok(serde_json::json!({"base64": super::file::base64_encode(&bytes), "bytes": bytes.len()})),
+    }
 }
 
 pub(crate) fn options(p: &Value, page_count: usize) -> Result<PdfOptions> {

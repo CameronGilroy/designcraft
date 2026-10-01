@@ -187,7 +187,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Drop Shadow",
             ["Object", "Effects"],
             Some("Cmd+Alt+M"),
-            "{on?: bool, distance?, angle?, opacity?, size?, ids?}",
+            "{on?: bool, distance?, angle?, opacity?, size?, spread? (%), color? (swatch), ids?}",
             has_selection,
             |s, p| {
                 let p2 = p.clone();
@@ -201,11 +201,73 @@ pub fn specs() -> Vec<CommandSpec> {
                         ds.angle = f64_or(&p2, "angle", ds.angle);
                         ds.opacity = f64_or(&p2, "opacity", ds.opacity as f64) as f32;
                         ds.size = f64_or(&p2, "size", ds.size);
+                        ds.spread = f64_or(&p2, "spread", ds.spread);
+                        if let Some(c) = str_param(&p2, "color") {
+                            ds.color = c.into();
+                        }
                     },
                     false,
                 )
             }
         ),
+        cmd!(
+            "object.innerShadow",
+            "Inner Shadow",
+            ["Object", "Effects"],
+            None,
+            "{on?: bool, distance?, angle?, opacity?, size?, choke? (%), color?, ids?}",
+            has_selection,
+            |s, p| {
+                let p2 = p.clone();
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        let e = &mut i.effects.inner_shadow;
+                        e.on = p2.get("on").and_then(Value::as_bool).unwrap_or(!e.on);
+                        e.distance = f64_or(&p2, "distance", e.distance);
+                        e.angle = f64_or(&p2, "angle", e.angle);
+                        e.opacity = f64_or(&p2, "opacity", e.opacity as f64) as f32;
+                        e.size = f64_or(&p2, "size", e.size);
+                        e.choke = f64_or(&p2, "choke", e.choke);
+                        if let Some(c) = str_param(&p2, "color") {
+                            e.color = c.into();
+                        }
+                    },
+                    false,
+                )
+            }
+        ),
+        cmd!(
+            "object.outerGlow",
+            "Outer Glow",
+            ["Object", "Effects"],
+            None,
+            "{on?: bool, opacity?, size?, spread? (%), color?, ids?}",
+            has_selection,
+            |s, p| {
+                let p2 = p.clone();
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        let e = &mut i.effects.outer_glow;
+                        e.on = p2.get("on").and_then(Value::as_bool).unwrap_or(!e.on);
+                        e.opacity = f64_or(&p2, "opacity", e.opacity as f64) as f32;
+                        e.size = f64_or(&p2, "size", e.size);
+                        e.spread = f64_or(&p2, "spread", e.spread);
+                        if let Some(c) = str_param(&p2, "color") {
+                            e.color = c.into();
+                        }
+                    },
+                    false,
+                )
+            }
+        ),
+        cmd!("object.feather", "Basic Feather", ["Object", "Effects"], None, "{width (0 = off), ids?}", has_selection, |s, p| {
+            let w = f64_or(p, "width", 9.0).max(0.0);
+            set_flag(s, p, move |i| i.effects.feather = w, false)
+        }),
         cmd!("object.content", "Content", ["Object", "Content"], None, "{type: graphic|text|unassigned, ids?}", has_selection, content_type),
         cmd!(
             "object.textFrameOptions",
@@ -274,6 +336,15 @@ pub fn specs() -> Vec<CommandSpec> {
             let name = str_param(p, "name").unwrap_or("").to_string();
             set_flag(s, p, move |i| i.name = name.clone(), false)
         }),
+        cmd!(
+            "edit.stepAndRepeat",
+            "Step and Repeat…",
+            ["Edit"],
+            Some("Cmd+Alt+U"),
+            "{count?: 1, dx?, dy?, rows?, columns?} — copies of the selection offset by (dx, dy); with rows/columns, a grid",
+            has_selection,
+            step_and_repeat
+        ),
         cmd!("path.create", "Create Path", [], None, "{spread?, anchors: [{p:[x,y], in?:[x,y], out?:[x,y]}], closed?: bool}", has_doc, path_create),
         cmd!("path.appendAnchor", "Add Anchor", [], None, "{id, anchor: {p, in?, out?}} (spread coords)", has_doc, path_append),
         cmd!("path.close", "Close Path", ["Object", "Paths"], None, "{id}", has_doc, path_close),
@@ -1010,5 +1081,33 @@ fn path_move_anchors(s: &mut Session, p: &Value) -> Result<Value> {
             it.shape = Shape::Path;
         }
         ok()
+    })
+}
+
+fn step_and_repeat(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = targets(s, p)?;
+    let (dx, dy) = (f64_or(p, "dx", 12.0), f64_or(p, "dy", 12.0));
+    let rows = p.get("rows").and_then(Value::as_u64).map(|v| v as usize);
+    let cols = p.get("columns").and_then(Value::as_u64).map(|v| v as usize);
+    let count = p.get("count").and_then(Value::as_u64).unwrap_or(1).clamp(1, 1000) as usize;
+    let offsets: Vec<Vec2> = match (rows, cols) {
+        (Some(r), Some(c)) if r * c <= 1000 => (0..r)
+            .flat_map(|i| (0..c).map(move |j| (i, j)))
+            .filter(|&(i, j)| i + j > 0)
+            .map(|(i, j)| Vec2::new(j as f64 * dx, i as f64 * dy))
+            .collect(),
+        _ => (1..=count).map(|k| Vec2::new(k as f64 * dx, k as f64 * dy)).collect(),
+    };
+    s.edit(|d, sel| {
+        let src = d.clone();
+        let mut all = ids.clone();
+        for off in offsets {
+            for id in &ids {
+                let sr = src.find(*id).map(|l| l.spread).unwrap_or(SpreadRef::Doc(0));
+                all.extend(duplicate_from(d, &src, &[*id], sr, off)?);
+            }
+        }
+        *sel = Selection::items(all.clone());
+        Ok(json!({"created": all.len() - ids.len()}))
     })
 }

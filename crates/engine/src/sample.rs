@@ -191,7 +191,7 @@ pub fn magazine() -> Document {
             "Cover Title",
             None,
             ParaAttrs { align: Some(Align::Left), hyphenate: Some(false), ..Default::default() },
-            CharAttrs { leading: Some(Leading::Points(88.0)), tracking: Some(-30.0), fill: Some("[Paper]".into()), ..serif("Bold", 96.0) },
+            CharAttrs { leading: Some(Leading::Points(82.0)), tracking: Some(-30.0), fill: Some("[Paper]".into()), ..serif("Bold", 84.0) },
         ));
         st.paragraph.push(para_style(
             "Cover Deck",
@@ -232,15 +232,15 @@ pub fn magazine() -> Document {
     }
     // Page 1: cover (spread 0, single right page, no parent).
     let _ = d.apply_parent(&[0], None);
-    let cover_art = image(&mut d, "dusk-cover.png", 1224, 1584, 0.0);
-    graphic_frame(&mut d, SpreadRef::Doc(0), Rect::new(-9.0, -9.0, w + 9.0, h + 9.0), cover_art, (1224, 1584));
+    let cover_art = image(&mut d, "dusk-cover.png", 1400, 1812, 0.0);
+    graphic_frame(&mut d, SpreadRef::Doc(0), Rect::new(-9.0, -9.0, w + 9.0, h + 9.0), cover_art, (1400, 1812));
     let (_, _) = text(&mut d, SpreadRef::Doc(0), Rect::new(42.0, 60.0, 570.0, 120.0), "THE SPRING ISSUE  ·  NO. 01", "Kicker");
     if let Some(st) = d.stories.values().last().map(|s| s.id)
         && let Some(st) = d.story_mut(st)
     {
         st.format_chars(0..st.len(), |f| f.over.fill = Some("[Paper]".into()));
     }
-    let (_, cs) = text(&mut d, SpreadRef::Doc(0), Rect::new(42.0, 450.0, 570.0, 690.0), "The Quiet\nArt of Layout", "Cover Title");
+    let (_, cs) = text(&mut d, SpreadRef::Doc(0), Rect::new(42.0, 420.0, 570.0, 698.0), "The Quiet\nArt of Layout", "Cover Title");
     let _ = cs;
     text(
         &mut d,

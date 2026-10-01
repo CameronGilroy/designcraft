@@ -1,11 +1,15 @@
 //! Headless DesignCraft.
 //!
 //! ```text
-//! designcraft-cli run [--in FILE.designcraft|FILE.idml | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT.png|.jpg|.pdf|.designcraft|.idml] [--pdf-options JSON] [--all-pages DIR]
+//! designcraft-cli run [--in FILE.designcraft|FILE.idml | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--export OUT.png|.jpg|.pdf|.designcraft|.idml|.epub] [--pdf-options JSON] [--all-pages DIR]
 //! designcraft-cli commands            # list every command (JSON)
 //! designcraft-cli mcp [--connect PORT] [--sample]  # MCP server over stdio (docs/mcp.md)
+//! designcraft-cli perf [--pages N] [--frames N] [--chars N] [--images N] [--runs N] [--strict]  # budgets on a synthetic stress document
+//! designcraft-cli bench FILE [--runs N]  # the same measurements on one document
 //! ```
 use std::process::ExitCode;
+
+mod perf;
 
 use designcraft_engine::Session;
 use serde_json::{Value, json};
@@ -20,9 +24,11 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("mcp") => report(mcp(&args[1..])),
+        Some("perf") => report(perf::perf(&args[1..])),
+        Some("bench") => report(perf::bench(&args[1..])),
         _ => {
             eprintln!(
-                "usage: designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--pdf-options JSON] [--export OUT] [--all-pages DIR]\n       designcraft-cli commands\n       designcraft-cli mcp [--connect PORT] [--sample]"
+                "usage: designcraft-cli run [--in FILE | --sample] [--cmd ID[=JSON]]... [--page N] [--scale S] [--pdf-options JSON] [--export OUT] [--all-pages DIR]\n       designcraft-cli commands\n       designcraft-cli mcp [--connect PORT] [--sample]\n       designcraft-cli perf [--pages N] [--runs N] [--strict]\n       designcraft-cli bench FILE [--runs N]"
             );
             ExitCode::FAILURE
         }
@@ -114,7 +120,10 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             "--export" => {
                 let out = val()?;
-                if out.ends_with(".pdf") {
+                if out.ends_with(".epub") {
+                    let r = s.execute("file.exportEpub", &json!({"path": out})).map_err(|e| e.to_string())?;
+                    eprintln!("wrote {out} ({} bytes)", r["bytes"]);
+                } else if out.ends_with(".pdf") {
                     let mut p = pdf_opts.clone();
                     p["path"] = json!(out);
                     let r = s.execute("file.exportPdf", &p).map_err(|e| e.to_string())?;

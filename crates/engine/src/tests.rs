@@ -218,6 +218,75 @@ fn preflight_reports_overset_and_missing_fonts() {
     assert_eq!(r["errors"], 2);
 }
 
+#[test]
+fn hyperlinks_and_bookmarks_reach_the_pdf() {
+    let mut s = Session::new();
+    s.execute("file.newSample", &json!({})).unwrap();
+    s.execute("selection.set", &json!({"ids": [39]})).unwrap();
+    s.execute("hyperlink.create", &json!({"url": "https://example.com/designcraft"})).unwrap();
+    let d = s.execute("document.inspect", &json!({})).unwrap();
+    let sid = d["stories"][0]["id"].as_u64().unwrap();
+    s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 3})).unwrap();
+    s.execute("hyperlink.create", &json!({"page": 3})).unwrap();
+    s.execute("bookmark.add", &json!({"name": "Cover", "page": 1})).unwrap();
+    s.execute("bookmark.add", &json!({"name": "Feature", "page": 2})).unwrap();
+    assert_eq!(s.execute("hyperlink.list", &json!({})).unwrap().as_array().unwrap().len(), 2);
+    let r = s.execute("file.exportPdf", &json!({})).unwrap();
+    let bytes = cmd::base64_decode(r["base64"].as_str().unwrap());
+    let pdf = hayro_syntax::Pdf::new(bytes).expect("valid pdf");
+    assert_eq!(pdf.pages().len(), 4);
+    // Round trip through the native format keeps them.
+    let back = cmd::file_from(&cmd::file_bytes(&s.doc().unwrap().doc)).unwrap();
+    assert_eq!(back.hyperlinks.len(), 2);
+    assert_eq!(back.bookmarks.len(), 2);
+}
+
+#[test]
+fn step_and_repeat_grid() {
+    let mut s = session();
+    s.execute("frame.create", &json!({"rect": [36, 36, 66, 66], "content": "unassigned"})).unwrap();
+    let r = s.execute("edit.stepAndRepeat", &json!({"rows": 3, "columns": 4, "dx": 40, "dy": 40})).unwrap();
+    assert_eq!(r["created"], 11);
+    assert_eq!(s.doc().unwrap().doc.spreads[0].items.len(), 12);
+    let last = s.doc().unwrap().doc.spreads[0].items.last().unwrap().bounds();
+    assert_eq!(last.x0, 36.0 + 3.0 * 40.0);
+    assert_eq!(last.y0, 36.0 + 2.0 * 40.0);
+}
+
+#[test]
+fn snippets_roundtrip_between_documents() {
+    let mut s = Session::new();
+    s.execute("file.newSample", &json!({})).unwrap();
+    s.execute("selection.set", &json!({"ids": [39]})).unwrap();
+    let snip = s.execute("snippet.export", &json!({})).unwrap();
+    s.execute("file.new", &json!({})).unwrap();
+    let r = s.execute("snippet.place", &json!({"base64": snip["base64"], "x": 36.0, "y": 36.0})).unwrap();
+    let id = designcraft_doc::ItemId(r["ids"][0].as_u64().unwrap());
+    let st = s.doc().unwrap();
+    let it = st.doc.item(id).unwrap();
+    assert_eq!(it.bounds().x0, 36.0);
+    let sid = it.text_frame().unwrap().story;
+    assert!(st.doc.story(sid).unwrap().text.starts_with("Every page begins"));
+    assert!(st.doc.styles.para("Body").is_some());
+    st.doc.check().unwrap();
+}
+
+#[test]
+fn object_styles_create_and_apply() {
+    let mut s = session();
+    let a = s.execute("frame.create", &json!({"rect": [36, 36, 136, 136], "content": "unassigned"})).unwrap()["id"].as_u64().unwrap();
+    s.execute("object.fill", &json!({"swatch": "C=0 M=100 Y=0 K=0"})).unwrap();
+    s.execute("object.stroke", &json!({"weight": 4.0})).unwrap();
+    s.execute("style.object.create", &json!({"name": "Magenta Box"})).unwrap();
+    let b = s.execute("frame.create", &json!({"rect": [200, 36, 300, 136], "content": "unassigned"})).unwrap()["id"].as_u64().unwrap();
+    s.execute("style.object.apply", &json!({"name": "Magenta Box"})).unwrap();
+    let d = &s.doc().unwrap().doc;
+    let (ia, ib) = (d.item(designcraft_doc::ItemId(a)).unwrap(), d.item(designcraft_doc::ItemId(b)).unwrap());
+    assert_eq!(ia.fill, ib.fill);
+    assert_eq!(ib.stroke.weight, 4.0);
+    assert_eq!(ib.object_style, "Magenta Box");
+}
+
 /// Unicode text per page, through hayro's interpreter (ToUnicode / ActualText).
 fn pdf_text(bytes: &[u8]) -> Vec<String> {
     use hayro_interpret::font::Glyph;

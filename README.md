@@ -24,7 +24,7 @@ Every page above was laid out by DesignCraft from code (`crates/engine/src/sampl
 ### Why DesignCraft
 
 - **Familiar.** InDesign's layout, tools, menus, panels and shortcuts: spreads and parent pages, frames and threaded stories, the Control panel, paragraph and character styles, swatches, text wrap… you already know how to use it.
-- **Beautiful type.** A Knuth–Plass paragraph composer (plus single-line), hyphenation, justification, columns, baseline grid, keeps, tabs, rules and shading — and identical line breaks on screen and in export.
+- **Beautiful type.** A Knuth–Plass paragraph composer (plus single-line), dictionary hyphenation (public-domain Moby word list + our own trained patterns), word/letter/glyph-scaling justification, keeps, optical margin alignment, columns, baseline grid, tabs, rules and shading — identical line breaks on screen and in PDF.
 - **Fast.** Multithreaded SIMD rendering (vello_cpu), copy-on-write documents with O(1) undo snapshots, cached composition.
 - **Open.** A documented native format, IDML import/export, PNG export, and PDF on the roadmap — no subscription, no licence server, no telemetry.
 - **Agent-native.** Every menu item, tool gesture, panel control and dialog is drivable over a JSON control channel and an **MCP server**, so Claude and other agents can lay out and edit documents like a designer.

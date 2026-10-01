@@ -1351,6 +1351,10 @@ impl<'r> Importer<'r> {
             swatches: std::mem::take(&mut self.swatches),
             sections: std::mem::take(&mut self.sections),
             assets: std::mem::take(&mut self.assets),
+            hyperlinks: vec![],
+            bookmarks: vec![],
+            user_words: vec![],
+            toc: None,
             next_id: self.next_id,
         };
         Ok(d)
