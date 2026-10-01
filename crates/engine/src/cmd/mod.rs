@@ -5,6 +5,7 @@ mod export;
 mod file;
 mod find;
 mod inspect;
+mod interactive;
 pub mod interchange;
 mod layout;
 mod object;
@@ -113,6 +114,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(layout::specs());
         v.extend(inspect::specs());
         v.extend(find::specs());
+        v.extend(interactive::specs());
         v.extend(preflight::specs());
         v
     })

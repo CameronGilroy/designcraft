@@ -218,6 +218,29 @@ fn preflight_reports_overset_and_missing_fonts() {
     assert_eq!(r["errors"], 2);
 }
 
+#[test]
+fn hyperlinks_and_bookmarks_reach_the_pdf() {
+    let mut s = Session::new();
+    s.execute("file.newSample", &json!({})).unwrap();
+    s.execute("selection.set", &json!({"ids": [39]})).unwrap();
+    s.execute("hyperlink.create", &json!({"url": "https://example.com/designcraft"})).unwrap();
+    let d = s.execute("document.inspect", &json!({})).unwrap();
+    let sid = d["stories"][0]["id"].as_u64().unwrap();
+    s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 3})).unwrap();
+    s.execute("hyperlink.create", &json!({"page": 3})).unwrap();
+    s.execute("bookmark.add", &json!({"name": "Cover", "page": 1})).unwrap();
+    s.execute("bookmark.add", &json!({"name": "Feature", "page": 2})).unwrap();
+    assert_eq!(s.execute("hyperlink.list", &json!({})).unwrap().as_array().unwrap().len(), 2);
+    let r = s.execute("file.exportPdf", &json!({})).unwrap();
+    let bytes = cmd::base64_decode(r["base64"].as_str().unwrap());
+    let pdf = hayro_syntax::Pdf::new(bytes).expect("valid pdf");
+    assert_eq!(pdf.pages().len(), 4);
+    // Round trip through the native format keeps them.
+    let back = cmd::file_from(&cmd::file_bytes(&s.doc().unwrap().doc)).unwrap();
+    assert_eq!(back.hyperlinks.len(), 2);
+    assert_eq!(back.bookmarks.len(), 2);
+}
+
 /// Unicode text per page, through hayro's interpreter (ToUnicode / ActualText).
 fn pdf_text(bytes: &[u8]) -> Vec<String> {
     use hayro_interpret::font::Glyph;

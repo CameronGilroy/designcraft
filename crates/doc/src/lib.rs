@@ -226,7 +226,50 @@ pub struct Document {
     pub sections: Vec<Section>,
     #[serde(default)]
     pub assets: BTreeMap<AssetId, Arc<Asset>>,
+    /// Hyperlinks (Window → Interactive → Hyperlinks).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hyperlinks: Vec<Hyperlink>,
+    /// PDF bookmarks (Window → Interactive → Bookmarks).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bookmarks: Vec<Bookmark>,
     pub next_id: u64,
+}
+
+/// What a hyperlink is attached to.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum HyperlinkSource {
+    Item { id: ItemId },
+    Text { story: StoryId, start: usize, end: usize },
+}
+
+/// Where a hyperlink goes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind", content = "value")]
+pub enum HyperlinkDest {
+    Url(String),
+    Email(String),
+    /// Absolute page index.
+    Page(usize),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hyperlink {
+    pub id: u64,
+    pub name: String,
+    pub source: HyperlinkSource,
+    pub dest: HyperlinkDest,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Bookmark {
+    pub name: String,
+    /// Absolute page index.
+    pub page: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Bookmark>,
 }
 
 impl Document {

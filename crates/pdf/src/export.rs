@@ -153,7 +153,10 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
     if ex.rgb_only {
         ex.warn("PDF/A: CMYK colours were converted to RGB (no CMYK output intent profile is available yet)");
     }
-    for sh in &sheets {
+    if let Some(o) = crate::links::outline(doc, &sheets) {
+        pdf.set_outline(o);
+    }
+    for (sheet_idx, sh) in sheets.iter().enumerate() {
         let size = Size::from_wh(sh.media.width().max(1.0) as f32, sh.media.height().max(1.0) as f32).ok_or(PdfError::NoPages)?;
         let local = |r: Rect| {
             krilla::geom::Rect::from_ltrb(
@@ -176,6 +179,9 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
         ex.marks(&mut s, sh, &title, created);
         s.pop();
         s.finish();
+        for a in crate::links::annotations(doc, cache, &sheets, sheet_idx) {
+            page.add_annotation(a);
+        }
         page.finish();
     }
     let bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;

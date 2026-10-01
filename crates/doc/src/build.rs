@@ -135,6 +135,8 @@ impl Document {
                 include_prefix: false,
             }],
             assets: BTreeMap::new(),
+            hyperlinks: vec![],
+            bookmarks: vec![],
             next_id: 0,
         };
         let lid = LayerId(d.alloc());
