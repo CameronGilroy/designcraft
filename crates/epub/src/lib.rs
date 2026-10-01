@@ -133,8 +133,8 @@ pub fn stylesheet(doc: &Document) -> String {
     let st: &Styles = &doc.styles;
     let (_, basic) = st.resolve_para_style(story::BASIC_PARAGRAPH);
     let base = basic.size.max(1.0);
-    let mut css = format!(
-        "body {{ margin: 0 5%; font-size: 1em; }}\nfigure {{ margin: 1em 0; text-align: center; }}\nfigure img {{ max-width: 100%; }}\nh1, h2, h3 {{ font-size: inherit; margin: 0; }}\n"
+    let mut css = String::from(
+        "body { margin: 0 5%; font-size: 1em; }\nfigure { margin: 1em 0; text-align: center; }\nfigure img { max-width: 100%; }\nh1, h2, h3 { font-size: inherit; margin: 0; }\n",
     );
     for ps in &st.paragraph {
         if ps.name == designcraft_doc::NO_PARA_STYLE {
@@ -321,7 +321,7 @@ pub fn export_epub(doc: &Document, opts: &EpubOptions) -> Result<Vec<u8>, EpubEr
                 }
                 let name = format!("images/{}.{}", g.asset.0, ext(&a.mime));
                 images.insert(name.clone(), (a.mime.as_str(), a.data.as_slice()));
-                let _ = write!(body, "<figure><img src=\"{name}\" alt=\"{}\"/></figure>\n", esc(&a.name));
+                let _ = writeln!(body, "<figure><img src=\"{name}\" alt=\"{}\"/></figure>", esc(&a.name));
             }
         }
     }
