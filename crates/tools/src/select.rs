@@ -14,7 +14,7 @@ use crate::{Action, Cursor, Mods, Overlay, PointerEvent, PointerKind, Tool, Tool
 enum Drag {
     None,
     Pending { start: Point, hit: bool },
-    Move { start: Point, origin_spread: SpreadRef },
+    Move { start: Point, origin_spread: SpreadRef, bounds0: Option<Rect> },
     Resize { handle: usize, start: Point, from: Rect, spread: SpreadRef },
     Marquee { start: Point, cur: Point },
     Anchor { id: u64, si: usize, ai: usize, handle: Option<&'static str>, start: Point },
@@ -47,11 +47,12 @@ pub struct SelectionTool {
     direct: bool,
     drag: Drag,
     hover_handle: Option<usize>,
+    guides: Vec<Overlay>,
 }
 
 impl SelectionTool {
     pub fn new(direct: bool) -> Self {
-        Self { direct, drag: Drag::None, hover_handle: None }
+        Self { direct, drag: Drag::None, hover_handle: None, guides: vec![] }
     }
 }
 
@@ -201,7 +202,7 @@ impl Tool for SelectionTool {
                     }
                     if hit && !cx.selection.items.is_empty() {
                         let sr = cx.selection.items.first().and_then(|i| cx.doc.find(*i)).map(|l| l.spread).unwrap_or(SpreadRef::Doc(0));
-                        self.drag = Drag::Move { start, origin_spread: sr };
+                        self.drag = Drag::Move { start, origin_spread: sr, bounds0: cx.selection_bounds() };
                         let label = if ev.mods.alt { "Duplicate" } else { "Move" };
                         let mut v = vec![Action::Begin(label.into())];
                         v.extend(self.pointer(cx, ev));
@@ -211,7 +212,7 @@ impl Tool for SelectionTool {
                         vec![]
                     }
                 }
-                Drag::Move { start, origin_spread } => {
+                Drag::Move { start, origin_spread, bounds0 } => {
                     let mut d: Vec2 = p - start;
                     if ev.mods.shift {
                         if d.x.abs() > d.y.abs() {
@@ -219,6 +220,15 @@ impl Tool for SelectionTool {
                         } else {
                             d.x = 0.0;
                         }
+                    }
+                    self.guides.clear();
+                    if cx.snap
+                        && let Some(b0) = bounds0
+                    {
+                        let off = cx.layout.offset(origin_spread);
+                        let snap = crate::snap::snap_rect(cx, origin_spread, b0 + d - off, &cx.selection.items);
+                        d += snap.delta;
+                        self.guides = snap.guides;
                     }
                     // Dragging to another spread moves the items there.
                     let target = cx.layout.spread_at(p).map(|(s, _)| s).unwrap_or(origin_spread);
@@ -250,6 +260,7 @@ impl Tool for SelectionTool {
                 Drag::None => vec![],
             },
             PointerKind::Up => {
+                self.guides.clear();
                 let d = std::mem::replace(&mut self.drag, Drag::None);
                 match d {
                     Drag::Move { .. } | Drag::Resize { .. } | Drag::Anchor { .. } => vec![Action::Commit],
@@ -308,6 +319,7 @@ impl Tool for SelectionTool {
     fn overlays(&self, _cx: &ToolContext) -> Vec<Overlay> {
         match &self.drag {
             Drag::Marquee { start, cur } => vec![Overlay::Marquee(Rect::from_points(*start, *cur))],
+            Drag::Move { .. } => self.guides.clone(),
             _ => vec![],
         }
     }

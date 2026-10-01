@@ -60,11 +60,16 @@ fn tool_gesture_creates_one_undo_step() {
     s.set_tool("selection");
     s.pointer(&PointerEvent::new(PointerKind::Down, 50.0, 30.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Drag, 70.0, 30.0), v).unwrap();
-    s.pointer(&PointerEvent::new(PointerKind::Drag, 80.0, 40.0), v).unwrap();
-    s.pointer(&PointerEvent::new(PointerKind::Up, 80.0, 40.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 90.0, 40.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 90.0, 40.0), v).unwrap();
     let st = s.doc().unwrap();
     assert_eq!(st.history.undo.len(), 2);
-    assert_eq!(st.doc.spreads[0].items[0].bounds().x0, 40.0);
+    assert_eq!(st.doc.spreads[0].items[0].bounds().x0, 50.0);
+    // A move that ends near the margin snaps to it.
+    s.pointer(&PointerEvent::new(PointerKind::Down, 60.0, 30.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 48.0, 30.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 48.0, 30.0), v).unwrap();
+    assert_eq!(s.doc().unwrap().doc.spreads[0].items[0].bounds().x0, 36.0);
 }
 
 #[test]

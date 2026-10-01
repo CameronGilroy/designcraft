@@ -11,12 +11,13 @@ pub struct FrameTool {
     start: Option<Point>,
     cur: Point,
     active: bool,
+    guides: Vec<crate::Overlay>,
 }
 
 impl FrameTool {
     pub fn new(id: &str) -> Self {
         let id = crate::tool_info(id).map(|t| t.id).unwrap_or("rectangleFrame");
-        Self { id, start: None, cur: Point::ZERO, active: false }
+        Self { id, start: None, cur: Point::ZERO, active: false, guides: vec![] }
     }
     fn kind(&self) -> (&'static str, &'static str) {
         match self.id {
@@ -54,7 +55,11 @@ impl Tool for FrameTool {
         let (shape, content) = self.kind();
         match ev.kind {
             PointerKind::Down => {
-                self.start = Some(ev.pos);
+                let pos = match cx.layout.spread_at(ev.pos) {
+                    Some((sr, sp)) if cx.snap => crate::snap::snap_point(cx, sr, sp).0 + cx.layout.offset(sr),
+                    _ => ev.pos,
+                };
+                self.start = Some(pos);
                 self.cur = ev.pos;
                 self.active = false;
                 vec![]
@@ -67,6 +72,14 @@ impl Tool for FrameTool {
                 }
                 let Some((sr, sa)) = cx.layout.spread_at(a) else { return vec![] };
                 let off = cx.layout.offset(sr);
+                let mut ev = *ev;
+                self.guides.clear();
+                if cx.snap && !ev.mods.shift {
+                    let (p, g) = crate::snap::snap_point(cx, sr, ev.pos - off);
+                    ev.pos = p + off;
+                    self.guides = g;
+                }
+                let ev = &ev;
                 let mut out = vec![];
                 if !self.active {
                     self.active = true;
@@ -93,6 +106,7 @@ impl Tool for FrameTool {
                 out
             }
             PointerKind::Up => {
+                self.guides.clear();
                 let was = self.active;
                 self.active = false;
                 let start = self.start.take();
@@ -118,7 +132,9 @@ impl Tool for FrameTool {
         if let (true, Some(a)) = (self.active, self.start) {
             let r = Rect::from_points(a, self.cur);
             let _ = cx;
-            return vec![Overlay::Measure { p: self.cur, text: format!("W: {:.0} pt  H: {:.0} pt", r.width(), r.height()) }];
+            let mut v = self.guides.clone();
+            v.push(Overlay::Measure { p: self.cur, text: format!("W: {:.0} pt  H: {:.0} pt", r.width(), r.height()) });
+            return v;
         }
         vec![]
     }

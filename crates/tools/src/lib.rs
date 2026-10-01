@@ -14,6 +14,7 @@ pub mod layout;
 mod nav;
 mod pen;
 pub mod select;
+pub mod snap;
 mod text;
 
 use designcraft_compose::Cache;
