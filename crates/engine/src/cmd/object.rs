@@ -205,6 +205,28 @@ pub fn specs() -> Vec<CommandSpec> {
             let name = str_param(p, "name").unwrap_or("").to_string();
             set_flag(s, p, move |i| i.name = name.clone(), false)
         }),
+        cmd!("path.create", "Create Path", [], None, "{spread?, anchors: [{p:[x,y], in?:[x,y], out?:[x,y]}], closed?: bool}", has_doc, path_create),
+        cmd!("path.appendAnchor", "Add Anchor", [], None, "{id, anchor: {p, in?, out?}} (spread coords)", has_doc, path_append),
+        cmd!("path.close", "Close Path", ["Object", "Paths"], None, "{id}", has_doc, path_close),
+        cmd!("path.moveAnchors", "Move Anchors", [], None, "{id, anchors: [[subpath, index]], dx, dy, handle?: in|out}", has_doc, path_move_anchors),
+        cmd!(
+            "object.align",
+            "Align",
+            ["Window", "Object & Layout", "Align"],
+            None,
+            "{edge: left|hcenter|right|top|vcenter|bottom, to?: selection|keyObject|margins|page|spread, ids?}",
+            has_selection,
+            align
+        ),
+        cmd!(
+            "object.distribute",
+            "Distribute",
+            ["Window", "Object & Layout", "Align"],
+            None,
+            "{axis: horizontal|vertical, by?: centers|spacing, spacing?: points, ids?}",
+            has_selection,
+            distribute
+        ),
         cmd!("object.setLayer", "Move to Layer", [], None, "{layer, ids?}", has_selection, |s, p| {
             let l = designcraft_doc::LayerId(p.get("layer").and_then(Value::as_u64).unwrap_or(0));
             set_flag(s, p, move |i| i.layer = l, false)
@@ -722,4 +744,202 @@ impl RemoveKeep for Document {
         let sp = self.spread_mut(loc.spread).expect("found");
         Ok(Arc::unwrap_or_clone(sp.items.remove(loc.path[0])))
     }
+}
+
+/// Bounds of each target item (spread space) and the alignment reference rect.
+fn align_reference(d: &Document, ids: &[ItemId], to: &str, key: Option<ItemId>) -> Option<Rect> {
+    let bounds: Vec<Rect> = ids.iter().filter_map(|i| d.item(*i).map(Item::bounds)).collect();
+    let union = bounds.iter().copied().reduce(|a, b| a.union(b))?;
+    let first = ids.first().and_then(|i| d.find(*i))?;
+    let sp = d.spread(first.spread)?;
+    let page = sp.page_at_x(union.center().x).and_then(|pi| sp.pages.get(pi));
+    Some(match to {
+        "keyObject" => key.and_then(|k| d.item(k)).map(Item::bounds).unwrap_or(union),
+        "margins" => page.map(|p| p.margin_rect()).unwrap_or(union),
+        "page" => page.map(|p| p.bounds()).unwrap_or(union),
+        "spread" => sp.bounds(),
+        _ => union,
+    })
+}
+
+fn align(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = targets(s, p)?;
+    let edge = str_param(p, "edge").unwrap_or("left").to_string();
+    let to = str_param(p, "to").map(str::to_string).unwrap_or_else(|| if ids.len() > 1 { "selection".into() } else { "page".into() });
+    let key = s.doc()?.selection.key;
+    s.edit(|d, _| {
+        let r = align_reference(d, &ids, &to, key).ok_or_else(|| bad("object.align", "nothing to align"))?;
+        for id in &ids {
+            if Some(*id) == key && to == "keyObject" {
+                continue;
+            }
+            let Some(it) = d.item_mut(*id) else { continue };
+            if it.locked {
+                continue;
+            }
+            let b = it.bounds();
+            let (dx, dy) = match edge.as_str() {
+                "left" => (r.x0 - b.x0, 0.0),
+                "hcenter" => (r.center().x - b.center().x, 0.0),
+                "right" => (r.x1 - b.x1, 0.0),
+                "top" => (0.0, r.y0 - b.y0),
+                "vcenter" => (0.0, r.center().y - b.center().y),
+                "bottom" => (0.0, r.y1 - b.y1),
+                other => return Err(bad("object.align", format!("unknown edge `{other}`"))),
+            };
+            it.xf = Affine::translate((dx, dy)) * it.xf;
+        }
+        ok()
+    })
+}
+
+fn distribute(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = targets(s, p)?;
+    if ids.len() < 3 && p.get("spacing").is_none() {
+        return Err(bad("object.distribute", "select at least three objects"));
+    }
+    let horizontal = str_param(p, "axis") != Some("vertical");
+    let by_spacing = str_param(p, "by") == Some("spacing") || p.get("spacing").is_some();
+    let fixed = p.get("spacing").and_then(Value::as_f64);
+    s.edit(|d, _| {
+        let mut items: Vec<(ItemId, Rect)> = ids.iter().filter_map(|i| d.item(*i).map(|it| (*i, it.bounds()))).collect();
+        let key = |r: &Rect| if horizontal { r.x0 } else { r.y0 };
+        items.sort_by(|a, b| key(&a.1).total_cmp(&key(&b.1)));
+        let n = items.len();
+        if n < 2 {
+            return ok();
+        }
+        let (first, last) = (items[0].1, items[n - 1].1);
+        let lo = |r: &Rect| if horizontal { r.x0 } else { r.y0 };
+        let hi = |r: &Rect| if horizontal { r.x1 } else { r.y1 };
+        let size = |r: &Rect| hi(r) - lo(r);
+        let mut targets: Vec<f64> = Vec::with_capacity(n);
+        if by_spacing {
+            let total: f64 = items.iter().map(|(_, r)| size(r)).sum();
+            let gap = fixed.unwrap_or_else(|| (hi(&last) - lo(&first) - total) / (n - 1) as f64);
+            let mut pos = lo(&first);
+            for (_, r) in &items {
+                targets.push(pos);
+                pos += size(r) + gap;
+            }
+        } else {
+            let c0 = (lo(&first) + hi(&first)) / 2.0;
+            let c1 = (lo(&last) + hi(&last)) / 2.0;
+            for (k, (_, r)) in items.iter().enumerate() {
+                targets.push(c0 + (c1 - c0) * k as f64 / (n - 1) as f64 - size(r) / 2.0);
+            }
+        }
+        for ((id, r), t) in items.iter().zip(targets) {
+            let delta = t - lo(r);
+            if let Some(it) = d.item_mut(*id) {
+                let v = if horizontal { Vec2::new(delta, 0.0) } else { Vec2::new(0.0, delta) };
+                it.xf = Affine::translate(v) * it.xf;
+            }
+        }
+        ok()
+    })
+}
+
+fn anchor_from(v: &Value) -> Option<designcraft_geom::Anchor> {
+    let pt = |k: &str| -> Option<Point> {
+        let a = v.get(k)?.as_array()?;
+        Some(Point::new(a.first()?.as_f64()?, a.get(1)?.as_f64()?))
+    };
+    let p = pt("p")?;
+    let h_in = pt("in").unwrap_or(p);
+    let h_out = pt("out").unwrap_or(p);
+    let smooth = (h_in - p).hypot() > 1e-9 || (h_out - p).hypot() > 1e-9;
+    Some(designcraft_geom::Anchor {
+        p,
+        h_in,
+        h_out,
+        kind: if smooth { designcraft_geom::AnchorKind::Smooth } else { designcraft_geom::AnchorKind::Corner },
+    })
+}
+
+fn path_create(s: &mut Session, p: &Value) -> Result<Value> {
+    let anchors: Vec<designcraft_geom::Anchor> =
+        p.get("anchors").and_then(Value::as_array).map(|a| a.iter().filter_map(anchor_from).collect()).unwrap_or_default();
+    if anchors.len() < 2 {
+        return Err(bad("path.create", "a path needs at least two anchors"));
+    }
+    let closed = bool_or(p, "closed", false);
+    let sr = spread_param(p, "spread");
+    let lid = s.doc()?.active_layer;
+    s.edit(|d, sel| {
+        let id = ItemId(d.alloc());
+        let shape = if anchors.len() == 2 && !closed { Shape::GraphicLine } else { Shape::Path };
+        let mut it = Item::new(id, lid, shape, designcraft_geom::PathData::single(designcraft_geom::SubPath::new(anchors, closed)));
+        it.stroke = Stroke::default();
+        d.insert_item(sr, it, None)?;
+        *sel = Selection::items(vec![id]);
+        Ok(json!({"id": id.0}))
+    })
+}
+
+fn path_append(s: &mut Session, p: &Value) -> Result<Value> {
+    let id = super::id_param(p, "id").ok_or_else(|| bad("path.appendAnchor", "missing id"))?;
+    let a = p.get("anchor").and_then(anchor_from).ok_or_else(|| bad("path.appendAnchor", "missing anchor"))?;
+    s.edit(|d, _| {
+        let loc = d.find(id).ok_or(designcraft_doc::DocError::NoItem(id))?;
+        let inv = (d.parent_xf(&loc) * d.item_at(&loc).map(|i| i.xf).unwrap_or_default()).inverse();
+        let it = d.item_mut(id).ok_or(designcraft_doc::DocError::NoItem(id))?;
+        let sp = it.path.subpaths.last_mut().ok_or_else(|| bad("path.appendAnchor", "empty path"))?;
+        sp.anchors.push(a.transform(inv));
+        if it.shape == Shape::GraphicLine {
+            it.shape = Shape::Path;
+        }
+        ok()
+    })
+}
+
+fn path_close(s: &mut Session, p: &Value) -> Result<Value> {
+    let id = super::id_param(p, "id").ok_or_else(|| bad("path.close", "missing id"))?;
+    s.edit(|d, _| {
+        let it = d.item_mut(id).ok_or(designcraft_doc::DocError::NoItem(id))?;
+        for sp in &mut it.path.subpaths {
+            sp.closed = true;
+        }
+        if it.shape == Shape::GraphicLine {
+            it.shape = Shape::Path;
+        }
+        ok()
+    })
+}
+
+fn path_move_anchors(s: &mut Session, p: &Value) -> Result<Value> {
+    let id = super::id_param(p, "id").ok_or_else(|| bad("path.moveAnchors", "missing id"))?;
+    let which: Vec<(usize, usize)> = p.get("anchors").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+    let d0 = Vec2::new(f64_or(p, "dx", 0.0), f64_or(p, "dy", 0.0));
+    let handle = str_param(p, "handle").map(str::to_string);
+    s.edit(|d, _| {
+        let loc = d.find(id).ok_or(designcraft_doc::DocError::NoItem(id))?;
+        let m = d.parent_xf(&loc) * d.item_at(&loc).map(|i| i.xf).unwrap_or_default();
+        // Spread-space delta → inner-space delta (linear part only).
+        let inv = m.inverse();
+        let dv = (inv * Point::new(d0.x, d0.y)) - (inv * Point::ZERO);
+        let it = d.item_mut(id).ok_or(designcraft_doc::DocError::NoItem(id))?;
+        for (si, ai) in &which {
+            let Some(a) = it.path.anchor_mut(*si, *ai) else { continue };
+            match handle.as_deref() {
+                Some("in") => {
+                    a.h_in += dv;
+                    if a.kind == designcraft_geom::AnchorKind::Smooth {
+                        a.h_out = a.p - (a.h_in - a.p);
+                    }
+                }
+                Some("out") => {
+                    a.h_out += dv;
+                    if a.kind == designcraft_geom::AnchorKind::Smooth {
+                        a.h_in = a.p - (a.h_out - a.p);
+                    }
+                }
+                _ => a.translate(dv),
+            }
+        }
+        if it.shape == Shape::Rectangle || it.shape == Shape::Oval || it.shape == Shape::Polygon {
+            it.shape = Shape::Path;
+        }
+        ok()
+    })
 }

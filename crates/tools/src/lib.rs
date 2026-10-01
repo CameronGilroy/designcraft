@@ -12,6 +12,7 @@ pub mod catalog;
 mod frame;
 pub mod layout;
 mod nav;
+mod pen;
 pub mod select;
 mod text;
 
@@ -234,6 +235,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "directSelection" => Box::new(select::SelectionTool::new(true)),
         "rectangleFrame" | "ellipseFrame" | "polygonFrame" | "rectangle" | "ellipse" | "polygon" | "line" => Box::new(frame::FrameTool::new(id)),
         "type" => Box::new(text::TypeTool::default()),
+        "pen" => Box::new(pen::PenTool::default()),
         "hand" => Box::new(nav::HandTool::default()),
         "zoom" => Box::new(nav::ZoomTool),
         other => Box::new(NoopTool(tool_info(other).map(|t| t.id).unwrap_or("selection"))),

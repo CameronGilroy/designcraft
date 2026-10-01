@@ -104,3 +104,56 @@ fn every_command_has_metadata() {
     }
     assert!(command_specs().len() > 60);
 }
+
+#[test]
+fn align_and_distribute() {
+    let mut s = session();
+    let mut ids = vec![];
+    for (x, w) in [(10.0, 20.0), (100.0, 40.0), (300.0, 10.0)] {
+        let r = s.execute("frame.create", &json!({"rect": [x, 50.0 + x / 10.0, x + w, 100.0], "content": "unassigned"})).unwrap();
+        ids.push(r["id"].as_u64().unwrap());
+    }
+    s.execute("object.align", &json!({"ids": ids, "edge": "top"})).unwrap();
+    let st = s.doc().unwrap();
+    let tops: Vec<f64> = ids.iter().map(|i| st.doc.item(designcraft_doc::ItemId(*i)).unwrap().bounds().y0).collect();
+    assert!(tops.iter().all(|t| (*t - 51.0).abs() < 1e-9), "{tops:?}");
+    s.execute("object.distribute", &json!({"ids": ids, "by": "spacing"})).unwrap();
+    let st = s.doc().unwrap();
+    let b: Vec<designcraft_geom::Rect> = ids.iter().map(|i| st.doc.item(designcraft_doc::ItemId(*i)).unwrap().bounds()).collect();
+    assert!(((b[1].x0 - b[0].x1) - (b[2].x0 - b[1].x1)).abs() < 1e-9);
+    s.execute("object.align", &json!({"ids": [ids[0]], "edge": "left", "to": "margins"})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(ids[0])).unwrap().bounds().x0, 36.0);
+}
+
+#[test]
+fn pen_draws_and_direct_selection_edits() {
+    use designcraft_tools::{PointerEvent, PointerKind};
+    let mut s = session();
+    let v = ViewInfo { zoom: 1.0 };
+    s.set_tool("pen");
+    let click = |s: &mut Session, x: f64, y: f64| {
+        s.pointer(&PointerEvent::new(PointerKind::Down, x, y), v).unwrap();
+        s.pointer(&PointerEvent::new(PointerKind::Up, x, y), v).unwrap();
+    };
+    click(&mut s, 100.0, 100.0);
+    click(&mut s, 200.0, 100.0);
+    // A smooth point (drag).
+    s.pointer(&PointerEvent::new(PointerKind::Down, 200.0, 200.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 240.0, 200.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 240.0, 200.0), v).unwrap();
+    click(&mut s, 100.0, 100.0); // close
+    let st = s.doc().unwrap();
+    let it = &st.doc.spreads[0].items[0];
+    assert_eq!(it.path.subpaths[0].anchors.len(), 3);
+    assert!(it.path.subpaths[0].closed);
+    assert!(it.path.subpaths[0].anchors[2].has_out());
+    let id = it.id;
+    // Direct Selection: drag the first anchor.
+    s.set_tool("directSelection");
+    s.execute("selection.set", &json!({"ids": [id.0]})).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Down, 100.0, 100.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 90.0, 80.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 90.0, 80.0), v).unwrap();
+    let a = s.doc().unwrap().doc.item(id).unwrap().path.subpaths[0].anchors[0].p;
+    assert_eq!(a, designcraft_geom::Point::new(90.0, 80.0));
+}

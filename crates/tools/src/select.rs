@@ -17,6 +17,30 @@ enum Drag {
     Move { start: Point, origin_spread: SpreadRef },
     Resize { handle: usize, start: Point, from: Rect, spread: SpreadRef },
     Marquee { start: Point, cur: Point },
+    Anchor { id: u64, si: usize, ai: usize, handle: Option<&'static str>, start: Point },
+}
+
+/// Anchor or handle of a selected item under `p` (canvas): (item, subpath, anchor, handle).
+pub fn anchor_at(cx: &ToolContext, p: Point) -> Option<(u64, usize, usize, Option<&'static str>)> {
+    let tol = cx.tol(5.0);
+    for id in &cx.selection.items {
+        let (Some(it), Some(xf)) = (cx.doc.item(*id), cx.item_canvas_xf(*id)) else { continue };
+        let m = xf * it.xf;
+        for (si, sp) in it.path.subpaths.iter().enumerate() {
+            for (ai, a) in sp.anchors.iter().enumerate() {
+                if ((m * a.p) - p).hypot() <= tol {
+                    return Some((id.0, si, ai, None));
+                }
+                if a.has_in() && ((m * a.h_in) - p).hypot() <= tol {
+                    return Some((id.0, si, ai, Some("in")));
+                }
+                if a.has_out() && ((m * a.h_out) - p).hypot() <= tol {
+                    return Some((id.0, si, ai, Some("out")));
+                }
+            }
+        }
+    }
+    None
 }
 
 pub struct SelectionTool {
@@ -137,6 +161,12 @@ impl Tool for SelectionTool {
                 vec![]
             }
             PointerKind::Down => {
+                if self.direct
+                    && let Some((id, si, ai, handle)) = anchor_at(cx, p)
+                {
+                    self.drag = Drag::Anchor { id, si, ai, handle, start: p };
+                    return vec![Action::Begin(if handle.is_some() { "Move Direction Handle".into() } else { "Move Anchor".into() })];
+                }
                 if let Some(h) = handle_at(cx, p).filter(|_| !self.direct)
                     && let (Some(b), Some(first)) = (cx.selection_bounds(), cx.selection.items.first())
                     && let Some(loc) = cx.doc.find(*first)
@@ -209,12 +239,20 @@ impl Tool for SelectionTool {
                     self.drag = Drag::Marquee { start, cur: p };
                     vec![]
                 }
+                Drag::Anchor { id, si, ai, handle, start } => {
+                    let d = p - start;
+                    let mut params = json!({"id": id, "anchors": [[si, ai]], "dx": d.x, "dy": d.y});
+                    if let Some(h) = handle {
+                        params["handle"] = json!(h);
+                    }
+                    vec![Action::Preview("path.moveAnchors".into(), params)]
+                }
                 Drag::None => vec![],
             },
             PointerKind::Up => {
                 let d = std::mem::replace(&mut self.drag, Drag::None);
                 match d {
-                    Drag::Move { .. } | Drag::Resize { .. } => vec![Action::Commit],
+                    Drag::Move { .. } | Drag::Resize { .. } | Drag::Anchor { .. } => vec![Action::Commit],
                     Drag::Marquee { start, cur } => {
                         let r = Rect::from_points(start, cur);
                         // Items whose bounds intersect the marquee.
