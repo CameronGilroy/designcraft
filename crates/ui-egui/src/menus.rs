@@ -14,6 +14,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
     ("app.palette", "Command Palette…", Some("Cmd+K"), "{}"),
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
+    ("app.storyEditor", "Edit in Story Editor", Some("Cmd+Y"), "{story?}"),
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "{}"),
     ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "{}"),
     ("view.fitPage", "Fit Page in Window", Some("Cmd+0"), "{}"),
@@ -76,6 +77,10 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "cmd:edit.selectAll",
             "cmd:edit.deselectAll",
+            "-",
+            "ui:app.findChange",
+            "cmd:find.next",
+            "ui:app.storyEditor",
             "-",
             "ui:app.palette",
         ],
@@ -198,6 +203,19 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(Value::Null)
         }
         "app.exportPng" => export_png(app, p),
+        "app.storyEditor" => {
+            let sid = p.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId).or_else(|| {
+                let st = app.session.active()?;
+                st.selection.text.map(|t| t.story).or_else(|| st.selection.items.iter().find_map(|i| st.doc.item(*i)?.text_frame().map(|t| t.story)))
+            });
+            match sid {
+                Some(s) => {
+                    app.story_editor = if app.story_editor == Some(s) { None } else { Some(s) };
+                    Ok(Value::Null)
+                }
+                None => Err("select a text frame or place the cursor in text".into()),
+            }
+        }
         "app.findChange" => {
             app.ui.dialog = Some(crate::dialogs::Dialog::new("findChange", json!({})));
             Ok(Value::Null)

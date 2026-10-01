@@ -55,6 +55,31 @@ pub fn specs() -> Vec<CommandSpec> {
                 ok()
             })
         }),
+        cmd!(
+            "story.replaceRange",
+            "Edit Story",
+            [],
+            None,
+            "{story, start, end, text} — replace a byte range keeping surrounding formatting",
+            has_doc,
+            |s, p| {
+                let sid = StoryId(p.get("story").and_then(Value::as_u64).ok_or_else(|| bad("story.replaceRange", "missing story"))?);
+                let a = p.get("start").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let b = p.get("end").and_then(Value::as_u64).map(|v| v as usize).unwrap_or(a);
+                let text = str_param(p, "text").unwrap_or("").to_string();
+                s.edit(|d, sel| {
+                    let st = d.story_mut(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+                    let (a, b) = (a.min(st.len()), b.min(st.len()).max(a.min(st.len())));
+                    st.replace(a..b, &text);
+                    let len = st.len();
+                    if let Some(t) = sel.text.as_mut().filter(|t| t.story == sid) {
+                        t.anchor = t.anchor.min(len);
+                        t.focus = t.focus.min(len);
+                    }
+                    Ok(json!({"length": len}))
+                })
+            }
+        ),
         cmd!(query "story.get", "Get Story", [], None, "{story? | frame?} → text, frames, paragraphs, overset", has_doc, |s, p| {
             let st = s.doc()?;
             let sid = story_of(s, p).ok_or_else(|| bad("story.get", "no story"))?;

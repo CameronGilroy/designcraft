@@ -13,6 +13,7 @@ pub mod dock;
 pub mod icons;
 pub mod menus;
 pub mod panels;
+pub mod story_editor;
 pub mod theme;
 pub mod toolbar;
 pub mod widgets;
@@ -148,6 +149,8 @@ pub struct DesignApp {
     pub canvas_rect: Option<egui::Rect>,
     pub perf: Perf,
     pub synthetic: Vec<egui::Event>,
+    /// Story open in the Story Editor.
+    pub story_editor: Option<designcraft_doc::StoryId>,
     control_rx: Option<Receiver<ControlRequest>>,
     pending_shots: Vec<(u64, Option<String>, Sender<ControlResponse>, f64)>,
     queued_shots: Vec<(u64, f64, u32)>,
@@ -172,6 +175,7 @@ impl DesignApp {
             canvas_rect: None,
             perf: Perf::default(),
             synthetic: vec![],
+            story_editor: None,
             control_rx: None,
             pending_shots: vec![],
             queued_shots: vec![],
@@ -332,6 +336,7 @@ impl DesignApp {
             canvas::show(self, ui);
         });
         dock::flyout(self, &ctx);
+        story_editor::show(self, &ctx);
         dialogs::show(self, &ctx);
         menus::palette(self, &ctx);
         self.perf.frame_ms = now_ms() - t0;
