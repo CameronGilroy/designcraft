@@ -139,7 +139,7 @@ pub fn specs() -> Vec<CommandSpec> {
 }
 
 /// A document holding copies of the selected items (and their stories) on spread 0.
-fn clip_doc(s: &Session) -> Result<designcraft_doc::Document> {
+pub(crate) fn clip_doc(s: &Session) -> Result<designcraft_doc::Document> {
     let st = s.doc()?;
     let mut d = (*st.doc).clone();
     let keep: Vec<ItemId> = st.selection.items.clone();
@@ -153,11 +153,33 @@ fn clip_doc(s: &Session) -> Result<designcraft_doc::Document> {
     for sp in d.spreads.iter_mut() {
         Arc::make_mut(sp).items.clear();
     }
+    // Kept frames and graphics (including inside groups).
+    let mut frames = std::collections::HashSet::new();
+    let mut assets = std::collections::HashSet::new();
+    for it in &items {
+        it.walk(&mut |i| match &i.content {
+            designcraft_doc::Content::Text(_) => {
+                frames.insert(i.id);
+            }
+            designcraft_doc::Content::Graphic(g) => {
+                assets.insert(g.asset);
+            }
+            _ => {}
+        });
+    }
     if let Some(sp) = d.spreads.first_mut() {
         Arc::make_mut(sp).items = items;
     }
+    // Parent spreads aren't part of a clipping; stories keep only the copied frames.
+    for p in d.parents.iter_mut() {
+        Arc::make_mut(p).items.clear();
+    }
+    d.stories.retain(|_, st| st.frames.iter().any(|f| frames.contains(f)));
+    for st in d.stories.values_mut() {
+        Arc::make_mut(st).frames.retain(|f| frames.contains(f));
+    }
+    d.assets.retain(|k, _| assets.contains(k));
+    d.hyperlinks.clear();
+    d.bookmarks.clear();
     Ok(d)
 }
-
-#[allow(dead_code)]
-fn _unused(_: Value) {}

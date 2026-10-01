@@ -253,6 +253,24 @@ fn step_and_repeat_grid() {
     assert_eq!(last.y0, 36.0 + 2.0 * 40.0);
 }
 
+#[test]
+fn snippets_roundtrip_between_documents() {
+    let mut s = Session::new();
+    s.execute("file.newSample", &json!({})).unwrap();
+    s.execute("selection.set", &json!({"ids": [39]})).unwrap();
+    let snip = s.execute("snippet.export", &json!({})).unwrap();
+    s.execute("file.new", &json!({})).unwrap();
+    let r = s.execute("snippet.place", &json!({"base64": snip["base64"], "x": 36.0, "y": 36.0})).unwrap();
+    let id = designcraft_doc::ItemId(r["ids"][0].as_u64().unwrap());
+    let st = s.doc().unwrap();
+    let it = st.doc.item(id).unwrap();
+    assert_eq!(it.bounds().x0, 36.0);
+    let sid = it.text_frame().unwrap().story;
+    assert!(st.doc.story(sid).unwrap().text.starts_with("Every page begins"));
+    assert!(st.doc.styles.para("Body").is_some());
+    st.doc.check().unwrap();
+}
+
 /// Unicode text per page, through hayro's interpreter (ToUnicode / ActualText).
 fn pdf_text(bytes: &[u8]) -> Vec<String> {
     use hayro_interpret::font::Glyph;
