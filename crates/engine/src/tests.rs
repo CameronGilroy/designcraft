@@ -271,6 +271,22 @@ fn snippets_roundtrip_between_documents() {
     st.doc.check().unwrap();
 }
 
+#[test]
+fn object_styles_create_and_apply() {
+    let mut s = session();
+    let a = s.execute("frame.create", &json!({"rect": [36, 36, 136, 136], "content": "unassigned"})).unwrap()["id"].as_u64().unwrap();
+    s.execute("object.fill", &json!({"swatch": "C=0 M=100 Y=0 K=0"})).unwrap();
+    s.execute("object.stroke", &json!({"weight": 4.0})).unwrap();
+    s.execute("style.object.create", &json!({"name": "Magenta Box"})).unwrap();
+    let b = s.execute("frame.create", &json!({"rect": [200, 36, 300, 136], "content": "unassigned"})).unwrap()["id"].as_u64().unwrap();
+    s.execute("style.object.apply", &json!({"name": "Magenta Box"})).unwrap();
+    let d = &s.doc().unwrap().doc;
+    let (ia, ib) = (d.item(designcraft_doc::ItemId(a)).unwrap(), d.item(designcraft_doc::ItemId(b)).unwrap());
+    assert_eq!(ia.fill, ib.fill);
+    assert_eq!(ib.stroke.weight, 4.0);
+    assert_eq!(ib.object_style, "Magenta Box");
+}
+
 /// Unicode text per page, through hayro's interpreter (ToUnicode / ActualText).
 fn pdf_text(bytes: &[u8]) -> Vec<String> {
     use hayro_interpret::font::Glyph;
