@@ -77,7 +77,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Place…",
             ["File"],
             Some("Cmd+D"),
-            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?} — places an image; into the selected empty frame if any",
+            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?}",
             has_doc,
             file_place
         ),
@@ -199,6 +199,10 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
         s.ui_requests.push(crate::UiRequest::Pick { purpose: "place".into(), params: json!({}) });
         return ok();
     };
+    // Text files (plain, Word, RTF) flow into frames.
+    if designcraft_textimport::is_text_file(&name) {
+        return super::place_text::place_text(s, p, &name, &bytes);
+    }
     let (pw, ph) = designcraft_render::image_size(&bytes).ok_or_else(|| bad("file.place", "unsupported or corrupt image"))?;
     // 72 ppi by default unless the file says otherwise; scale so it fits the page when huge.
     let (nw, nh) = (pw as f64, ph as f64);

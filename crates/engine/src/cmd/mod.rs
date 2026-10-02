@@ -16,6 +16,7 @@ mod layout;
 mod links;
 mod notes;
 mod object;
+mod place_text;
 pub mod preflight;
 pub mod spelling;
 mod style;

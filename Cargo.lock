@@ -922,6 +922,7 @@ dependencies = [
  "designcraft-idml",
  "designcraft-pdf",
  "designcraft-render",
+ "designcraft-textimport",
  "designcraft-tools",
  "hayro-cmap",
  "hayro-interpret",
@@ -1032,6 +1033,15 @@ dependencies = [
  "log",
  "vello_common 0.2.0",
  "vello_cpu 0.2.0",
+]
+
+[[package]]
+name = "designcraft-textimport"
+version = "0.1.0"
+dependencies = [
+ "designcraft-doc",
+ "quick-xml 0.38.4",
+ "zip",
 ]
 
 [[package]]

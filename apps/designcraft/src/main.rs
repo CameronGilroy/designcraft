@@ -82,7 +82,9 @@ fn services() -> Services {
         pick_open: Some(Box::new(|purpose: &str| {
             let d = rfd::FileDialog::new();
             let d = if purpose == "place" {
-                d.add_filter("Graphics", &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff"])
+                d.add_filter("Graphics and text", &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "txt", "docx", "rtf", "md"])
+                    .add_filter("Graphics", &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff"])
+                    .add_filter("Text (Word, RTF, plain)", &["docx", "rtf", "txt", "md"])
             } else {
                 d.add_filter("DesignCraft or IDML", &["designcraft", "idml"])
                     .add_filter("DesignCraft", &["designcraft"])
