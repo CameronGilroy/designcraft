@@ -10,12 +10,12 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 48 | 23 | 26 | 61% |
+| P1 | 97 | 49 | 23 | 25 | 62% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
 |---|---|
-| Application shell & workspace | 69% |
+| Application shell & workspace | 74% |
 | Documents, pages, spreads | 71% |
 | Layers | 95% |
 | Frames, shapes & paths | 85% |
@@ -50,7 +50,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Application shell & workspace | Properties panel | P0 | D |
 | Application shell & workspace | Contextual task bar | P2 | D |
 | Application shell & workspace | Themes | P0 | D |
-| Application shell & workspace | UI scaling | P1 | M |
+| Application shell & workspace | UI scaling | P1 | D |
 | Application shell & workspace | Keyboard shortcut editor | P1 | M |
 | Application shell & workspace | Menu customization | P2 | M |
 | Application shell & workspace | Show Full Menus | P2 | M |

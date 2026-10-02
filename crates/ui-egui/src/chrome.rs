@@ -19,6 +19,8 @@ pub fn app_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
         .frame(egui::Frame::NONE.fill(t.app_bar).inner_margin(egui::Margin { left, right: 10, top: 0, bottom: 7 }))
         .show(ui, |ui| {
             let full = ui.max_rect();
+            let mut menus_end = full.min.x;
+            let mut tools_start = full.max.x;
             ui.horizontal_centered(|ui| {
                 if icons::button(ui, "home", 24.0, app.session.active().is_none(), "Home").clicked() {
                     app.session_home();
@@ -31,6 +33,7 @@ pub fn app_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
                     ui.style_mut().spacing.button_padding = vec2(7.0, 3.0);
                     crate::menus::menu_bar(app, ui);
                 }
+                menus_end = ui.min_rect().max.x;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(4.0);
                     // Search field.
@@ -58,6 +61,7 @@ pub fn app_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
                     if crate::about::discord_button(ui, "Discord", vec2(78.0, 22.0)) {
                         let _ = app.run("help.discord", json!({}));
                     }
+                    tools_start = ui.min_rect().min.x;
                 });
             });
             // Centred title.
@@ -65,13 +69,13 @@ pub fn app_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
                 Some(d) => format!("DesignCraft — {}", d.title()),
                 None => "DesignCraft".to_string(),
             };
-            ui.painter().text(
-                egui::pos2(full.center().x, full.min.y + 18.0),
-                egui::Align2::CENTER_CENTER,
-                title,
-                egui::FontId::proportional(11.5),
-                t.text,
-            );
+            // Centred between the menus and the right-hand controls; left out when it won't fit.
+            let galley = ui.painter().layout_no_wrap(title, egui::FontId::proportional(11.5), t.text);
+            let w = galley.size().x;
+            let cx = full.center().x;
+            if cx - w / 2.0 > menus_end + 12.0 && cx + w / 2.0 < tools_start - 12.0 {
+                ui.painter().galley(egui::pos2(cx - w / 2.0, full.min.y + 18.0 - galley.size().y / 2.0), galley, t.text);
+            }
         });
     let r = resp.response.rect;
     ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(r.min.x, r.max.y - 7.0), r.max), 0.0, t.pasteboard);

@@ -204,6 +204,7 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
     let sections: &[(&str, &str)] = if has_doc {
         &[
             ("general", "General"),
+            ("interface", "Interface"),
             ("type", "Type"),
             ("units", "Units & Increments"),
             ("grids", "Grids"),
@@ -211,7 +212,7 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
             ("display", "Display Performance"),
         ]
     } else {
-        &[("general", "General"), ("type", "Type"), ("display", "Display Performance")]
+        &[("general", "General"), ("interface", "Interface"), ("type", "Type"), ("display", "Display Performance")]
     };
     let cur = d.s("section");
     ui.horizontal_top(|ui| {
@@ -233,6 +234,16 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                 "type" => {
                     ui.label(egui::RichText::new("Type Options").font(semibold(12.0)));
                     check(ui, d, "typographersQuotes", "Use Typographer's Quotes");
+                }
+                "interface" => {
+                    ui.label(egui::RichText::new("UI Scaling").font(semibold(12.0)));
+                    ui.horizontal(|ui| {
+                        ui.label("UI Size:");
+                        let mut v = d.n("uiScale").unwrap_or(100.0);
+                        if ui.add(egui::Slider::new(&mut v, 50.0..=200.0).step_by(5.0).suffix("%")).changed() {
+                            d.fields.insert("uiScale".into(), json!(v));
+                        }
+                    });
                 }
                 "grids" => {
                     ui.label(egui::RichText::new("Baseline Grid").font(semibold(12.0)));
@@ -700,6 +711,9 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
                 _ => "view.highQualityDisplay",
             };
             app.run(view, json!({}))?;
+            if let Some(v) = d.n("uiScale") {
+                app.run("window.uiScale", json!({"scale": v / 100.0}))?;
+            }
             if !d.fields.contains_key("horizontalUnits") {
                 return Ok(Value::Null);
             }

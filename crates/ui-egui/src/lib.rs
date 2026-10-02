@@ -85,6 +85,8 @@ pub struct UiState {
     pub hidden_characters: bool,
     /// View › Display Performance.
     pub display_quality: designcraft_render::DisplayQuality,
+    /// Preferences › Interface › UI scaling (1 = 100%).
+    pub ui_scale: f32,
     pub control_bar: bool,
     pub tools_double_column: bool,
     /// Expanded right-dock panel group tab.
@@ -133,6 +135,7 @@ impl Default for UiState {
             text_threads: false,
             hidden_characters: false,
             display_quality: designcraft_render::DisplayQuality::High,
+            ui_scale: 1.0,
             control_bar: false,
             tools_double_column: false,
             dock_tab: "properties".into(),
@@ -380,6 +383,10 @@ impl DesignApp {
 
     /// Per-frame logic before layout.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        let scale = self.ui.ui_scale.clamp(0.5, 3.0);
+        if (ctx.zoom_factor() - scale).abs() > 1e-3 {
+            ctx.set_zoom_factor(scale);
+        }
         if !self.styled {
             theme::install_fonts(ctx);
             self.styled = true;

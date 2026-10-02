@@ -20,6 +20,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
     ("app.preferences", "Preferences…", Some("Cmd+K"), "{}"),
+    ("window.uiScale", "UI Scaling", None, "{scale: 0.5–3 (1 = 100%)} — the size of the whole interface"),
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
     ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
     ("app.footnoteOptionsDialog", "Document Footnote Options…", None, "{} — numbering, formatting and layout of footnotes"),
@@ -623,6 +624,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 designcraft_render::DisplayQuality::Typical => "typical",
                 designcraft_render::DisplayQuality::High => "high",
             });
+            f["uiScale"] = json!((app.ui.ui_scale * 100.0).round());
             f["section"] = json!("general");
             app.ui.dialog = Some(crate::dialogs::Dialog::new("preferences", f));
             Ok(Value::Null)
@@ -705,6 +707,11 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 app.ui.open_panel = if app.ui.open_panel.as_deref() == Some(panel.as_str()) { None } else { Some(panel) };
             }
             Ok(Value::Null)
+        }
+        "window.uiScale" => {
+            let v = p.get("scale").and_then(Value::as_f64).unwrap_or(1.0) as f32;
+            app.ui.ui_scale = v.clamp(0.5, 3.0);
+            Ok(json!({"scale": app.ui.ui_scale}))
         }
         "window.floatPanel" | "window.dockPanel" => {
             let panel = p.get("panel").and_then(Value::as_str).unwrap_or("");
