@@ -1,5 +1,6 @@
 //! Panels and shared panel helpers.
 
+pub mod glyphs;
 pub mod layers;
 pub mod pages;
 pub mod properties;

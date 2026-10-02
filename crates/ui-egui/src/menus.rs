@@ -171,6 +171,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:app.findFontDialog",
             "-",
             "cmd:type.createOutlines",
+            "ui:window.panel|Glyphs|{\"panel\": \"glyphs\"}",
             "cmd:type.fillWithPlaceholder",
             ">Insert Special Character",
             ">Symbols",

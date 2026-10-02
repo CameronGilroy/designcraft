@@ -24,6 +24,7 @@ pub use vello_cpu;
 
 pub mod damage;
 mod fx;
+pub mod glyphs;
 pub mod images;
 mod text;
 
