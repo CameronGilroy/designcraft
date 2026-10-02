@@ -226,6 +226,7 @@ fn shape_run(
                 | designcraft_doc::FOOTNOTE_REF
                 | designcraft_doc::XREF_MARK
                 | designcraft_doc::ANCHOR_MARK
+                | designcraft_doc::INDEX_MARK
         ) || designcraft_doc::vars::var_index(c).is_some();
         if special {
             flush(seg_start, i, &seg_face, out);
@@ -265,7 +266,12 @@ fn shape_run(
                 _ => {
                     // Zero-width control glyph carrying metrics (tabs get their width at line layout).
                     let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
-                    if c == '\t' || c == story::RIGHT_INDENT_TAB || c == story::TABLE_ANCHOR || c == designcraft_doc::ANCHOR_MARK {
+                    if c == '\t'
+                        || c == story::RIGHT_INDENT_TAB
+                        || c == story::TABLE_ANCHOR
+                        || c == designcraft_doc::ANCHOR_MARK
+                        || c == designcraft_doc::INDEX_MARK
+                    {
                         g.adv = 0.0;
                     }
                     out.push(g);

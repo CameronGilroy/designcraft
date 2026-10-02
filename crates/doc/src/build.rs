@@ -142,6 +142,7 @@ impl Document {
             text_variables: crate::vars::defaults(),
             footnote_options: Default::default(),
             xref_formats: crate::xref::default_formats(),
+            index: None,
             created: crate::vars::now(),
             modified: 0,
             next_id: 0,

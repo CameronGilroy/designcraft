@@ -233,6 +233,7 @@ impl Document {
                     }
                     st.anchors.extend(other.anchors.iter().cloned());
                     st.xrefs.extend(other.xrefs.iter().cloned());
+                    st.index_refs.extend(other.index_refs.iter().cloned());
                     st.rev += 1;
                 }
                 let at = st.frames.iter().position(|f| *f == from).map_or(st.frames.len(), |p| p + 1);
@@ -362,6 +363,7 @@ impl Document {
         st.fix_notes();
         st.anchors.clear();
         st.xrefs.clear();
+        st.index_refs.clear();
         st.fix_marks();
         st.rev += 1;
         Ok(())

@@ -19,6 +19,17 @@ pub fn has_running(doc: &Document, st: &Story) -> bool {
     st.text.chars().filter_map(var_index).any(|i| matches!(doc.text_variables.get(i).map(|v| &v.kind), Some(VarKind::RunningHeader { .. })))
 }
 
+/// Absolute page showing story byte `pos` of a composed story.
+pub fn page_of(doc: &Document, cs: &ComposedStory, pos: usize) -> Option<usize> {
+    let (fi, ..) = crate::caret(cs, pos)?;
+    // Overset text has no page.
+    let ft = cs.frames.get(fi)?;
+    if pos > ft.range.end && cs.overset_at.is_some_and(|o| pos >= o) {
+        return None;
+    }
+    place(doc, cs, pos).map(|p| p.0)
+}
+
 /// Per (style, is character style): page → (first text, last text) on that page.
 #[derive(Debug, Default)]
 pub struct RunningIndex {

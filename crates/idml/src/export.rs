@@ -133,6 +133,9 @@ struct Ex<'a> {
     threads: HashMap<u64, (Option<u64>, Option<u64>)>,
     /// Cross-reference sources written so far: (Self, target anchor).
     xref_sources: Vec<(String, u64)>,
+    /// Index topics (paths) and their See / See also cross-references.
+    index_topics: BTreeSet<Vec<String>>,
+    index_xrefs: Vec<(Vec<String>, &'static str, String)>,
 }
 
 impl<'a> Ex<'a> {
@@ -145,6 +148,8 @@ impl<'a> Ex<'a> {
             fonts: BTreeMap::new(),
             threads: HashMap::new(),
             xref_sources: Vec::new(),
+            index_topics: BTreeSet::new(),
+            index_xrefs: Vec::new(),
         };
         ex.assign_swatch_ids();
         for s in d.stories.values() {
@@ -351,6 +356,9 @@ impl<'a> Ex<'a> {
             }
             el = el.attr("Marker", &s.marker).attr("PageStart", uid(page.id.0)).attr("SectionPrefix", &s.prefix);
             root.push(with_props(el, vec![p("PageNumberStyle", "enumeration", names::number_style_out(s.style))]));
+        }
+        if !self.index_topics.is_empty() || !self.index_xrefs.is_empty() {
+            root.push(self.index_el());
         }
         // Formats before the stories whose sources apply them.
         for (i, f) in d.xref_formats.iter().enumerate() {
@@ -1263,6 +1271,41 @@ impl<'a> Ex<'a> {
         el
     }
 
+    /// `<Index>`: nested topics with their See / See also cross-references.
+    fn index_el(&mut self) -> El {
+        let mut topics = self.index_topics.clone();
+        for (_, _, target) in &self.index_xrefs {
+            topics.insert(vec![target.clone()]);
+        }
+        fn build(ex: &mut Ex, topics: &BTreeSet<Vec<String>>, prefix: &[String]) -> Vec<El> {
+            let mut out = Vec::new();
+            for t in topics.iter().filter(|t| t.len() == prefix.len() + 1 && t.starts_with(prefix)) {
+                let mut el = El::new("Topic").attr("Self", topic_self(t)).attr("SortOrder", "").attr("Name", t.last().map_or("", String::as_str));
+                for (from, kind, target) in ex.index_xrefs.clone() {
+                    if from == *t {
+                        el.push(
+                            El::new("CrossReference")
+                                .attr("Self", ex.fresh())
+                                .attr("ReferencedTopic", topic_self(std::slice::from_ref(&target)))
+                                .attr("CrossReferenceType", kind)
+                                .attr("CustomTypeString", ""),
+                        );
+                    }
+                }
+                for c in build(ex, topics, t) {
+                    el.push(c);
+                }
+                out.push(el);
+            }
+            out
+        }
+        let mut el = El::new("Index").attr("Self", "ix");
+        for t in build(self, &topics, &[]) {
+            el.push(t);
+        }
+        el
+    }
+
     fn footnote_option_el(&self) -> El {
         let o = &self.d.footnote_options;
         let marker = if o.ref_char_style == st::NO_CHAR_STYLE {
@@ -1432,6 +1475,41 @@ impl<'a> Ex<'a> {
                                     .attr("Hidden", "false")
                                     .attr("DestinationUniqueKey", a.id & 0xFFFF_FFFF),
                             ));
+                        }
+                    } else if ch == designcraft_doc::INDEX_MARK {
+                        flush_text(&mut cur, &mut pending);
+                        flush_content(&mut pending, &mut out);
+                        let k = s.text[..seg_start + ci].matches(designcraft_doc::INDEX_MARK).count();
+                        if let Some(r) = s.index_refs.get(k).filter(|r| !r.topics.is_empty()) {
+                            use designcraft_doc::index::IndexRange as R;
+                            for n in 1..=r.topics.len() {
+                                self.index_topics.insert(r.topics[..n].to_vec());
+                            }
+                            let (kind, limit) = match &r.range {
+                                R::CurrentPage => (Some("CurrentPage"), None),
+                                R::ToEndOfStory => (Some("ToEndOfStory"), None),
+                                R::NextParagraphs(n) => (Some("ForNextNParagraphs"), Some(*n)),
+                                R::SuppressPageRange => (Some("SuppressPageNumbers"), None),
+                                R::See(t) => {
+                                    self.index_xrefs.push((r.topics.clone(), "See", t.clone()));
+                                    (None, None)
+                                }
+                                R::SeeAlso(t) => {
+                                    self.index_xrefs.push((r.topics.clone(), "SeeAlso", t.clone()));
+                                    (Some("CurrentPage"), None)
+                                }
+                            };
+                            if let Some(kind) = kind {
+                                let mut el = El::new("PageReference")
+                                    .attr("Self", self.fresh())
+                                    .attr("PageReferenceType", kind)
+                                    .attr("ReferencedTopic", topic_self(&r.topics))
+                                    .attr("Id", k + 1);
+                                if let Some(n) = limit {
+                                    el.set("PageReferenceLimit", n);
+                                }
+                                out.push(Node::El(el));
+                            }
                         }
                     } else if ch == designcraft_doc::XREF_MARK {
                         // A source wrapping its current text (InDesign regenerates it on update).
@@ -1850,4 +1928,13 @@ fn xref_format_el(i: usize, f: &designcraft_doc::XrefFormat) -> El {
         block(&mut el, "CustomStringBuildingBlock", rest, "", false);
     }
     el
+}
+
+fn topic_self(path: &[String]) -> String {
+    let mut s = String::from("ix");
+    for n in path {
+        s.push_str("Topicn");
+        s.push_str(&escape_id(n));
+    }
+    s
 }

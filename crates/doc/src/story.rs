@@ -104,6 +104,9 @@ pub struct Story {
     /// Cross-references, one per [`crate::xref::XREF_MARK`] in text order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub xrefs: Vec<Arc<crate::xref::CrossRef>>,
+    /// Index page references, one per [`crate::index::INDEX_MARK`] in text order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub index_refs: Vec<Arc<crate::index::IndexRef>>,
 }
 
 impl Story {
@@ -119,6 +122,7 @@ impl Story {
             notes: Vec::new(),
             anchors: Vec::new(),
             xrefs: Vec::new(),
+            index_refs: Vec::new(),
         }
     }
 
@@ -207,7 +211,7 @@ impl Story {
             let k = self.notes_before(pos);
             self.notes_inserted(k, refs);
         }
-        if text.contains([crate::xref::ANCHOR_MARK, crate::xref::XREF_MARK]) {
+        if text.contains([crate::xref::ANCHOR_MARK, crate::xref::XREF_MARK, crate::index::INDEX_MARK]) {
             self.marks_inserted(pos, text);
         }
         // Paragraph formats: each new '\n' splits the current paragraph; the new paragraphs copy it.

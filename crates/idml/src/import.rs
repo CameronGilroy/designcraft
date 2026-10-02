@@ -123,6 +123,9 @@ struct Importer<'r> {
     /// Cross-reference format Self → name.
     xref_format_names: HashMap<String, String>,
     xref_formats: Vec<designcraft_doc::XrefFormat>,
+    /// Index topic Self → topic path; topic See / See also cross-references.
+    index_topics: HashMap<String, Vec<String>>,
+    index_xrefs: Vec<designcraft_doc::IndexRef>,
 }
 
 fn lab_to_color(l: f32, a: f32, b: f32) -> Color {
@@ -193,6 +196,8 @@ impl<'r> Importer<'r> {
             xref_srcs: HashMap::new(),
             xref_format_names: HashMap::new(),
             xref_formats: designcraft_doc::xref::default_formats(),
+            index_topics: HashMap::new(),
+            index_xrefs: Vec::new(),
         }
     }
 
@@ -279,6 +284,9 @@ impl<'r> Importer<'r> {
         for e in top.iter().filter(|e| e.local() == "CrossReferenceFormat") {
             self.xref_format(e);
         }
+        if let Some(ix) = top.iter().find(|e| e.local() == "Index") {
+            self.index_topics_of(ix, &[]);
+        }
         // Stories (ids first so frames can reference them).
         for e in top.iter().filter(|e| e.local() == "Story") {
             let id = StoryId(self.alloc());
@@ -287,6 +295,15 @@ impl<'r> Importer<'r> {
             }
             let story = self.story(id, e);
             self.stories.insert(id, story);
+        }
+        // Topic cross-references (See / See also) become markers at the start of the first story
+        // with text.
+        if !self.index_xrefs.is_empty()
+            && let Some(st) = self.stories.values_mut().find(|s| !s.text.is_empty())
+        {
+            for r in std::mem::take(&mut self.index_xrefs).into_iter().rev() {
+                st.insert_index_ref(0, r);
+            }
         }
         // Cross-references point at their hyperlink's destination.
         for h in top.iter().filter(|e| e.local() == "Hyperlink") {
@@ -677,6 +694,38 @@ impl<'r> Importer<'r> {
         }
     }
 
+    /// Index topics (recursively); at the root, their See / See also cross-references too.
+    fn index_topics_of(&mut self, e: &El, prefix: &[String]) {
+        for t in e.find_all("Topic") {
+            let mut path = prefix.to_vec();
+            path.push(t.get("Name").unwrap_or("").to_string());
+            if let Some(me) = t.get("Self") {
+                self.index_topics.insert(me.to_string(), path.clone());
+            }
+            self.index_topics_of(t, &path);
+        }
+        if !prefix.is_empty() {
+            return;
+        }
+        let mut stack = vec![(e, Vec::<String>::new())];
+        while let Some((el, path)) = stack.pop() {
+            for t in el.find_all("Topic") {
+                let mut p = path.clone();
+                p.push(t.get("Name").unwrap_or("").to_string());
+                for x in t.find_all("CrossReference") {
+                    let target = x.get("ReferencedTopic").and_then(|r| self.index_topics.get(r)).map(|p| p.join(": ")).unwrap_or_default();
+                    use designcraft_doc::index::IndexRange as R;
+                    let range = match x.get("CrossReferenceType") {
+                        Some("SeeAlso") | Some("SeeAlsoHerein") => R::SeeAlso(target),
+                        _ => R::See(target),
+                    };
+                    self.index_xrefs.push(designcraft_doc::IndexRef { topics: p.clone(), sort: vec![], range });
+                }
+                stack.push((t, p));
+            }
+        }
+    }
+
     /// `CrossReferenceFormat`: building blocks back to a format definition.
     fn xref_format(&mut self, e: &El) {
         let name = e.get("Name").unwrap_or("Format").to_string();
@@ -937,9 +986,10 @@ impl<'r> Importer<'r> {
             notes: Vec::new(),
             anchors: Vec::new(),
             xrefs: Vec::new(),
+            index_refs: Vec::new(),
         };
         self.walk_story(e, &mut b, &ParaFormat::default(), &CharAttrs::default(), &CharFormat::default(), None);
-        let StoryBuilder { text, mut paras, runs, last, tables: tbls, notes, anchors, xrefs, .. } = b;
+        let StoryBuilder { text, mut paras, runs, last, tables: tbls, notes, anchors, xrefs, index_refs, .. } = b;
         let mut chars: Vec<CharRun> = runs.into_iter().filter(|r| r.len > 0).collect();
         if chars.is_empty() {
             chars.push(CharRun { len: 0, format: last });
@@ -964,7 +1014,19 @@ impl<'r> Importer<'r> {
             let format = self.xref_format_names.get(&fmt).cloned().unwrap_or_else(|| "Full Paragraph & Page Number".into());
             xref_list.push(Arc::new(designcraft_doc::CrossRef { target: 0, format }));
         }
-        let mut st = Story { id, text, paras, chars, frames: vec![], rev: 0, tables, notes, anchors: anchor_list, xrefs: xref_list };
+        let mut st = Story {
+            id,
+            text,
+            paras,
+            chars,
+            frames: vec![],
+            rev: 0,
+            tables,
+            notes,
+            anchors: anchor_list,
+            xrefs: xref_list,
+            index_refs: index_refs.into_iter().map(Arc::new).collect(),
+        };
         st.fix_notes();
         st.fix_marks();
         // Drop anything inconsistent (e.g. a table sharing a paragraph with another).
@@ -1150,6 +1212,18 @@ impl<'r> Importer<'r> {
                     "HyperlinkTextDestination" | "ParagraphDestination" => {
                         b.anchors.push((c.get("Self").unwrap_or("").to_string(), c.get("Name").unwrap_or("Anchor").to_string()));
                         b.push(&designcraft_doc::ANCHOR_MARK.to_string(), cf);
+                    }
+                    "PageReference" => {
+                        use designcraft_doc::index::IndexRange as R;
+                        let topics = c.get("ReferencedTopic").and_then(|r| self.index_topics.get(r)).cloned().unwrap_or_default();
+                        let range = match c.get("PageReferenceType") {
+                            Some("ToEndOfStory") | Some("ToEndOfDocument") | Some("ToEndOfSection") => R::ToEndOfStory,
+                            Some("ForNextNParagraphs") => R::NextParagraphs(c.num("PageReferenceLimit").unwrap_or(1.0).max(1.0) as u32),
+                            Some("SuppressPageNumbers") => R::SuppressPageRange,
+                            _ => R::CurrentPage,
+                        };
+                        b.index_refs.push(designcraft_doc::IndexRef { topics, sort: vec![], range });
+                        b.push(&designcraft_doc::INDEX_MARK.to_string(), cf);
                     }
                     "CrossReferenceSource" => {
                         // The generated text is regenerated from the format.
@@ -1641,6 +1715,7 @@ impl<'r> Importer<'r> {
             text_variables: designcraft_doc::vars::defaults(),
             footnote_options: std::mem::take(&mut self.footnote_options),
             xref_formats: std::mem::take(&mut self.xref_formats),
+            index: None,
             created: designcraft_doc::vars::now(),
             modified: 0,
             next_id: self.next_id,
@@ -1673,6 +1748,7 @@ struct StoryBuilder {
     notes: Vec<Story>,
     /// Text destinations (Self, name) and cross-reference sources (Self, format Self) in order.
     anchors: Vec<(String, String)>,
+    index_refs: Vec<designcraft_doc::IndexRef>,
     xrefs: Vec<(String, String)>,
 }
 

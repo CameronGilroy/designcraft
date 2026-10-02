@@ -453,3 +453,40 @@ fn round_trips_cross_references() {
     assert_eq!(mine.definition, d.xref_format("Mine").unwrap().definition);
     assert_eq!(back.xref_formats.len(), d.xref_formats.len());
 }
+
+#[test]
+fn round_trips_index_references() {
+    use designcraft_doc::index::IndexRange;
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (_, sid) = d
+        .add_text_frame(SpreadRef::Doc(0), Rect::new(40.0, 40.0, 400.0, 400.0), lid, "Kerning adjusts pairs.\nMore.", ParaFormat::default())
+        .unwrap();
+    {
+        let s = d.story_mut(sid).unwrap();
+        s.insert_index_ref(
+            0,
+            designcraft_doc::IndexRef { topics: vec!["Type".into(), "Kerning".into()], sort: vec![], range: IndexRange::CurrentPage },
+        );
+        s.insert_index_ref(5, designcraft_doc::IndexRef { topics: vec!["Pairs".into()], sort: vec![], range: IndexRange::NextParagraphs(2) });
+        s.insert_index_ref(9, designcraft_doc::IndexRef { topics: vec!["Spacing".into()], sort: vec![], range: IndexRange::See("Type".into()) });
+    }
+    d.check().unwrap();
+    let back = import_idml(&export_idml(&d)).unwrap();
+    back.check().unwrap();
+    let s = back.stories.values().next().unwrap();
+    let mut got: Vec<(Vec<String>, IndexRange)> = s.index_refs.iter().map(|r| (r.topics.clone(), r.range.clone())).collect();
+    got.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        got,
+        [
+            (vec!["Pairs".to_string()], IndexRange::NextParagraphs(2)),
+            (vec!["Spacing".to_string()], IndexRange::See("Type".into())),
+            (vec!["Type".to_string(), "Kerning".to_string()], IndexRange::CurrentPage),
+        ]
+    );
+    // The text survives; page references keep their places (See references, which InDesign keeps
+    // on topics rather than in text, come back at the story start).
+    assert_eq!(s.text.replace(designcraft_doc::INDEX_MARK, ""), "Kerning adjusts pairs.\nMore.");
+    assert!(s.text.starts_with(&format!("{0}{0}Ke{0}rning", designcraft_doc::INDEX_MARK)), "{:?}", s.text);
+}

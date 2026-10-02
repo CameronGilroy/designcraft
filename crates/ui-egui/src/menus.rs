@@ -138,6 +138,11 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:layout.section",
             "cmd:toc.generate",
             "cmd:toc.update",
+            ">Index",
+            "cmd:index.addReference",
+            "cmd:index.generate",
+            "cmd:index.update",
+            "<",
         ],
     ),
     (

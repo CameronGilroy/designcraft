@@ -19,6 +19,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Data Merge (CSV or JSON rows, `<<Field>>` placeholders), spell checking (public-domain Moby list + document dictionary, suggestions), Step and Repeat (count or grid), snippets, object styles, Numbering & Section Options.
 - Footnotes: Type › Insert Footnote (caret moves into the note), Document Footnote Options (numbering style incl. symbols, start/restart per page/spread/section, prefix/suffix, reference position/character style, paragraph style, separator, spacing, first baseline, rule above); notes composed at the bottom of the referencing column with the body text making room; edited in place on the canvas; rendered, exported to PDF (real text) and IDML (InDesign's structure, verified opening in InDesign 2026) and imported from IDML; `footnote.*` commands.
 - Cross-references and text anchors: Insert Cross-Reference (paragraph by style, or text anchor), 11 formats with InDesign's building blocks (full/partial paragraph, paragraph text/number, page number, anchor name, chapter, file name) plus user formats; resolved live at composition — never out of date, no Update step; unresolved destinations show `??`; PDF link annotations to the destination page; IDML export/import as InDesign cross-reference sources, hyperlinks, text destinations and formats (verified in InDesign 2026); `xref.*` / `anchor.*` commands.
+- Index: page references (topic from the selection or up to 4 levels, sort keys; current page, to end of story, next n paragraphs, suppressed, See / See also), Generate / Update Index (section headings, nested or run-in, page ranges merged, Index Title / Section Head / Level 1–4 styles); IDML export/import as InDesign topics, page references and topic cross-references (verified in InDesign 2026); `index.*` commands.
 - Menus expose the engine's features (TOC, numbering & sections, text variables, hyperlinks, cross-references, footnotes, step and repeat, spelling, fitting/content, effects, Data Merge, Preflight, EPUB); any menu command with parameters gets a dialog generated from its parameter documentation.
 - Table of contents (generate/update, dot leaders) and text variables (running headers, last page number, chapter number, file name, dates, custom) resolved per page.
 - Soft effects: blurred drop shadow, inner shadow, outer glow, basic feather.
@@ -26,7 +27,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - MCP server (`designcraft-cli mcp [--connect PORT]`, docs/mcp.md): headless engine or the running app; commands, batch, document/story inspection, page renders as images, window screenshots, pointer/keyboard/dialog input.
 - Web build (`apps/designcraft-web`, trunk): the same UI on WebGPU with a WebGL2 fallback; open/place via the browser file picker or drag-and-drop, save/export as downloads.
 
-**Next (in order):** index, footnotes in EPUB / span columns / split footnotes · table/cell styles, text rotation in cells · PDF/X-4 output intent, tagged PDF · Links panel + relink · UI for Data Merge/spelling/hyperlinks.
+**Next (in order):** books, footnotes in EPUB / span columns / split footnotes · table/cell styles, text rotation in cells · PDF/X-4 output intent, tagged PDF · Links panel + relink · UI for Data Merge/spelling/hyperlinks.
 
 ## Milestones
 
@@ -39,7 +40,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 | M4 | Color & effects | started |
 | M5 | Graphics & links | started |
 | M6 | Files & export (native, IDML, PDF, PNG/JPEG) | in progress (IDML ✅, PDF export) |
-| M7 | Long documents (sections, TOC, index, footnotes, books) | in progress (sections, TOC, text variables/running heads, hyperlinks, bookmarks, footnotes, cross-references) |
+| M7 | Long documents (sections, TOC, index, footnotes, books) | in progress (sections, TOC, text variables/running heads, hyperlinks, bookmarks, footnotes, cross-references, index) |
 | M8 | Tables | ✅ core (table/cell styles, rotation, diagonal lines pending) |
 | M9 | Performance (MT composition, tiles) | in progress (glyph path cache, culling, parallel compose 6.7× faster, perf harness) |
 | M10 | Find/Change, spelling, Preflight | in progress (Find/Change ✅, spelling ✅, Preflight) |

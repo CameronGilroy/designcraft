@@ -12,6 +12,7 @@ pub mod attrs;
 pub mod build;
 mod edit;
 pub mod ids;
+pub mod index;
 pub mod item;
 pub mod notes;
 pub mod page;
@@ -30,6 +31,7 @@ pub use designcraft_color as color;
 pub use designcraft_geom as geom;
 pub use edit::{ItemLoc, ItemPath, SpreadRef, item_hit as edit_hit};
 pub use ids::*;
+pub use index::{INDEX_MARK, IndexRef};
 pub use item::*;
 pub use notes::{FOOTNOTE_REF, FOOTNOTE_TABLE, Footnote, FootnoteOptions};
 pub use page::*;
@@ -257,6 +259,9 @@ pub struct Document {
     /// Cross-reference formats (Type › Hyperlinks & Cross-References › Cross-Reference Formats).
     #[serde(default = "xref::default_formats")]
     pub xref_formats: Vec<XrefFormat>,
+    /// The generated index (kept for Update Index).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<index::IndexSpec>,
     /// Creation / last save time (Unix seconds, UTC).
     #[serde(default)]
     pub created: i64,

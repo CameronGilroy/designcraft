@@ -5,6 +5,7 @@ mod edit;
 mod export;
 mod file;
 mod find;
+mod index;
 mod inspect;
 mod interactive;
 pub mod interchange;
@@ -126,6 +127,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(toc::specs());
         v.extend(notes::specs());
         v.extend(xref::specs());
+        v.extend(index::specs());
         v.extend(spelling::specs());
         v.extend(datamerge::specs());
         v.extend(interactive::specs());
