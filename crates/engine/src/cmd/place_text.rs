@@ -223,4 +223,34 @@ mod place_pdf_tests {
         assert!(!text.contains("/Subtype /Image") && !text.contains("/Subtype/Image"), "not rasterized");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn place_svg_on_screen_and_as_vectors_in_pdf() {
+        let dir = std::env::temp_dir().join(format!("dc-place-svg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("logo.svg");
+        std::fs::write(
+            &src,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80"><rect width="80" height="80" fill="#0000ff"/></svg>"##,
+        )
+        .unwrap();
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("file.place", &json!({"path": src.to_string_lossy(), "x": 100, "y": 100})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let b = d.spreads[0].items.last().unwrap().bounds();
+        assert!((b.width() - 120.0).abs() < 1.0 && (b.height() - 60.0).abs() < 1.0, "160×80 px = 120×60 pt: {b:?}");
+        assert_eq!(d.assets.values().next().unwrap().mime, "image/svg+xml");
+        let mut rr = designcraft_render::Renderer::new();
+        let img = rr.render_page(&d, &s.cache, 0, 1.0, false, &Default::default()).unwrap();
+        let p = img.pixel(130, 130);
+        assert!(p[2] > 200 && p[0] < 60, "blue square on screen: {p:?}");
+        let out = dir.join("out.pdf");
+        s.execute("file.exportPdf", &json!({"path": out.to_string_lossy()})).unwrap();
+        let bytes = std::fs::read(&out).unwrap();
+        hayro_syntax::Pdf::new(std::sync::Arc::new(bytes.clone())).expect("valid pdf");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(!text.contains("/Subtype /Image") && !text.contains("/Subtype/Image"), "not rasterized");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

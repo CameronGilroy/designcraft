@@ -14,6 +14,11 @@ use skrifa::{GlyphId, MetadataProvider};
 /// The family used when a requested family is unknown (the UI sans).
 pub const FALLBACK_FAMILY: &str = "Source Sans 3";
 
+/// The bundled fonts (OFL), as font file bytes.
+pub fn bundled() -> &'static [&'static [u8]] {
+    BUNDLED
+}
+
 static BUNDLED: &[&[u8]] = &[
     include_bytes!("../../../assets/fonts/SourceSans3-Regular.ttf"),
     include_bytes!("../../../assets/fonts/SourceSans3-Semibold.ttf"),

@@ -45,7 +45,11 @@ skrifa = "0.47"
 harfrust = "0.13"
 vello_cpu = "0.2"
 vello_common = { version = "0.2", default-features = false }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "tiff"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "tiff", "bmp"] }
+# SVG (same usvg as krilla-svg) and Photoshop composites.
+resvg = { version = "0.47", default-features = false, features = ["text"] }
+krilla-svg = "0.8"
+psd = "0.3"
 krilla = { version = "0.8", features = ["pdf"] }
 hayro = "0.7"
 quick-xml = "0.38"

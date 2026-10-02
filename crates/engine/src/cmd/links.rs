@@ -114,8 +114,8 @@ fn list(d: &Document) -> Vec<Value> {
                         let loc = d.find(id)?;
                         let it = d.item_at(&loc)?;
                         let Content::Graphic(g) = &it.content else { return None };
-                        // Vector (placed PDF): no effective resolution.
-                        if a.mime == "application/pdf" {
+                        // Vector (placed PDF or SVG): no effective resolution.
+                        if a.mime == "application/pdf" || a.mime == "image/svg+xml" {
                             return None;
                         }
                         let (pw, _) = a.pixels?;

@@ -147,6 +147,7 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
         warnings,
         images: HashMap::new(),
         pdfs: HashMap::new(),
+        svgs: HashMap::new(),
         fonts: HashMap::new(),
         reverse_cmaps: HashMap::new(),
         rgb_only: archival.is_some(),
@@ -227,6 +228,8 @@ pub(crate) struct Exporter<'a> {
     images: HashMap<AssetId, Option<Image>>,
     /// Placed PDFs (embedded as vector pages).
     pdfs: HashMap<AssetId, Option<krilla::pdf::PdfDocument>>,
+    /// Parsed placed SVGs.
+    svgs: HashMap<AssetId, Option<Arc<designcraft_images::usvg::Tree>>>,
     pub fonts: HashMap<u32, Option<krilla::text::Font>>,
     pub reverse_cmaps: HashMap<u32, Arc<HashMap<u32, char>>>,
     /// Convert CMYK to RGB (PDF/A: krilla needs a CMYK output profile we don't ship yet).
@@ -741,6 +744,25 @@ impl Exporter<'_> {
             }
             return;
         }
+        // Placed SVGs go in as vectors too.
+        if let Some(asset) = self.doc.assets.get(&g.asset)
+            && designcraft_images::is_svg(&asset.data)
+        {
+            let Some(size) = Size::from_wh(g.size.0.max(1e-3) as f32, g.size.1.max(1e-3) as f32) else { return };
+            let tree = self.svgs.entry(g.asset).or_insert_with(|| designcraft_images::svg_tree(&asset.data).map(Arc::new)).clone();
+            match tree {
+                Some(tree) => {
+                    use krilla_svg::SurfaceExt;
+                    s.push_transform(&tf(g.xf));
+                    if s.draw_svg(&tree, size, krilla_svg::SvgSettings::default()).is_none() {
+                        self.warn(format!("{}: parts of the placed SVG could not be drawn", asset.name));
+                    }
+                    s.pop();
+                }
+                None => self.warn(format!("{}: can't read the placed SVG", asset.name)),
+            }
+            return;
+        }
         let Some(img) = self.load_image(g.asset) else { return };
         let Some(size) = Size::from_wh(g.size.0.max(1e-3) as f32, g.size.1.max(1e-3) as f32) else { return };
         s.push_transform(&tf(g.xf));
@@ -757,7 +779,8 @@ fn lossless(data: &Arc<Vec<u8>>, fmt: Option<image::ImageFormat>) -> Option<Imag
         _ => None,
     };
     direct.or_else(|| {
-        let rgba = image::load_from_memory(data).ok()?.to_rgba8();
+        // TIFF, BMP, PSD composites…
+        let rgba = designcraft_images::decode_rgba(data)?;
         let (w, h) = rgba.dimensions();
         Some(Image::from_rgba8(rgba.into_raw(), w, h))
     })

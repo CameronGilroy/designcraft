@@ -18,6 +18,7 @@ vello_cpu = { workspace = true }
 vello_common = { workspace = true }
 image = { workspace = true }
 hayro = { workspace = true }
+designcraft-images = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 

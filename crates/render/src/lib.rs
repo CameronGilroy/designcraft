@@ -652,7 +652,12 @@ pub fn decode_pixmap(bytes: &[u8]) -> Option<Pixmap> {
     if is_pdf(bytes) {
         return render_pdf_page(bytes, 0, 3000);
     }
-    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    if designcraft_images::is_svg(bytes) {
+        let (px, w, h) = designcraft_images::render_svg(bytes, 3000)?;
+        let data = px.chunks_exact(4).map(|p| vello_cpu::color::PremulRgba8 { r: p[0], g: p[1], b: p[2], a: p[3] }).collect();
+        return Some(Pixmap::from_parts(data, w.min(u16::MAX as u32) as u16, h.min(u16::MAX as u32) as u16));
+    }
+    let img = designcraft_images::decode_rgba(bytes)?;
     let (w, h) = img.dimensions();
     if w == 0 || h == 0 || w > u16::MAX as u32 || h > u16::MAX as u32 {
         return None;
@@ -708,7 +713,11 @@ pub fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
         // Placed PDFs are sized by their page (crop box) in points.
         return pdf_page_size(bytes, 0).map(|(w, h)| (w.round().max(1.0) as u32, h.round().max(1.0) as u32));
     }
-    image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.into_dimensions().ok()
+    if designcraft_images::is_svg(bytes) {
+        // SVGs by their width and height (CSS pixels → points).
+        return designcraft_images::natural_size(bytes).map(|(w, h)| (w.round().max(1.0) as u32, h.round().max(1.0) as u32));
+    }
+    designcraft_images::pixel_size(bytes)
 }
 
 /// MIME type guess for encoded image bytes.
@@ -747,17 +756,7 @@ pub fn render_pdf_page(bytes: &[u8], page: usize, max_side: u32) -> Option<Pixma
 }
 
 pub fn image_mime(bytes: &[u8]) -> &'static str {
-    if is_pdf(bytes) {
-        return "application/pdf";
-    }
-    match image::guess_format(bytes) {
-        Ok(image::ImageFormat::Png) => "image/png",
-        Ok(image::ImageFormat::Jpeg) => "image/jpeg",
-        Ok(image::ImageFormat::Gif) => "image/gif",
-        Ok(image::ImageFormat::WebP) => "image/webp",
-        Ok(image::ImageFormat::Tiff) => "image/tiff",
-        _ => "application/octet-stream",
-    }
+    designcraft_images::mime(bytes)
 }
 
 #[cfg(test)]
