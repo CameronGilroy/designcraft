@@ -12,7 +12,8 @@ pub const HEIGHT: f32 = 36.0;
 
 /// Show the bar under `sel` (screen rect of the selection), kept inside `canvas`.
 pub fn show(app: &mut DesignApp, ctx: &egui::Context, sel: Rect, canvas: Rect) {
-    if !app.ui.task_bar || ctx.input(|i| i.pointer.any_down() && !ctx.is_pointer_over_egui()) {
+    // (Two separate context calls: `is_pointer_over_egui` inside an `input` closure deadlocks.)
+    if !app.ui.task_bar || (ctx.input(|i| i.pointer.any_down()) && !ctx.is_pointer_over_egui()) {
         return;
     }
     let Some(st) = app.session.active() else { return };

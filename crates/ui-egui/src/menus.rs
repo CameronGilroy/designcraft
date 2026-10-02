@@ -19,6 +19,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
     ("app.footnoteOptionsDialog", "Document Footnote Options…", None, "{} — numbering, formatting and layout of footnotes"),
     ("app.insertXrefDialog", "Insert Cross-Reference…", None, "{} — New Cross-Reference dialog (paragraph or text anchor, format)"),
+    ("app.deleteAllGuides", "Delete All Guides on Spread", None, "{} — the spread in view"),
     ("app.deletePage", "Delete Page", None, "{} — deletes the page in view"),
     ("app.duplicateSpread", "Duplicate Spread", None, "{} — duplicates the spread in view (pages and items)"),
     ("app.tablePanel", "Table Panel", Some("Shift+F9"), "{}"),
@@ -132,6 +133,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:layout.parents.new",
             "<",
             "cmd:layout.marginsAndColumns",
+            "cmd:layout.createGuides",
             "-",
             "ui:view.goToPage",
             "-",
@@ -345,8 +347,12 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:view.textThreads",
             "ui:view.hiddenCharacters",
             "-",
+            ">Grids & Guides",
             "ui:view.guides",
             "ui:view.baselineGrid",
+            "-",
+            "ui:app.deleteAllGuides",
+            "<",
         ],
     ),
     (
@@ -455,6 +461,12 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             }
             app.ui.dialog = Some(crate::dialogs::Dialog::new("insertXref", json!({})));
             Ok(Value::Null)
+        }
+        "app.deleteAllGuides" => {
+            let Some(st) = app.session.active() else { return Some(Err("no document open".into())) };
+            let page = crate::canvas::current_page(app).unwrap_or(0);
+            let spread = if st.editing_parents { json!({"kind": "parent", "index": 0}) } else { json!(st.doc.page_loc(page).map_or(0, |l| l.0)) };
+            return Some(app.run("guide.deleteAll", json!({"spread": spread})));
         }
         "app.deletePage" | "app.duplicateSpread" => {
             let Some(st) = app.session.active() else { return Some(Err("no document open".into())) };

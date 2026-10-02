@@ -6,6 +6,7 @@ mod edit;
 mod export;
 mod file;
 mod find;
+mod guides;
 mod index;
 mod inspect;
 mod interactive;
@@ -130,6 +131,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(xref::specs());
         v.extend(index::specs());
         v.extend(anchored::specs());
+        v.extend(guides::specs());
         v.extend(spelling::specs());
         v.extend(datamerge::specs());
         v.extend(interactive::specs());

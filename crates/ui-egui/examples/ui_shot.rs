@@ -48,10 +48,13 @@ fn main() {
         );
     harness.input_mut().max_texture_side = Some(8192);
     READY.store(true, std::sync::atomic::Ordering::Relaxed);
-    harness.run_steps(6);
+    step_n(&mut harness, 6);
     for l in lines {
+        if std::env::var_os("UI_SHOT_TRACE").is_some() {
+            eprintln!("> {l}");
+        }
         if let Some(p) = l.get("shot").and_then(|v| v.as_str()) {
-            harness.run_steps(3);
+            step_n(&mut harness, 3);
             match harness.render() {
                 Ok(img) => {
                     img.save(p).expect("save png");
@@ -60,20 +63,35 @@ fn main() {
                 Err(e) => eprintln!("render failed: {e}"),
             }
         } else if let Some(n) = l.get("steps").and_then(|v| v.as_u64()) {
-            harness.run_steps(n as usize);
+            step_n(&mut harness, n as usize);
         } else if let Some(m) = l.get("method").and_then(|v| v.as_str()) {
             let (req, reply) = ControlRequest::new(m, l.get("params").cloned().unwrap_or_default());
             tx.send(req).expect("send");
             // Pointer/keyboard input is injected one event per frame.
             for _ in 0..40 {
-                harness.step();
+                step(&mut harness);
                 if let Ok(r) = reply.try_recv() {
                     let s = r.to_string();
                     println!("{m}: {}", &s[..s.len().min(300)]);
                     break;
                 }
             }
-            harness.run_steps(2);
+            step_n(&mut harness, 2);
         }
+    }
+}
+
+/// One frame, with the app's synthetic input (`ui.click`, `ui.drag`, `ui.key`) injected like the
+/// windowed app's raw-input hook does.
+fn step(harness: &mut egui_kittest::Harness<'_, DesignApp>) {
+    let mut raw = std::mem::take(harness.input_mut());
+    harness.state_mut().raw_input_hook(&mut raw);
+    *harness.input_mut() = raw;
+    harness.step();
+}
+
+fn step_n(harness: &mut egui_kittest::Harness<'_, DesignApp>, n: usize) {
+    for _ in 0..n {
+        step(harness);
     }
 }
