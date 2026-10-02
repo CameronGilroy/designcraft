@@ -919,12 +919,13 @@ pub fn shortcut_of(app: &DesignApp, id: &str) -> Option<String> {
     }
 }
 
-/// Every command with a shortcut in effect: (id, shortcut).
+/// Every command with a shortcut in effect: (id, shortcut). UI commands come first: where one
+/// shares keys with an engine command (⌘N, ⌘O…) it's the one with the dialog.
 pub fn effective_shortcuts(app: &DesignApp) -> Vec<(String, String)> {
-    designcraft_engine::command_specs()
+    UI_COMMANDS
         .iter()
-        .map(|c| c.id)
-        .chain(UI_COMMANDS.iter().map(|c| c.0))
+        .map(|c| c.0)
+        .chain(designcraft_engine::command_specs().iter().map(|c| c.id))
         .filter_map(|id| shortcut_of(app, id).map(|s| (id.to_string(), s)))
         .collect()
 }
@@ -1088,6 +1089,14 @@ pub fn activate(app: &mut DesignApp, id: &str, params: &Value) {
         crate::dialogs::open_document_setup(app);
         return;
     }
+    if params.is_null() && id == "file.print" {
+        crate::dialogs::open_print(app);
+        return;
+    }
+    if params.is_null() && id == "object.textFrameOptions" {
+        app.ui.dialog = Some(crate::dialogs::Dialog::new("textFrameOptions", json!({})));
+        return;
+    }
     if params.is_null()
         && ui_label(id).is_none()
         && let Some(c) = designcraft_engine::find_command(id)
@@ -1204,7 +1213,8 @@ pub fn shortcuts(app: &mut DesignApp, ctx: &egui::Context) {
             if app.native_shortcuts.contains(&id) && !app.ui.shortcuts.contains_key(&id) {
                 continue; // The native menu handles it.
             }
-            let _ = app.run(&id, json!({}));
+            // Like choosing the menu item: "…" commands open their dialog.
+            activate(app, &id, &Value::Null);
             continue;
         }
         // Tool shortcuts (single keys, Shift+key).
@@ -1335,6 +1345,9 @@ mod tests {
         assert_eq!(shortcut_of(&app, "app.palette"), None);
         assert!(run_ui(&mut app, "window.setShortcut", &json!({"id": "app.palette", "shortcut": "Cmd+Nope"})).unwrap().is_err());
         run_ui(&mut app, "window.resetShortcuts", &json!({})).unwrap().unwrap();
+        // ⌘N is the New Document dialog, not a bare file.new.
+        let first_cmd_n = effective_shortcuts(&app).into_iter().find(|(_, s)| s == "Cmd+N").map(|(i, _)| i);
+        assert_eq!(first_cmd_n.as_deref(), Some("app.newDocumentDialog"));
         assert_eq!(shortcut_of(&app, "app.palette").as_deref(), Some("Cmd+Return"));
         assert_eq!(shortcut_string(egui::Modifiers { command: true, shift: true, ..Default::default() }, egui::Key::K), "Cmd+Shift+K");
         if cfg!(target_os = "macos") {

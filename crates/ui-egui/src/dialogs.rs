@@ -176,6 +176,65 @@ fn keyboard_shortcuts(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
     }
 }
 
+/// File › Print, with the printers the system knows.
+pub fn open_print(app: &mut DesignApp) {
+    let p = app.session.execute("file.printers", &json!({})).unwrap_or_default();
+    let printer = p["default"].as_str().map(str::to_string).or_else(|| p["printers"][0].as_str().map(str::to_string)).unwrap_or_default();
+    app.ui.dialog = Some(Dialog::new(
+        "print",
+        json!({"printers": p["printers"], "printer": printer, "copies": 1, "range": "all", "pages": "1", "spreads": false, "marks": false, "bleed": false}),
+    ));
+}
+
+fn print_dialog(ui: &mut egui::Ui, d: &mut Dialog) {
+    let printers: Vec<String> = d
+        .fields
+        .get("printers")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    egui::Grid::new("print").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+        ui.label("Printer:");
+        let cur = d.s("printer");
+        if printers.is_empty() {
+            ui.label(egui::RichText::new("System default").italics());
+        } else {
+            egui::ComboBox::from_id_salt("printer").selected_text(&cur).width(220.0).show_ui(ui, |ui| {
+                for p in &printers {
+                    if ui.selectable_label(*p == cur, p).clicked() {
+                        d.fields.insert("printer".into(), json!(p));
+                    }
+                }
+            });
+        }
+        ui.end_row();
+        ui.label("Copies:");
+        text_field(ui, d, "copies", 50.0);
+        ui.end_row();
+        ui.label("Pages:");
+        ui.vertical(|ui| {
+            let range = d.s("range");
+            if ui.radio(range == "all", "All").clicked() {
+                d.fields.insert("range".into(), json!("all"));
+            }
+            ui.horizontal(|ui| {
+                if ui.radio(range == "range", "Range:").clicked() {
+                    d.fields.insert("range".into(), json!("range"));
+                }
+                text_field(ui, d, "pages", 120.0);
+            });
+        });
+        ui.end_row();
+        ui.label("");
+        ui.vertical(|ui| {
+            check(ui, d, "spreads", "Spreads");
+            check(ui, d, "marks", "Printer's Marks");
+            check(ui, d, "bleed", "Include Bleed");
+        });
+        ui.end_row();
+    });
+}
+
 /// File › Document Setup, filled from the document.
 pub fn open_document_setup(app: &mut DesignApp) {
     let Ok(cur) = app.session.execute("layout.documentSetup", &json!({})) else { return };
@@ -480,6 +539,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "findFont" => "Find/Replace Font",
         "polygonSettings" => "Polygon Settings",
         "preferences" => "Preferences",
+        "print" => "Print",
         "keyboardShortcuts" => "Keyboard Shortcuts",
         "colorPicker" => "Color Picker",
         id => match id.strip_prefix("cmd:").and_then(designcraft_engine::find_command) {
@@ -618,6 +678,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             "findFont" => find_font(app, ui, &mut d),
             "colorPicker" => color_picker(ui, &mut d),
             "preferences" => preferences(ui, &mut d),
+            "print" => print_dialog(ui, &mut d),
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
             "polygonSettings" => {
                 egui::Grid::new("poly").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
@@ -778,6 +839,17 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "colorPicker" => {
             let hex = d.s("hex");
             app.run("object.color", json!({"color": hex, "target": d.s("target")}))
+        }
+        "print" => {
+            let pages = if d.s("range") == "all" { Value::Null } else { json!(d.s("pages")) };
+            let printer = d.s("printer");
+            let r = app.run(
+                "file.print",
+                json!({"printer": if printer.is_empty() { Value::Null } else { json!(printer) }, "copies": d.n("copies").unwrap_or(1.0).max(1.0) as u64,
+                    "pages": pages, "spreads": d.b("spreads"), "marks": d.b("marks"), "bleed": d.b("bleed")}),
+            )?;
+            app.status(format!("Sent {} page(s) to {}", r["pages"], r["printer"].as_str().unwrap_or("the default printer")));
+            Ok(r)
         }
         "preferences" => {
             app.run(

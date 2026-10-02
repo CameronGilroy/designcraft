@@ -23,6 +23,7 @@ mod paths;
 mod place_text;
 pub mod preflight;
 mod prefs;
+mod print;
 pub mod spelling;
 mod style;
 pub mod table;
@@ -130,6 +131,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(anchors::specs());
         v.extend(paths::specs());
         v.extend(package::specs());
+        v.extend(print::specs());
         v.extend(text::specs());
         v.extend(style::specs());
         v.extend(table::specs());
