@@ -87,6 +87,8 @@ pub struct UiState {
     pub display_quality: designcraft_render::DisplayQuality,
     /// Preferences › Interface › UI scaling (1 = 100%).
     pub ui_scale: f32,
+    /// Preferences › Appearance of Black: 100% K on screen as rich black.
+    pub rich_black: bool,
     /// Edit › Keyboard Shortcuts: command id → shortcut ("" = none), over the defaults.
     pub shortcuts: std::collections::BTreeMap<String, String>,
     pub control_bar: bool,
@@ -138,6 +140,7 @@ impl Default for UiState {
             hidden_characters: false,
             display_quality: designcraft_render::DisplayQuality::High,
             ui_scale: 1.0,
+            rich_black: false,
             shortcuts: Default::default(),
             control_bar: false,
             tools_double_column: false,

@@ -343,6 +343,7 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
             ("grids", "Grids"),
             ("guides", "Guides & Pasteboard"),
             ("display", "Display Performance"),
+            ("black", "Appearance of Black"),
         ]
     } else {
         &[("general", "General"), ("interface", "Interface"), ("type", "Type"), ("display", "Display Performance")]
@@ -370,6 +371,23 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new("Smart Text Reflow").font(semibold(12.0)));
                     check(ui, d, "smartTextReflow", "Add and remove pages as the primary text frame's story grows and shrinks");
+                }
+                "black" => {
+                    ui.label(egui::RichText::new("Options for Black on RGB and Grayscale Devices").font(semibold(12.0)));
+                    ui.horizontal(|ui| {
+                        ui.label("On Screen:");
+                        let rich = d.b("richBlack");
+                        egui::ComboBox::from_id_salt("pref_black")
+                            .selected_text(if rich { "Display All Blacks as Rich Black" } else { "Display All Blacks Accurately" })
+                            .width(240.0)
+                            .show_ui(ui, |ui| {
+                                for (v, l) in [(false, "Display All Blacks Accurately"), (true, "Display All Blacks as Rich Black")] {
+                                    if ui.selectable_label(v == rich, l).clicked() {
+                                        d.fields.insert("richBlack".into(), json!(v));
+                                    }
+                                }
+                            });
+                    });
                 }
                 "interface" => {
                     ui.label(egui::RichText::new("UI Scaling").font(semibold(12.0)));
@@ -862,6 +880,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
                 _ => "view.highQualityDisplay",
             };
             app.run(view, json!({}))?;
+            app.run("window.richBlack", json!({"on": d.b("richBlack")}))?;
             if let Some(v) = d.n("uiScale") {
                 app.run("window.uiScale", json!({"scale": v / 100.0}))?;
             }

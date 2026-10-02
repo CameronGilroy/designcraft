@@ -102,6 +102,9 @@ pub struct RenderOptions {
     pub highlight_missing_fonts: bool,
     /// View › Display Performance.
     pub quality: DisplayQuality,
+    /// Preferences › Appearance of Black: show 100% K as rich (pure) black instead of the
+    /// accurate dark grey.
+    pub rich_black: bool,
 }
 
 /// View › Display Performance: how placed graphics and effects are drawn on screen.
@@ -128,6 +131,7 @@ impl Default for RenderOptions {
             page_shadow: false,
             highlight_missing_fonts: false,
             quality: DisplayQuality::High,
+            rich_black: false,
         }
     }
 }
@@ -237,6 +241,7 @@ impl Renderer {
             _ => RenderContext::new_with(w, h, vello_cpu::RenderSettings { num_threads: self.threads, ..Default::default() }),
         };
         let mt = ctx.render_settings().num_threads > 0;
+        RICH_BLACK.with(|r| r.set(opts.rich_black));
         self.stats = FrameStats::default();
         self.stories.clear();
         self.glyphs.tick();
@@ -582,7 +587,21 @@ fn rect_overlaps(a: Rect, b: Rect) -> bool {
     a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0
 }
 
+thread_local! {
+    /// Appearance of Black for the render on this thread: 100% K as pure black.
+    static RICH_BLACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 pub fn color_of(c: &designcraft_color::Color, alpha: f32) -> peniko::Color {
+    if RICH_BLACK.with(|r| r.get())
+        && let designcraft_color::Color::Cmyk { c: cc, m, y, k } = *c
+        && cc <= 1e-3
+        && m <= 1e-3
+        && y <= 1e-3
+        && k >= 0.999
+    {
+        return peniko::Color::from_rgba8(0, 0, 0, (alpha.clamp(0.0, 1.0) * 255.0).round() as u8);
+    }
     let [r, g, b, a] = c.to_rgba8(alpha);
     peniko::Color::from_rgba8(r, g, b, a)
 }
@@ -830,6 +849,25 @@ mod tests {
         let (dash, gap) = (img.pixel(106, 500), img.pixel(114, 500));
         assert!(dash[0] < 80 && dash[2] < 80, "dash {dash:?}");
         assert!(gap[0] < 80 && gap[2] > 150, "gap {gap:?}");
+    }
+
+    #[test]
+    fn appearance_of_black_on_screen() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        let id = designcraft_doc::ItemId(d.alloc());
+        let mut it =
+            Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(100.0, 100.0, 200.0, 200.0)));
+        it.fill = Fill::swatch(designcraft_color::swatch::BLACK);
+        d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
+        let cache = Cache::new();
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let px = |rich: bool, r: &mut Renderer| {
+            r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions { rich_black: rich, ..Default::default() }).unwrap().pixel(150, 150)
+        };
+        assert!(px(false, &mut r)[0] > 20, "accurate: a dark grey");
+        assert_eq!(px(true, &mut r)[..3], [0, 0, 0]);
     }
 
     #[test]

@@ -22,6 +22,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.preferences", "Preferences…", Some("Cmd+K"), "{}"),
     ("window.uiScale", "UI Scaling", None, "{scale: 0.5–3 (1 = 100%)} — the size of the whole interface"),
     ("app.keyboardShortcuts", "Keyboard Shortcuts…", None, "{} — view and change the shortcut of any command"),
+    ("window.richBlack", "Appearance of Black", None, "{on: bool} — show 100% black as rich black on screen (off: accurately)"),
     ("window.setShortcut", "Set Shortcut", None, "{id, shortcut: \"Cmd+Alt+J\" | \"\" (none) | null (default)} → {shortcut, conflicts: [ids]}"),
     ("window.resetShortcuts", "Reset Shortcuts", None, "{} — every command back to its default shortcut"),
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
@@ -630,6 +631,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 designcraft_render::DisplayQuality::High => "high",
             });
             f["uiScale"] = json!((app.ui.ui_scale * 100.0).round());
+            f["richBlack"] = json!(app.ui.rich_black);
             f["section"] = json!("general");
             app.ui.dialog = Some(crate::dialogs::Dialog::new("preferences", f));
             Ok(Value::Null)
@@ -745,6 +747,11 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "window.resetShortcuts" => {
             app.ui.shortcuts.clear();
             Ok(Value::Null)
+        }
+        "window.richBlack" => {
+            app.ui.rich_black = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.rich_black);
+            app.canvas.shown = None;
+            Ok(json!({"on": app.ui.rich_black}))
         }
         "window.uiScale" => {
             let v = p.get("scale").and_then(Value::as_f64).unwrap_or(1.0) as f32;
