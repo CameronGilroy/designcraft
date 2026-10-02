@@ -43,6 +43,17 @@ fn list(app: &mut DesignApp, ui: &mut egui::Ui, para: bool) {
             let clear = ui.input(|i| i.modifiers.alt);
             let _ = app.run(cmd, json!({"name": n, "clearOverrides": clear}));
         }
+        resp.context_menu(|ui| {
+            if ui.button(format!("Apply \"{n}\"")).clicked() {
+                let cmd = if para { "style.paragraph.apply" } else { "style.character.apply" };
+                let _ = app.run(cmd, json!({"name": n}));
+                ui.close();
+            }
+            if current.as_deref() == Some(n.as_str()) && ui.button("Break Link to Style").clicked() {
+                let _ = app.run("style.breakLink", json!({"kind": if para { "paragraph" } else { "character" }}));
+                ui.close();
+            }
+        });
     }
     ui.add_space(6.0);
     ui.horizontal(|ui| {

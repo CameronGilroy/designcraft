@@ -149,6 +149,29 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
                 let _ = app.run("object.setLayer", json!({"layer": l.id.0}));
                 ui.close();
             }
+            ui.separator();
+            let active = app.session.active().map(|d| d.active_layer);
+            if let Some(a) = active.filter(|a| *a != l.id)
+                && ui.button("Merge into Active Layer").clicked()
+            {
+                let _ = app.run("layer.merge", json!({"ids": [a.0, l.id.0], "into": a.0}));
+                ui.close();
+            }
+            for (label, params) in [
+                ("Hide Others", json!({"id": l.id.0, "hide": true})),
+                ("Lock Others", json!({"id": l.id.0, "lock": true})),
+                ("Show All Layers", json!({"id": l.id.0, "show": true})),
+                ("Unlock All Layers", json!({"id": l.id.0, "unlock": true})),
+            ] {
+                if ui.button(label).clicked() {
+                    let _ = app.run("layer.others", params);
+                    ui.close();
+                }
+            }
+            if ui.button("Delete Unused Layers").clicked() {
+                let _ = app.run("layer.deleteUnused", json!({}));
+                ui.close();
+            }
         });
         if !open {
             continue;

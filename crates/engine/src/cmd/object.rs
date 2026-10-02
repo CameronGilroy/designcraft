@@ -47,6 +47,24 @@ pub fn specs() -> Vec<CommandSpec> {
                 ok()
             })
         }),
+        cmd!(
+            "transform.again",
+            "Transform Again",
+            ["Object", "Transform Again"],
+            Some("Cmd+Alt+3"),
+            "{individually?: bool, sequence?: bool, ids?} — repeat the last transform (or the whole sequence applied to this selection), on the selection as a whole or on each object about its own centre",
+            has_selection,
+            transform_again
+        ),
+        cmd!(
+            "transform.clear",
+            "Clear Transformations",
+            ["Object", "Transform"],
+            None,
+            "{ids?} — remove rotation, shear and scaling (the object keeps its centre)",
+            has_selection,
+            clear_transformations
+        ),
         cmd!("transform.shear", "Shear", ["Object", "Transform"], None, "{angle (degrees), ids?}", has_selection, |s, p| {
             let a = f64_or(p, "angle", 0.0).clamp(-85.0, 85.0).to_radians().tan();
             apply_about_center(s, p, Affine::new([1.0, 0.0, a, 1.0, 0.0, 0.0]))
@@ -668,6 +686,48 @@ pub(crate) fn scale_item(it: &mut Item, m: Affine, k: f64, strokes: bool) {
             }
         }
     }
+}
+
+fn transform_again(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = targets(s, p)?;
+    let (list, _, _) = &s.transforms;
+    if list.is_empty() {
+        return Err(bad("transform.again", "no transform to repeat"));
+    }
+    let steps: Vec<(String, Value)> = if bool_or(p, "sequence", false) { list.clone() } else { vec![list.last().cloned().expect("non-empty")] };
+    let mut groups: Vec<Vec<ItemId>> = if bool_or(p, "individually", false) { ids.iter().map(|i| vec![*i]).collect() } else { vec![ids.clone()] };
+    // Run the steps directly (no recording, one undo step for the whole repeat).
+    let saved = s.transforms.clone();
+    for (cmd, params) in &steps {
+        let spec = super::find_command(cmd).ok_or_else(|| bad("transform.again", "unknown transform"))?;
+        for g in &groups {
+            let mut q = params.clone();
+            q["ids"] = json!(g.iter().map(|i| i.0).collect::<Vec<_>>());
+            (spec.run)(s, &q)?;
+        }
+        // Moving a copy selects the copies: later steps (and the next repeat) act on them.
+        if bool_or(params, "copy", false) {
+            groups = vec![s.doc()?.selection.items.clone()];
+        }
+    }
+    s.transforms = saved;
+    Ok(json!({"repeated": steps.len()}))
+}
+
+fn clear_transformations(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = targets(s, p)?;
+    s.edit(|d, _| {
+        for id in &ids {
+            let Some(it) = d.item_mut(*id) else { continue };
+            if matches!(it.content, Content::Group { .. }) && it.shape == Shape::Group {
+                continue;
+            }
+            let c = it.bounds().center();
+            let inner = it.inner_bounds().center();
+            it.xf = Affine::translate(c - inner);
+        }
+        ok()
+    })
 }
 
 fn apply_about_center(s: &mut Session, p: &Value, a: Affine) -> Result<Value> {
@@ -1309,5 +1369,42 @@ mod gradient_tests {
         s.execute("object.gradient", &json!({"angle": 90})).unwrap();
         assert_eq!(fill(&s).gradient_vector, None);
         assert_eq!(fill(&s).gradient_angle, Some(90.0));
+    }
+}
+
+#[cfg(test)]
+mod again_tests {
+    use super::*;
+
+    #[test]
+    fn transform_again_sequence_and_clear() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let id = ItemId(s.execute("frame.create", &json!({"rect": [100, 100, 200, 150]})).unwrap()["id"].as_u64().unwrap());
+        let b = |s: &Session| s.doc().unwrap().doc.item(id).unwrap().bounds();
+        assert!(s.execute("transform.again", &json!({})).is_err());
+        s.execute("transform.move", &json!({"dx": 10, "dy": 0})).unwrap();
+        s.execute("transform.again", &json!({})).unwrap();
+        assert_eq!(b(&s).x0, 120.0);
+        s.execute("transform.rotate", &json!({"angle": 90})).unwrap();
+        // Sequence: move 10 then rotate 90 again.
+        s.execute("transform.again", &json!({"sequence": true})).unwrap();
+        // The 100×50 frame is now 180° round from where it started: still 100 wide.
+        assert!((b(&s).width() - 100.0).abs() < 1e-6, "{:?}", b(&s));
+        // Clear Transformations: 180° in total → upright again, same centre.
+        let c = b(&s).center();
+        s.execute("transform.clear", &json!({})).unwrap();
+        let it = s.doc().unwrap().doc.item(id).unwrap().clone();
+        assert_eq!(it.xf.as_coeffs()[..4], [1.0, 0.0, 0.0, 1.0]);
+        assert!((it.bounds().center() - c).hypot() < 1e-6);
+        assert!((it.bounds().width() - 100.0).abs() < 1e-6);
+        // Step and repeat via Transform Again on a moved copy.
+        let n = s.doc().unwrap().doc.spreads[0].items.len();
+        s.execute("transform.move", &json!({"dx": 0, "dy": 60, "copy": true})).unwrap();
+        s.execute("transform.again", &json!({})).unwrap();
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.spreads[0].items.len(), n + 2);
+        let ys: Vec<f64> = d.spreads[0].items[n..].iter().map(|i| i.bounds().y0.round()).collect();
+        assert_eq!(ys[1] - ys[0], 60.0, "{ys:?}");
     }
 }

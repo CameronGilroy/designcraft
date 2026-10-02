@@ -149,6 +149,15 @@ pub fn specs() -> Vec<CommandSpec> {
             has_text_or_frames,
             open_type
         ),
+        cmd!(
+            "style.breakLink",
+            "Break Link to Style",
+            [],
+            None,
+            "{kind: paragraph|character} — the selected text keeps its look as local formatting, with [No Paragraph Style] / [None]",
+            has_text_or_frames,
+            break_link
+        ),
         cmd!(query "type.selectionAttrs", "Selection Attributes", [], None, "{} → resolved character/paragraph attributes at the text selection", has_doc, selection_attrs),
     ]
 }
@@ -520,6 +529,45 @@ fn step_size(s: &mut Session, delta: f64) -> Result<Value> {
     format_chars(s, &json!({"size": (size + delta).clamp(0.1, 1296.0)}))
 }
 
+fn break_link(s: &mut Session, p: &Value) -> Result<Value> {
+    use designcraft_doc::{CharFormat, CharProps, ParaProps};
+    let para = match p.get("kind").and_then(Value::as_str).unwrap_or("paragraph") {
+        "paragraph" => true,
+        "character" => false,
+        k => return Err(bad("style.breakLink", format!("unknown kind `{k}`"))),
+    };
+    let targets = format_targets(s);
+    s.edit(|d, _| {
+        let styles = d.styles.clone();
+        for t in &targets {
+            let Some(st) = d.text_story_mut(t.story, t.cell) else { continue };
+            let r = t.range.clone();
+            if para {
+                st.format_paras(r, |pf| {
+                    let (pp, pc) = styles.resolve_para(pf);
+                    pf.style = designcraft_doc::styles::NO_PARA_STYLE.into();
+                    pf.para = ParaProps::default().delta(&pp);
+                    pf.chars = CharProps::default().delta(&pc);
+                });
+            } else {
+                let ranges = st.para_ranges();
+                for (pi, pr) in ranges.into_iter().enumerate() {
+                    let (a, b) = (pr.start.max(r.start), pr.end.min(r.end));
+                    if a >= b {
+                        continue;
+                    }
+                    let (_, pc) = styles.resolve_para(&st.paras[pi]);
+                    st.format_chars(a..b, |f| {
+                        let cp = styles.resolve_char(&pc, f);
+                        *f = CharFormat { style: designcraft_doc::story::NO_CHAR_STYLE.into(), over: pc.delta(&cp) };
+                    });
+                }
+            }
+        }
+        ok()
+    })
+}
+
 fn open_type(s: &mut Session, p: &Value) -> Result<Value> {
     use designcraft_doc::otf;
     let cur = selection_attrs(s, &json!({}))?;
@@ -704,6 +752,30 @@ mod open_type_tests {
         let f: Vec<&str> = a["chars"]["otfFeatures"].as_array().unwrap().iter().filter_map(|v| v.as_str()).collect();
         assert!(f.contains(&"onum") && f.contains(&"ss02"), "{f:?}");
         assert!(s.execute("type.openType", &json!({"feature": "bad tag!"})).is_err());
+    }
+
+    #[test]
+    fn break_link_to_paragraph_and_character_styles() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("style.paragraph.create", &json!({"name": "Head", "para": {"spaceBefore": 6}, "chars": {"size": 24}})).unwrap();
+        s.execute("style.character.create", &json!({"name": "Em", "chars": {"fontStyle": "Italic"}})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": "Title here"})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 10})).unwrap();
+        s.execute("style.paragraph.apply", &json!({"name": "Head"})).unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 5})).unwrap();
+        s.execute("style.character.apply", &json!({"name": "Em"})).unwrap();
+        let before = s.execute("type.selectionAttrs", &json!({})).unwrap();
+        s.execute("style.breakLink", &json!({"kind": "character"})).unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 10})).unwrap();
+        s.execute("style.breakLink", &json!({"kind": "paragraph"})).unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 5})).unwrap();
+        let after = s.execute("type.selectionAttrs", &json!({})).unwrap();
+        assert_eq!(after["paragraphStyle"], "[No Paragraph Style]");
+        assert_eq!(after["characterStyle"], "[None]");
+        assert_eq!(after["chars"], before["chars"], "same look");
+        assert_eq!(after["para"], before["para"]);
     }
 
     /// Old-style figures shape to other glyphs than the default lining ones (Source Serif 4).

@@ -353,6 +353,88 @@ pub fn specs() -> Vec<CommandSpec> {
                 ok()
             })
         }),
+        cmd!(
+            "layer.merge",
+            "Merge Layers",
+            [],
+            None,
+            "{ids: [layer ids], into?: layer id (default: the first)} — their objects move to `into`, the other layers are deleted",
+            has_doc,
+            |s, p| {
+                let ids: Vec<LayerId> =
+                    p.get("ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(LayerId).collect()).unwrap_or_default();
+                let into = p
+                    .get("into")
+                    .and_then(Value::as_u64)
+                    .map(LayerId)
+                    .or_else(|| ids.first().copied())
+                    .ok_or_else(|| bad("layer.merge", "no layers"))?;
+                s.edit(|d, _| {
+                    if d.layer(into).is_none() || ids.iter().any(|l| d.layer(*l).is_none()) {
+                        return Err(bad("layer.merge", "no such layer"));
+                    }
+                    let gone: Vec<LayerId> = ids.iter().copied().filter(|l| *l != into).collect();
+                    for sp in d.spreads.iter_mut().chain(d.parents.iter_mut()) {
+                        if !sp.items.iter().any(|i| gone.contains(&i.layer)) {
+                            continue;
+                        }
+                        for it in &mut std::sync::Arc::make_mut(sp).items {
+                            if gone.contains(&it.layer) {
+                                std::sync::Arc::make_mut(it).layer = into;
+                            }
+                        }
+                    }
+                    d.layers.retain(|l| !gone.contains(&l.id));
+                    Ok(json!({"merged": gone.len()}))
+                })
+            }
+        ),
+        cmd!("layer.deleteUnused", "Delete Unused Layers", [], None, "{} — layers without objects (one layer always stays)", has_doc, |s, _| {
+            s.edit(|d, _| {
+                let used: std::collections::HashSet<LayerId> =
+                    d.spreads.iter().chain(d.parents.iter()).flat_map(|sp| sp.items.iter().map(|i| i.layer)).collect();
+                let before = d.layers.len();
+                if used.is_empty() {
+                    // Nothing anywhere: keep the first layer.
+                    d.layers.truncate(1);
+                } else {
+                    d.layers.retain(|l| used.contains(&l.id));
+                }
+                Ok(json!({"deleted": before - d.layers.len()}))
+            })
+        }),
+        cmd!(
+            "layer.others",
+            "Hide/Lock Others",
+            [],
+            None,
+            "{id, hide?: bool, lock?: bool, show?: true (Show All Layers), unlock?: true (Unlock All Layers)} — Hide Others / Lock Others act on every layer but `id`",
+            has_doc,
+            |s, p| {
+                let id = LayerId(p.get("id").and_then(Value::as_u64).unwrap_or(0));
+                let f = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(false);
+                let (hide, lock, show, unlock) = (f("hide"), f("lock"), f("show"), f("unlock"));
+                s.edit(|d, _| {
+                    for l in &mut d.layers {
+                        if show {
+                            l.visible = true;
+                        }
+                        if unlock {
+                            l.locked = false;
+                        }
+                        if l.id != id {
+                            if hide {
+                                l.visible = false;
+                            }
+                            if lock {
+                                l.locked = true;
+                            }
+                        }
+                    }
+                    ok()
+                })
+            }
+        ),
         cmd!(noundo "layer.activate", "Set Active Layer", [], None, "{id}", has_doc, |s, p| {
             let id = LayerId(p.get("id").and_then(Value::as_u64).unwrap_or(0));
             let st = s.doc_mut()?;
@@ -411,5 +493,34 @@ mod setup_tests {
         let r = s.execute("layout.documentSetup", &json!({"pages": 3})).unwrap();
         assert_eq!(r["pages"], 3);
         s.doc().unwrap().doc.check().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod layer_tests {
+    use serde_json::json;
+
+    #[test]
+    fn merge_delete_unused_hide_and_lock_others() {
+        let mut s = crate::Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let l1 = s.doc().unwrap().doc.layers[0].id.0;
+        let l2 = s.execute("layer.new", &json!({"name": "Art"})).unwrap()["id"].as_u64().unwrap();
+        let l3 = s.execute("layer.new", &json!({"name": "Empty"})).unwrap()["id"].as_u64().unwrap();
+        s.execute("layer.activate", &json!({"id": l2})).unwrap();
+        let f = s.execute("frame.create", &json!({"rect": [0, 0, 10, 10]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("layer.others", &json!({"id": l2, "hide": true, "lock": true})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        assert!(d.layers.iter().all(|l| (l.id.0 == l2) == l.visible && (l.id.0 != l2) == l.locked));
+        s.execute("layer.others", &json!({"id": l2, "show": true, "unlock": true})).unwrap();
+        assert!(s.doc().unwrap().doc.layers.iter().all(|l| l.visible && !l.locked));
+        let r = s.execute("layer.deleteUnused", &json!({})).unwrap();
+        assert_eq!(r["deleted"], 2, "the empty default layer and Empty");
+        let _ = (l1, l3);
+        let l4 = s.execute("layer.new", &json!({"name": "Into"})).unwrap()["id"].as_u64().unwrap();
+        s.execute("layer.merge", &json!({"ids": [l4, l2]})).unwrap();
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.layers.len(), 1);
+        assert_eq!(d.item(designcraft_doc::ItemId(f)).unwrap().layer.0, l4);
     }
 }

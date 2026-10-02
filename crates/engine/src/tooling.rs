@@ -152,6 +152,8 @@ impl Session {
         if let Some((c, p)) = it.preview {
             self.journal.push((c, p));
         }
+        // The interaction's last preview is the transform to repeat; the next one starts afresh.
+        self.transforms.2 = false;
         Ok(())
     }
 
@@ -162,6 +164,10 @@ impl Session {
             st.doc = it.doc;
             st.selection = it.selection;
             st.revision += 1;
+            if self.transforms.2 {
+                self.transforms.0.pop();
+                self.transforms.2 = false;
+            }
         }
     }
 }

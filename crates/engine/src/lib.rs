@@ -163,6 +163,10 @@ pub struct Session {
     /// Graphic loaded in the place cursor: (asset, natural size in points).
     pub loaded: Option<(designcraft_doc::AssetId, (f64, f64))>,
     pub(crate) untitled: u32,
+    /// Transforms applied to the current selection, oldest first (Transform Again / Sequence
+    /// Again), with the selection they were applied to and whether the last one came from a
+    /// tool interaction (its previews replace each other).
+    pub(crate) transforms: (Vec<(String, Value)>, Vec<designcraft_doc::ItemId>, bool),
 }
 
 impl Default for Session {
@@ -185,6 +189,7 @@ impl Session {
             text_clipboard: None,
             ui_requests: vec![],
             loaded: None,
+            transforms: Default::default(),
             untitled: 0,
         }
     }
@@ -234,6 +239,7 @@ impl Session {
         (spec.enabled)(self).map_err(|e| EngineError::Disabled(id.into(), e))?;
         let before = self.active().map(|d| (d.uid, d.doc.clone()));
         let r = (spec.run)(self, params)?;
+        self.record_transform(id, params);
         // Record undo if the document changed (and we're not previewing an interaction).
         if let (Some((uid, old)), Some(st)) = (before, self.active_mut())
             && st.uid == uid
@@ -248,6 +254,30 @@ impl Session {
             self.journal.push((id.to_string(), params.clone()));
         }
         Ok(r)
+    }
+
+    /// Remember a move/rotate/scale/shear/flip for Transform Again.
+    fn record_transform(&mut self, id: &str, params: &Value) {
+        if !matches!(id, "transform.move" | "transform.rotate" | "transform.scale" | "transform.shear" | "transform.flip") {
+            return;
+        }
+        let Some(st) = self.active() else { return };
+        let sel = st.selection.items.clone();
+        let live = st.interaction.is_some();
+        let mut p = params.clone();
+        if let Some(o) = p.as_object_mut() {
+            o.remove("ids");
+            o.remove("id");
+        }
+        let (list, on, was_live) = &mut self.transforms;
+        if *on != sel {
+            list.clear();
+            *on = sel;
+        } else if *was_live && live && list.last().is_some_and(|l| l.0 == id) {
+            list.pop();
+        }
+        list.push((id.to_string(), p));
+        *was_live = live;
     }
 
     pub fn commands(&self) -> Vec<CommandInfo> {
