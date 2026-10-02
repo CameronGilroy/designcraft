@@ -61,6 +61,24 @@ pub fn specs() -> Vec<CommandSpec> {
             apply_gradient
         ),
         cmd!(
+            "swatch.load",
+            "Load Swatches…",
+            [],
+            None,
+            "{path?|base64?, replace?: bool} — colour swatches from a swatch exchange (.ase) file; names already in the document are kept unless `replace` → {added, replaced}",
+            has_doc,
+            load_swatches
+        ),
+        cmd!(
+            noundo "swatch.save",
+            "Save Swatches for Exchange…",
+            [],
+            None,
+            "{path?, names?: [swatch names] (default: all colour swatches)} → {base64} or writes `path` (.ase)",
+            has_doc,
+            save_swatches
+        ),
+        cmd!(
             "object.color",
             "Apply Color",
             [],
@@ -389,6 +407,51 @@ fn value_name(color: designcraft_color::Color) -> String {
     }
 }
 
+fn load_swatches(s: &mut Session, p: &Value) -> Result<Value> {
+    let bytes = match (str_param(p, "path"), str_param(p, "base64")) {
+        (_, Some(b)) => super::file::base64_decode(b),
+        (Some(path), None) => std::fs::read(path).map_err(|e| bad("swatch.load", format!("{path}: {e}")))?,
+        _ => return Err(bad("swatch.load", "give `path` or `base64`")),
+    };
+    let incoming = designcraft_color::ase::read(&bytes).map_err(|e| bad("swatch.load", e.to_string()))?;
+    let replace = p.get("replace").and_then(Value::as_bool).unwrap_or(false);
+    s.edit(|d, _| {
+        let (mut added, mut replaced) = (0, 0);
+        for w in incoming {
+            match d.swatches.iter_mut().find(|x| x.name == w.name) {
+                Some(x) if x.locked => {}
+                Some(x) => {
+                    if replace {
+                        x.value = w.value;
+                        x.hidden = false;
+                        replaced += 1;
+                    }
+                }
+                None => {
+                    d.swatches.push(w);
+                    added += 1;
+                }
+            }
+        }
+        Ok(json!({"added": added, "replaced": replaced}))
+    })
+}
+
+fn save_swatches(s: &mut Session, p: &Value) -> Result<Value> {
+    let d = &s.doc()?.doc;
+    let names: Option<Vec<String>> =
+        p.get("names").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect());
+    let chosen: Vec<Swatch> = d.swatches.iter().filter(|w| names.as_ref().is_none_or(|n| n.contains(&w.name))).cloned().collect();
+    let bytes = designcraft_color::ase::write(&chosen);
+    match str_param(p, "path") {
+        Some(path) => {
+            std::fs::write(path, &bytes).map_err(|e| bad("swatch.save", format!("{path}: {e}")))?;
+            Ok(json!({"path": path, "bytes": bytes.len()}))
+        }
+        None => Ok(json!({"base64": super::file::base64_encode(&bytes)})),
+    }
+}
+
 fn gradient_json(name: &str, g: &designcraft_color::Gradient) -> Value {
     let stops: Vec<Value> = g
         .stops
@@ -579,6 +642,21 @@ fn rename_in(it: &mut designcraft_doc::Item, from: &str, to: &str) {
 #[cfg(test)]
 mod color_tests {
     use super::*;
+
+    #[test]
+    fn swatches_save_and_load_ase() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("swatch.create", &json!({"name": "Brand Teal", "color": "#108080"})).unwrap();
+        let b64 = s.execute("swatch.save", &json!({"names": ["Brand Teal"]})).unwrap()["base64"].as_str().unwrap().to_string();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("swatch.load", &json!({"base64": b64})).unwrap();
+        assert_eq!(r["added"], 1);
+        assert!(s.doc().unwrap().doc.swatch("Brand Teal").is_some());
+        let r = s.execute("swatch.load", &json!({"base64": b64})).unwrap();
+        assert_eq!((r["added"].as_u64(), r["replaced"].as_u64()), (Some(0), Some(0)));
+        assert!(s.execute("swatch.load", &json!({"base64": "AAAA"})).is_err());
+    }
 
     #[test]
     fn unnamed_colors_then_add_to_swatches() {

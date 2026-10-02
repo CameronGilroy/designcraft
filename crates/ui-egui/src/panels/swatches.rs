@@ -66,6 +66,16 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
             if icons::button(ui, "plus", 20.0, false, "New Swatch").clicked() {
                 let _ = app.run("swatch.create", json!({"color": {"c": 0, "m": 50, "y": 100, "k": 0}}));
             }
+            ui.menu_button("☰", |ui| {
+                if ui.button("Load Swatches…").clicked() {
+                    let _ = app.run("app.loadSwatches", json!({}));
+                    ui.close();
+                }
+                if ui.button("Save Swatches for Exchange…").clicked() {
+                    let _ = app.run("app.saveSwatches", json!({}));
+                    ui.close();
+                }
+            });
         });
     });
 }

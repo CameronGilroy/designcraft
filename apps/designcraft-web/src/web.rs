@@ -98,7 +98,9 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
         open_async: Some(Box::new(move |purpose: &str| {
             let inbox = open_inbox.clone();
             let ctx = ctx.clone();
-            let dialog = if purpose == "place" {
+            let dialog = if purpose == "swatches" {
+                rfd::AsyncFileDialog::new().add_filter("Swatch Exchange (ASE)", &["ase"])
+            } else if purpose == "place" {
                 rfd::AsyncFileDialog::new().add_filter("Graphics", IMAGE_EXTS)
             } else {
                 rfd::AsyncFileDialog::new().add_filter("DesignCraft", DOC_EXTS)

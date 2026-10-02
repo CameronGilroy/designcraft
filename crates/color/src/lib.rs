@@ -4,6 +4,7 @@
 //! documents don't drift when converting back and forth. Rendering asks for [`Color::to_rgba`].
 #![forbid(unsafe_code)]
 
+pub mod ase;
 pub mod blend;
 pub mod cms;
 pub mod gradient;

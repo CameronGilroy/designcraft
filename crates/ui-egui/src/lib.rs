@@ -359,7 +359,9 @@ impl DesignApp {
         for (name, bytes) in files {
             let b64 = designcraft_engine::cmd::base64_encode(&bytes);
             let lower = name.to_ascii_lowercase();
-            let r = if lower.ends_with(".designcraft") || lower.ends_with(".idml") {
+            let r = if lower.ends_with(".ase") {
+                self.run("swatch.load", json!({"base64": b64}))
+            } else if lower.ends_with(".designcraft") || lower.ends_with(".idml") {
                 let title = name.rsplit_once('.').map_or(name.as_str(), |(stem, _)| stem);
                 self.run("file.openBytes", json!({"name": title, "base64": b64}))
             } else {

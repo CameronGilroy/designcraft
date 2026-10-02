@@ -12,6 +12,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.saveDialog", "Save As…", Some("Cmd+Shift+S"), "{}"),
     ("app.save", "Save", Some("Cmd+S"), "{}"),
     ("app.saveCopyDialog", "Save a Copy…", Some("Cmd+Alt+S"), "{} — choose where to write a copy (the document stays as it is)"),
+    ("app.loadSwatches", "Load Swatches…", None, "{} — pick a swatch exchange (.ase) file"),
+    ("app.saveSwatches", "Save Swatches for Exchange…", None, "{path?} — write the colour swatches as .ase"),
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
     ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
@@ -472,6 +474,34 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "app.exportPng" => export_png(app, p),
         "app.exportIdml" => export_idml(app, p),
+        "app.loadSwatches" => {
+            if let Some(pick) = app.services.pick_open.as_mut() {
+                return Some(match pick("swatches") {
+                    Some(path) => app.run("swatch.load", json!({"path": path})),
+                    None => Ok(Value::Null),
+                });
+            }
+            if let Some(open) = app.services.open_async.as_mut() {
+                open("swatches");
+            }
+            Ok(Value::Null)
+        }
+        "app.saveSwatches" => {
+            let path = match p.get("path").and_then(Value::as_str) {
+                Some(s) => Some(s.to_string()),
+                None => app.services.pick_save.as_mut().and_then(|f| f("Swatches.ase")),
+            };
+            let Some(path) = path else { return Some(Ok(Value::Null)) };
+            let r = match app.run("swatch.save", json!({})) {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            let bytes = designcraft_engine::cmd::base64_decode(r["base64"].as_str().unwrap_or_default());
+            match app.services.write.as_mut() {
+                Some(w) => w(&path, &bytes).map(|_| json!({"path": path, "bytes": bytes.len()})),
+                None => Err("no writer".into()),
+            }
+        }
         "app.storyEditor" => {
             let sid = p.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId).or_else(|| {
                 let st = app.session.active()?;

@@ -81,7 +81,9 @@ fn services() -> Services {
     Services {
         pick_open: Some(Box::new(|purpose: &str| {
             let d = rfd::FileDialog::new();
-            let d = if purpose == "place" {
+            let d = if purpose == "swatches" {
+                d.add_filter("Swatch Exchange (ASE)", &["ase"])
+            } else if purpose == "place" {
                 d.add_filter(
                     "Graphics and text",
                     &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai", "txt", "docx", "rtf", "md"],
