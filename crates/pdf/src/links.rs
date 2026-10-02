@@ -76,6 +76,28 @@ pub(crate) fn annotations(doc: &Document, cache: &designcraft_compose::Cache, sh
             out.push(Annotation::new_link(LinkAnnotation::new(rect, target), Some(h.name.clone())));
         }
     }
+    // Cross-references link to their destination's page.
+    if doc.stories.values().any(|st| !st.xrefs.is_empty()) {
+        let index = cache.xref_index(doc);
+        for st in doc.stories.values().filter(|st| !st.xrefs.is_empty()) {
+            for ((pos, _), x) in st.text.match_indices(designcraft_doc::XREF_MARK).zip(&st.xrefs) {
+                let Some(i) = index.page_index(x.target).and_then(|p| sheet_of_page(doc, sheets, p)) else { continue };
+                let src = HyperlinkSource::Text { story: st.id, start: pos, end: pos + designcraft_doc::XREF_MARK.len_utf8() };
+                for r in source_rects(doc, cache, &src, sh.spread) {
+                    let r = r.intersect(sh.bleed);
+                    let rect = krilla::geom::Rect::from_ltrb(
+                        (r.x0 - sh.media.x0) as f32,
+                        (r.y0 - sh.media.y0) as f32,
+                        (r.x1 - sh.media.x0) as f32,
+                        (r.y1 - sh.media.y0) as f32,
+                    );
+                    let Some(rect) = rect.filter(|_| r.width() > 0.0 && r.height() > 0.0) else { continue };
+                    let target = Target::Destination(XyzDestination::new(i, krilla::geom::Point::from_xy(0.0, 0.0)).into());
+                    out.push(Annotation::new_link(LinkAnnotation::new(rect, target), Some(format!("Cross-reference: {}", x.format))));
+                }
+            }
+        }
+    }
     out
 }
 

@@ -131,11 +131,21 @@ struct Ex<'a> {
     fonts: BTreeMap<String, BTreeSet<String>>,
     /// Item id → (prev frame, next frame) for threaded text frames.
     threads: HashMap<u64, (Option<u64>, Option<u64>)>,
+    /// Cross-reference sources written so far: (Self, target anchor).
+    xref_sources: Vec<(String, u64)>,
 }
 
 impl<'a> Ex<'a> {
     fn new(d: &'a Document, opts: &'a ExportOptions) -> Self {
-        let mut ex = Ex { d, opts, next: d.next_id + 0x100, swatch_ids: HashMap::new(), fonts: BTreeMap::new(), threads: HashMap::new() };
+        let mut ex = Ex {
+            d,
+            opts,
+            next: d.next_id + 0x100,
+            swatch_ids: HashMap::new(),
+            fonts: BTreeMap::new(),
+            threads: HashMap::new(),
+            xref_sources: Vec::new(),
+        };
         ex.assign_swatch_ids();
         for s in d.stories.values() {
             for (i, f) in s.frames.iter().enumerate() {
@@ -272,6 +282,11 @@ impl<'a> Ex<'a> {
                 .attr("ContinueNumbersAcrossDocuments", "false"),
         );
         root.push(El::new("idPkg:Preferences").attr("src", "Resources/Preferences.xml"));
+        // Variables InDesign's cross-reference page/chapter blocks rely on.
+        for (name, ty) in [("XRefChapterNumber", "XrefChapterNumberType"), ("XRefPageNumber", "XrefPageNumberType")] {
+            let n = format!("<?AID 001b?>TV {name}");
+            root.push(El::new("TextVariable").attr("Self", format!("dTextVariablen{n}")).attr("Name", &n).attr("VariableType", ty));
+        }
         for l in &d.layers {
             let color = match names::layer_color_out(l.color) {
                 Some(n) => p("LayerColor", "enumeration", n),
@@ -337,8 +352,28 @@ impl<'a> Ex<'a> {
             el = el.attr("Marker", &s.marker).attr("PageStart", uid(page.id.0)).attr("SectionPrefix", &s.prefix);
             root.push(with_props(el, vec![p("PageNumberStyle", "enumeration", names::number_style_out(s.style))]));
         }
+        // Formats before the stories whose sources apply them.
+        for (i, f) in d.xref_formats.iter().enumerate() {
+            root.push(xref_format_el(i, f));
+        }
         for (name, _) in stories {
             root.push(El::new("idPkg:Story").attr("src", name));
+        }
+        for (src, target) in self.xref_sources.clone() {
+            let mut h = El::new("Hyperlink")
+                .attr("Self", self.fresh())
+                .attr("Name", "Cross-Reference")
+                .attr("Source", &src)
+                .attr("Visible", "false")
+                .attr("Highlight", "None")
+                .attr("Width", "Thin")
+                .attr("BorderStyle", "Solid")
+                .attr("Hidden", "false")
+                .attr("DestinationUniqueKey", target & 0xFFFF_FFFF);
+            let mut props = El::new("Properties");
+            props.push(p("Destination", "object", anchor_self(target)));
+            h.push(props);
+            root.push(h);
         }
         // Root colour group: the Swatches panel order.
         let mut cg =
@@ -1385,6 +1420,49 @@ impl<'a> Ex<'a> {
                         if let Some(t) = s.para_table(pi) {
                             out.push(Node::El(self.table_el(t)));
                         }
+                    } else if ch == designcraft_doc::ANCHOR_MARK {
+                        flush_text(&mut cur, &mut pending);
+                        flush_content(&mut pending, &mut out);
+                        let k = s.text[..seg_start + ci].matches(designcraft_doc::ANCHOR_MARK).count();
+                        if let Some(a) = s.anchors.get(k) {
+                            out.push(Node::El(
+                                El::new("HyperlinkTextDestination")
+                                    .attr("Self", anchor_self(a.id))
+                                    .attr("Name", &a.name)
+                                    .attr("Hidden", "false")
+                                    .attr("DestinationUniqueKey", a.id & 0xFFFF_FFFF),
+                            ));
+                        }
+                    } else if ch == designcraft_doc::XREF_MARK {
+                        // A source wrapping its current text (InDesign regenerates it on update).
+                        flush_text(&mut cur, &mut pending);
+                        flush_content(&mut pending, &mut out);
+                        if !out.is_empty() {
+                            let mut c = self.csr_el(&f);
+                            c.children.append(&mut out);
+                            csrs.push(c);
+                        }
+                        let k = s.text[..seg_start + ci].matches(designcraft_doc::XREF_MARK).count();
+                        if let Some(x) = s.xrefs.get(k) {
+                            let me = self.fresh();
+                            let fmt = self.d.xref_formats.iter().position(|ff| ff.name == x.format).map_or("n".to_string(), xref_format_self);
+                            let text = self.d.xref_values(x.target).map_or("??".into(), |mut v| {
+                                v.page = "?".into();
+                                designcraft_doc::xref::expand(self.d.xref_format(&x.format).map_or("<fullPara />", |ff| ff.definition.as_str()), &v)
+                            });
+                            let mut c = self.csr_el(&f);
+                            let mut content = El::new("Content");
+                            content.children.push(Node::Text(text));
+                            c.push(content);
+                            let mut src = El::new("CrossReferenceSource")
+                                .attr("Self", &me)
+                                .attr("AppliedFormat", fmt)
+                                .attr("Name", format!("Cross-Reference {}", self.xref_sources.len() + 1))
+                                .attr("Hidden", "false");
+                            src.push(c);
+                            csrs.push(src);
+                            self.xref_sources.push((me, x.target));
+                        }
                     } else if ch == designcraft_doc::FOOTNOTE_REF {
                         // The reference: its own range carrying the reference position.
                         flush_text(&mut cur, &mut pending);
@@ -1721,3 +1799,55 @@ const STROKE_STYLES: &[&str] = &[
     "Dashed",
     "Solid",
 ];
+
+fn anchor_self(id: u64) -> String {
+    format!("HyperlinkTextDestination/a{id}")
+}
+
+fn xref_format_self(i: usize) -> String {
+    format!("CrossReferenceFormat/f{i}")
+}
+
+/// A cross-reference format as InDesign building blocks.
+fn xref_format_el(i: usize, f: &designcraft_doc::XrefFormat) -> El {
+    let me = xref_format_self(i);
+    let mut el = El::new("CrossReferenceFormat").attr("Self", &me).attr("Name", &f.name).attr("AppliedCharacterStyle", "n");
+    let mut k = 0;
+    let mut block = |el: &mut El, kind: &str, text: &str, delim: &str, include: bool| {
+        el.push(
+            El::new("BuildingBlock")
+                .attr("Self", format!("{me}BuildingBlock{k}"))
+                .attr("BlockType", kind)
+                .attr("AppliedCharacterStyle", "n")
+                .attr("CustomText", if text.is_empty() { "$ID/" } else { text })
+                .attr("AppliedDelimiter", if delim.is_empty() { "$ID/" } else { delim })
+                .attr("IncludeDelimiter", bool_s(include)),
+        );
+        k += 1;
+    };
+    let mut rest = f.definition.as_str();
+    while let Some(a) = rest.find('<') {
+        if a > 0 {
+            block(&mut el, "CustomStringBuildingBlock", &rest[..a], "", false);
+        }
+        let Some(b) = rest[a..].find('>') else { break };
+        let tag = rest[a + 1..a + b].trim().trim_end_matches('/').trim();
+        let attr = |k: &str| tag.find(&format!("{k}=\"")).and_then(|i| tag[i + k.len() + 2..].split('"').next()).unwrap_or("").to_string();
+        match tag.split_whitespace().next().unwrap_or("") {
+            "fullPara" => block(&mut el, "FullParagraphBuildingBlock", "", "", false),
+            "paraText" => block(&mut el, "ParagraphTextBuildingBlock", "", "", false),
+            "paraNum" => block(&mut el, "ParagraphNumberBuildingBlock", "", "", false),
+            "pageNum" => block(&mut el, "PageNumberBuildingBlock", "", "", false),
+            "txtAnchrName" => block(&mut el, "BookmarkNameBuildingBlock", "", "", false),
+            "chapNum" => block(&mut el, "ChapterNumberBuildingBlock", "", "", false),
+            "fileName" => block(&mut el, "FileNameBuildingBlock", "", "", false),
+            "partialPara" => block(&mut el, "PartialParagraphBuildingBlock", "", &attr("delim"), attr("includeDelim") == "true"),
+            _ => block(&mut el, "CustomStringBuildingBlock", &rest[a..a + b + 1], "", false),
+        }
+        rest = &rest[a + b + 1..];
+    }
+    if !rest.is_empty() {
+        block(&mut el, "CustomStringBuildingBlock", rest, "", false);
+    }
+    el
+}

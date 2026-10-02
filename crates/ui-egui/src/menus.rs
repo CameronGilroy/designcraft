@@ -18,6 +18,9 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
     ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
     ("app.footnoteOptionsDialog", "Document Footnote Options…", None, "{} — numbering, formatting and layout of footnotes"),
+    ("app.insertXrefDialog", "Insert Cross-Reference…", None, "{} — New Cross-Reference dialog (paragraph or text anchor, format)"),
+    ("app.deletePage", "Delete Page", None, "{} — deletes the page in view"),
+    ("app.duplicateSpread", "Duplicate Spread", None, "{} — duplicates the spread in view (pages and items)"),
     ("app.tablePanel", "Table Panel", Some("Shift+F9"), "{}"),
     ("app.storyEditor", "Edit in Story Editor", Some("Cmd+Y"), "{story?}"),
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "{}"),
@@ -78,6 +81,10 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:app.exportPdf",
             "ui:app.exportPng",
             "ui:app.exportIdml",
+            "cmd:file.exportEpub",
+            ">Export",
+            "cmd:snippet.export",
+            "<",
             "-",
             "cmd:layout.documentSetup",
         ],
@@ -95,6 +102,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:edit.clear",
             "-",
             "cmd:edit.duplicate",
+            "cmd:edit.stepAndRepeat",
             "-",
             "cmd:edit.selectAll",
             "cmd:edit.deselectAll",
@@ -103,10 +111,35 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:find.next",
             "ui:app.storyEditor",
             "-",
+            ">Spelling",
+            "cmd:spelling.check",
+            "cmd:spelling.addWord",
+            "<",
+            "-",
             "ui:app.palette",
         ],
     ),
-    ("Layout", &[">Pages", "cmd:layout.pages.insert", "cmd:layout.parents.new", "<", "cmd:layout.marginsAndColumns", "-", "ui:view.goToPage"]),
+    (
+        "Layout",
+        &[
+            ">Pages",
+            "cmd:layout.pages.insert",
+            "cmd:layout.pages.move",
+            "ui:app.duplicateSpread",
+            "ui:app.deletePage",
+            "-",
+            "cmd:layout.pages.applyParent",
+            "cmd:layout.parents.new",
+            "<",
+            "cmd:layout.marginsAndColumns",
+            "-",
+            "ui:view.goToPage",
+            "-",
+            "cmd:layout.section",
+            "cmd:toc.generate",
+            "cmd:toc.update",
+        ],
+    ),
     (
         "Type",
         &[
@@ -127,6 +160,18 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "ui:view.hiddenCharacters",
             "-",
+            ">Hyperlinks & Cross-References",
+            "cmd:hyperlink.create",
+            "cmd:anchor.create",
+            "-",
+            "ui:app.insertXrefDialog",
+            "cmd:xref.defineFormat",
+            "<",
+            ">Text Variables",
+            "cmd:variables.define",
+            "cmd:variables.insert",
+            "<",
+            "-",
             "cmd:footnote.insert",
             "ui:app.footnoteOptionsDialog",
             "cmd:footnote.goToReference",
@@ -136,6 +181,11 @@ pub const MENUS: &[(&str, &[&str])] = &[
         "Object",
         &[
             ">Transform",
+            "cmd:transform.move",
+            "cmd:transform.scale",
+            "cmd:transform.rotate",
+            "cmd:transform.shear",
+            "-",
             "cmd:transform.flip",
             "<",
             ">Arrange",
@@ -157,6 +207,21 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             ">Effects",
             "cmd:object.dropShadow",
+            "cmd:object.innerShadow",
+            "cmd:object.outerGlow",
+            "cmd:object.feather",
+            "<",
+            ">Fitting",
+            "cmd:object.fit|Fill Frame Proportionally|{\"mode\":\"fillProportionally\"}",
+            "cmd:object.fit|Fit Content Proportionally|{\"mode\":\"fitProportionally\"}",
+            "cmd:object.fit|Fit Frame to Content|{\"mode\":\"fitFrameToContent\"}",
+            "cmd:object.fit|Fit Content to Frame|{\"mode\":\"fitContentToFrame\"}",
+            "cmd:object.fit|Center Content|{\"mode\":\"centerContent\"}",
+            "<",
+            ">Content",
+            "cmd:object.content|Graphic|{\"type\":\"graphic\"}",
+            "cmd:object.content|Text|{\"type\":\"text\"}",
+            "cmd:object.content|Unassigned|{\"type\":\"unassigned\"}",
             "<",
         ],
     ),
@@ -212,7 +277,25 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:view.baselineGrid",
         ],
     ),
-    ("Window", &["ui:window.controlBar", "ui:window.taskBar", "ui:window.toolsDoubleColumn", "-", "ui:window.panel", "-", "ui:window.brightness"]),
+    (
+        "Window",
+        &[
+            "ui:window.controlBar",
+            "ui:window.taskBar",
+            "ui:window.toolsDoubleColumn",
+            "-",
+            "ui:window.panel",
+            "-",
+            ">Utilities",
+            "cmd:data.merge",
+            "<",
+            ">Output",
+            "cmd:preflight.run",
+            "<",
+            "-",
+            "ui:window.brightness",
+        ],
+    ),
     (
         "Help",
         &[
@@ -293,6 +376,24 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             let o = serde_json::to_value(&st.doc.footnote_options).unwrap_or_default();
             app.ui.dialog = Some(crate::dialogs::Dialog::new("footnoteOptions", o));
             Ok(Value::Null)
+        }
+        "app.insertXrefDialog" => {
+            if app.session.active().is_none_or(|d| d.selection.text.is_none()) {
+                return Some(Err("place the insertion point in text to insert a cross-reference".into()));
+            }
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("insertXref", json!({})));
+            Ok(Value::Null)
+        }
+        "app.deletePage" | "app.duplicateSpread" => {
+            let Some(st) = app.session.active() else { return Some(Err("no document open".into())) };
+            let page = crate::canvas::current_page(app).unwrap_or(0);
+            let r = if id == "app.deletePage" {
+                app.run("layout.pages.delete", json!({"pages": [page]}))
+            } else {
+                let spread = st.doc.page_loc(page).map_or(0, |l| l.0);
+                app.run("layout.pages.duplicateSpread", json!({"spread": spread}))
+            };
+            return Some(r);
         }
         "app.tablePanel" => {
             app.ui.open_panel = if app.ui.open_panel.as_deref() == Some("table") { None } else { Some("table".into()) };
@@ -576,7 +677,19 @@ fn parse_entries(entries: &[&str]) -> Vec<Item> {
             out.push(Item::Sub("Interface Color Theme".into(), items));
         } else {
             let (_, id) = e.split_once(':').unwrap_or(("cmd", e));
-            out.push(cmd_item(id, Value::Null));
+            // `id|Label|{params}`: a fixed-parameter variant of a command.
+            let mut parts = id.splitn(3, '|');
+            let id = parts.next().unwrap_or(id);
+            match (parts.next(), parts.next().and_then(|j| serde_json::from_str::<Value>(j).ok())) {
+                (Some(label), Some(params)) => {
+                    let mut it = cmd_item(id, params);
+                    if let Item::Cmd { label: l, .. } = &mut it {
+                        *l = label.to_string();
+                    }
+                    out.push(it);
+                }
+                _ => out.push(cmd_item(id, Value::Null)),
+            }
         }
     }
     out
@@ -619,8 +732,8 @@ pub fn activate(app: &mut DesignApp, id: &str, params: &Value) {
     if params.is_null()
         && ui_label(id).is_none()
         && let Some(c) = designcraft_engine::find_command(id)
-        && c.label.ends_with('…')
         && !crate::dialogs::command_fields(c.params).is_empty()
+        && (c.label.ends_with('…') || crate::dialogs::command_fields(c.params).iter().any(|f| !f.optional))
     {
         app.ui.dialog = Some(crate::dialogs::Dialog::new(&format!("cmd:{id}"), json!({})));
         return;
@@ -790,5 +903,38 @@ pub fn palette(app: &mut DesignApp, ctx: &egui::Context) {
     app.ui.palette = if close || run.is_some() { None } else { Some(q) };
     if let Some(id) = run {
         let _ = app.run(&id, json!({}));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn walk(items: &[Item], out: &mut Vec<(String, String, Value)>) {
+        for it in items {
+            match it {
+                Item::Sub(_, c) => walk(c, out),
+                Item::Cmd { label, id, params, .. } => out.push((label.clone(), id.clone(), params.clone())),
+                Item::Sep => {}
+            }
+        }
+    }
+
+    #[test]
+    fn every_menu_entry_is_a_command() {
+        let mut all = Vec::new();
+        for (_, items) in menu_tree() {
+            walk(&items, &mut all);
+        }
+        assert!(all.len() > 80, "{}", all.len());
+        for (label, id, params) in &all {
+            assert!(ui_label(id).is_some() || designcraft_engine::find_command(id).is_some(), "menu entry {label}: unknown command {id}");
+            assert!(!label.is_empty() && label != id, "menu entry {id} has no label");
+            if let Some(o) = params.as_object() {
+                assert!(!o.is_empty(), "{id}: empty fixed params");
+            }
+        }
+        // Fixed-parameter variants keep their own labels.
+        assert!(all.iter().any(|(l, id, p)| l == "Fill Frame Proportionally" && id == "object.fit" && p["mode"] == "fillProportionally"));
     }
 }

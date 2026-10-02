@@ -10,7 +10,8 @@
 //! Special characters: `\t` tab, `\u{2028}` forced line break, [`PAGE_NUMBER`], [`SECTION_MARKER`],
 //! [`COLUMN_BREAK`], [`FRAME_BREAK`], [`PAGE_BREAK`], `\u{AD}` discretionary hyphen,
 //! `\u{2011}` non-breaking hyphen, `\u{A0}` non-breaking space, [`INDENT_HERE`], [`RIGHT_INDENT_TAB`],
-//! [`TABLE_ANCHOR`] (a table, see [`crate::table`]), [`crate::notes::FOOTNOTE_REF`] (a footnote).
+//! [`TABLE_ANCHOR`] (a table, see [`crate::table`]), [`crate::notes::FOOTNOTE_REF`] (a footnote),
+//! [`crate::xref::ANCHOR_MARK`] / [`crate::xref::XREF_MARK`] (text anchor / cross-reference).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -97,6 +98,12 @@ pub struct Story {
     /// Footnotes, one per [`crate::notes::FOOTNOTE_REF`] in text order (see [`crate::notes`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<Arc<crate::notes::Footnote>>,
+    /// Text anchors, one per [`crate::xref::ANCHOR_MARK`] in text order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anchors: Vec<Arc<crate::xref::TextAnchor>>,
+    /// Cross-references, one per [`crate::xref::XREF_MARK`] in text order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub xrefs: Vec<Arc<crate::xref::CrossRef>>,
 }
 
 impl Story {
@@ -110,6 +117,8 @@ impl Story {
             rev: 0,
             tables: BTreeMap::new(),
             notes: Vec::new(),
+            anchors: Vec::new(),
+            xrefs: Vec::new(),
         }
     }
 
@@ -143,7 +152,7 @@ impl Story {
 
     /// Index of the paragraph containing byte `pos`.
     pub fn para_at(&self, pos: usize) -> usize {
-        self.text[..pos.min(self.text.len())].bytes().filter(|b| *b == b'\n').count()
+        self.text[..floor_char_boundary(&self.text, pos)].bytes().filter(|b| *b == b'\n').count()
     }
 
     /// Character format at byte `pos` (the run containing it; at a boundary, the preceding run —
@@ -198,6 +207,9 @@ impl Story {
             let k = self.notes_before(pos);
             self.notes_inserted(k, refs);
         }
+        if text.contains([crate::xref::ANCHOR_MARK, crate::xref::XREF_MARK]) {
+            self.marks_inserted(pos, text);
+        }
         // Paragraph formats: each new '\n' splits the current paragraph; the new paragraphs copy it.
         let pi = self.para_at(pos);
         let newlines = text.bytes().filter(|b| *b == b'\n').count();
@@ -226,6 +238,7 @@ impl Story {
             let k = self.notes_before(a);
             self.notes.drain(k..(k + refs).min(self.notes.len()));
         }
+        self.marks_deleted(a, b);
         let pi = self.para_at(a);
         let removed = self.text[a..b].bytes().filter(|c| *c == b'\n').count();
         // Merged paragraphs keep a table whose anchor survives the deletion.
@@ -329,7 +342,8 @@ impl Story {
             }
         }
         self.check_tables()?;
-        self.check_notes()
+        self.check_notes()?;
+        self.check_marks()
     }
 
     // ---------- run helpers ----------

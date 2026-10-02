@@ -16,6 +16,7 @@ mod notes;
 pub mod shape;
 pub mod table;
 pub mod vars;
+pub mod xref;
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -208,6 +209,8 @@ pub struct ComposeOptions {
     pub running: Option<std::sync::Arc<vars::RunningIndex>>,
     /// Generated text before the first paragraph (a footnote's number and separator).
     pub label: Option<String>,
+    /// Anchor pages for cross-references (needed when the story contains cross-references).
+    pub xrefs: Option<Arc<xref::XrefIndex>>,
 }
 
 /// Build the frame specs of a story from the document (geometry, wrap, page names, grid).
@@ -355,6 +358,9 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             vars: var_values,
             ..Default::default()
         };
+        if !story.xrefs.is_empty() {
+            sub.xrefs = xref::texts_in(doc, story, prange.clone(), opts.xrefs.as_deref());
+        }
         if notes.active() {
             notes.number_refs(doc, prange.clone(), cur_frame.and_then(|f| f.page), &mut sub);
         }

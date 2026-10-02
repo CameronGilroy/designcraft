@@ -426,3 +426,30 @@ fn imports_indesign_style_footnote() {
     // One run: the reference takes its position from the options, not an override.
     assert_eq!(s.chars.len(), 1);
 }
+
+#[test]
+fn round_trips_cross_references() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (_, sid) =
+        d.add_text_frame(SpreadRef::Doc(0), Rect::new(40.0, 40.0, 400.0, 400.0), lid, "Results: found\nSee .", ParaFormat::default()).unwrap();
+    let target = d.paragraph_anchor(sid, 0).unwrap();
+    let at = d.story(sid).unwrap().text.find(" .").unwrap() + 1;
+    d.story_mut(sid).unwrap().insert_xref(at, designcraft_doc::CrossRef { target, format: "Paragraph Text".into() });
+    d.xref_formats.push(designcraft_doc::XrefFormat {
+        name: "Mine".into(),
+        definition: "(<partialPara delim=\":\" includeDelim=\"true\" />, p. <pageNum />)".into(),
+    });
+    d.check().unwrap();
+    let back = import_idml(&export_idml(&d)).unwrap();
+    back.check().unwrap();
+    let s = back.stories.values().next().unwrap();
+    assert_eq!(s.text, d.story(sid).unwrap().text);
+    assert_eq!(s.xrefs.len(), 1);
+    assert_eq!(s.xrefs[0].format, "Paragraph Text");
+    let (tsid, tpos) = back.find_anchor(s.xrefs[0].target).expect("target resolves");
+    assert_eq!((tsid, tpos), (s.id, 0));
+    let mine = back.xref_format("Mine").unwrap();
+    assert_eq!(mine.definition, d.xref_format("Mine").unwrap().definition);
+    assert_eq!(back.xref_formats.len(), d.xref_formats.len());
+}

@@ -32,7 +32,7 @@ fn clean(s: &str) -> String {
 }
 
 /// (absolute page, y, x) of story byte `pos` in a composed story.
-fn place(doc: &Document, cs: &ComposedStory, pos: usize) -> Option<(usize, i64, i64)> {
+pub(crate) fn place(doc: &Document, cs: &ComposedStory, pos: usize) -> Option<(usize, i64, i64)> {
     let (fi, x, baseline, ..) = crate::caret(cs, pos)?;
     let ft = cs.frames.get(fi)?;
     let loc = doc.find(ft.frame)?;

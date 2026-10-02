@@ -116,6 +116,13 @@ struct Importer<'r> {
     ctx: ItemCtx,
     sections: Vec<Section>,
     footnote_options: designcraft_doc::FootnoteOptions,
+    /// Text destination Self → anchor id.
+    anchor_ids: HashMap<String, u64>,
+    /// Cross-reference source Self → (story, index in its cross-references).
+    xref_srcs: HashMap<String, (StoryId, usize)>,
+    /// Cross-reference format Self → name.
+    xref_format_names: HashMap<String, String>,
+    xref_formats: Vec<designcraft_doc::XrefFormat>,
 }
 
 fn lab_to_color(l: f32, a: f32, b: f32) -> Color {
@@ -182,6 +189,10 @@ impl<'r> Importer<'r> {
             ctx: ItemCtx { threads: Vec::new() },
             sections: Vec::new(),
             footnote_options: Default::default(),
+            anchor_ids: HashMap::new(),
+            xref_srcs: HashMap::new(),
+            xref_format_names: HashMap::new(),
+            xref_formats: designcraft_doc::xref::default_formats(),
         }
     }
 
@@ -265,6 +276,9 @@ impl<'r> Importer<'r> {
                 suppress_wrap_when_hidden: false,
             });
         }
+        for e in top.iter().filter(|e| e.local() == "CrossReferenceFormat") {
+            self.xref_format(e);
+        }
         // Stories (ids first so frames can reference them).
         for e in top.iter().filter(|e| e.local() == "Story") {
             let id = StoryId(self.alloc());
@@ -273,6 +287,14 @@ impl<'r> Importer<'r> {
             }
             let story = self.story(id, e);
             self.stories.insert(id, story);
+        }
+        // Cross-references point at their hyperlink's destination.
+        for h in top.iter().filter(|e| e.local() == "Hyperlink") {
+            let (Some(src), Some(dest)) = (h.get("Source"), h.prop("Destination")) else { continue };
+            let (Some(&(sid, k)), Some(&target)) = (self.xref_srcs.get(src), self.anchor_ids.get(dest.trim())) else { continue };
+            if let Some(x) = self.stories.get_mut(&sid).and_then(|st| st.xrefs.get_mut(k)) {
+                Arc::make_mut(x).target = target;
+            }
         }
         // Parent spreads: ids first (pages reference other parents).
         let masters: Vec<&El> = top.iter().filter(|e| e.local() == "MasterSpread").collect();
@@ -655,6 +677,38 @@ impl<'r> Importer<'r> {
         }
     }
 
+    /// `CrossReferenceFormat`: building blocks back to a format definition.
+    fn xref_format(&mut self, e: &El) {
+        let name = e.get("Name").unwrap_or("Format").to_string();
+        let mut def = String::new();
+        for b in e.find_all("BuildingBlock") {
+            let text = |k: &str| b.get(k).filter(|v| *v != "$ID/").unwrap_or("").to_string();
+            match b.get("BlockType").unwrap_or("") {
+                "CustomStringBuildingBlock" => def.push_str(&text("CustomText")),
+                "FullParagraphBuildingBlock" => def.push_str("<fullPara />"),
+                "ParagraphTextBuildingBlock" => def.push_str("<paraText />"),
+                "ParagraphNumberBuildingBlock" => def.push_str("<paraNum />"),
+                "PageNumberBuildingBlock" => def.push_str("<pageNum />"),
+                "BookmarkNameBuildingBlock" => def.push_str("<txtAnchrName />"),
+                "ChapterNumberBuildingBlock" => def.push_str("<chapNum />"),
+                "FileNameBuildingBlock" => def.push_str("<fileName />"),
+                "PartialParagraphBuildingBlock" => def.push_str(&format!(
+                    "<partialPara delim=\"{}\" includeDelim=\"{}\" />",
+                    text("AppliedDelimiter"),
+                    b.get("IncludeDelimiter") == Some("true")
+                )),
+                _ => {}
+            }
+        }
+        if let Some(me) = e.get("Self") {
+            self.xref_format_names.insert(me.to_string(), name.clone());
+        }
+        match self.xref_formats.iter_mut().find(|f| f.name == name) {
+            Some(f) => f.definition = def,
+            None => self.xref_formats.push(designcraft_doc::XrefFormat { name, definition: def }),
+        }
+    }
+
     /// Preferences › `FootnoteOption` (after styles: it names the footnote text and marker styles).
     fn footnote_option(&mut self, e: &El) {
         let mut o = designcraft_doc::FootnoteOptions::default();
@@ -881,9 +935,11 @@ impl<'r> Importer<'r> {
             tables: Vec::new(),
             after_table: None,
             notes: Vec::new(),
+            anchors: Vec::new(),
+            xrefs: Vec::new(),
         };
         self.walk_story(e, &mut b, &ParaFormat::default(), &CharAttrs::default(), &CharFormat::default(), None);
-        let StoryBuilder { text, mut paras, runs, last, tables: tbls, notes, .. } = b;
+        let StoryBuilder { text, mut paras, runs, last, tables: tbls, notes, anchors, xrefs, .. } = b;
         let mut chars: Vec<CharRun> = runs.into_iter().filter(|r| r.len > 0).collect();
         if chars.is_empty() {
             chars.push(CharRun { len: 0, format: last });
@@ -896,8 +952,21 @@ impl<'r> Importer<'r> {
             }
         }
         let notes = notes.into_iter().enumerate().map(|(i, text)| Arc::new(designcraft_doc::Footnote { id: i as u64 + 1, text })).collect();
-        let mut st = Story { id, text, paras, chars, frames: vec![], rev: 0, tables, notes };
+        let mut anchor_list = Vec::new();
+        for (k, (me, name)) in anchors.into_iter().enumerate() {
+            let aid = (id.0 << 24) | (k as u64 + 1);
+            self.anchor_ids.insert(me, aid);
+            anchor_list.push(Arc::new(designcraft_doc::TextAnchor { id: aid, name }));
+        }
+        let mut xref_list = Vec::new();
+        for (k, (me, fmt)) in xrefs.into_iter().enumerate() {
+            self.xref_srcs.insert(me, (id, k));
+            let format = self.xref_format_names.get(&fmt).cloned().unwrap_or_else(|| "Full Paragraph & Page Number".into());
+            xref_list.push(Arc::new(designcraft_doc::CrossRef { target: 0, format }));
+        }
+        let mut st = Story { id, text, paras, chars, frames: vec![], rev: 0, tables, notes, anchors: anchor_list, xrefs: xref_list };
         st.fix_notes();
+        st.fix_marks();
         // Drop anything inconsistent (e.g. a table sharing a paragraph with another).
         if st.check().is_err() {
             st.tables.retain(|_, _| false);
@@ -1077,6 +1146,20 @@ impl<'r> Importer<'r> {
                     "Table" => {
                         let t = self.table(c);
                         b.push_table(t, pf, cf);
+                    }
+                    "HyperlinkTextDestination" | "ParagraphDestination" => {
+                        b.anchors.push((c.get("Self").unwrap_or("").to_string(), c.get("Name").unwrap_or("Anchor").to_string()));
+                        b.push(&designcraft_doc::ANCHOR_MARK.to_string(), cf);
+                    }
+                    "CrossReferenceSource" => {
+                        // The generated text is regenerated from the format.
+                        b.xrefs.push((c.get("Self").unwrap_or("").to_string(), c.get("AppliedFormat").unwrap_or("").to_string()));
+                        let inner = c.find("CharacterStyleRange");
+                        let f = match inner.and_then(|r| r.get("AppliedCharacterStyle")) {
+                            Some(r) => CharFormat { style: self.char_style_ref(r), over: pchars.clone() },
+                            None => cf.clone(),
+                        };
+                        b.push(&designcraft_doc::XREF_MARK.to_string(), &f);
                     }
                     "Footnote" => {
                         // The text starts with the number marker (ACE 4, dropped) and the separator.
@@ -1557,6 +1640,7 @@ impl<'r> Importer<'r> {
             toc: None,
             text_variables: designcraft_doc::vars::defaults(),
             footnote_options: std::mem::take(&mut self.footnote_options),
+            xref_formats: std::mem::take(&mut self.xref_formats),
             created: designcraft_doc::vars::now(),
             modified: 0,
             next_id: self.next_id,
@@ -1587,6 +1671,9 @@ struct StoryBuilder {
     after_table: Option<ParaFormat>,
     /// Footnote texts in reference order.
     notes: Vec<Story>,
+    /// Text destinations (Self, name) and cross-reference sources (Self, format Self) in order.
+    anchors: Vec<(String, String)>,
+    xrefs: Vec<(String, String)>,
 }
 
 impl StoryBuilder {

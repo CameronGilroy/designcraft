@@ -20,6 +20,7 @@ pub mod story;
 pub mod styles;
 pub mod table;
 pub mod vars;
+pub mod xref;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -36,6 +37,7 @@ pub use selection::*;
 pub use story::*;
 pub use styles::*;
 pub use table::*;
+pub use xref::{ANCHOR_MARK, CrossRef, TextAnchor, XREF_MARK, XrefFormat};
 
 use designcraft_color::Swatch;
 use designcraft_geom::Unit;
@@ -252,6 +254,9 @@ pub struct Document {
     /// Type › Document Footnote Options.
     #[serde(default)]
     pub footnote_options: FootnoteOptions,
+    /// Cross-reference formats (Type › Hyperlinks & Cross-References › Cross-Reference Formats).
+    #[serde(default = "xref::default_formats")]
+    pub xref_formats: Vec<XrefFormat>,
     /// Creation / last save time (Unix seconds, UTC).
     #[serde(default)]
     pub created: i64,

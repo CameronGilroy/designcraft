@@ -73,6 +73,8 @@ pub struct SubstCtx {
     /// Footnote reference formatting: position and character style (`None` = the text's).
     pub note_position: designcraft_doc::Position,
     pub note_style: Option<String>,
+    /// Cross-reference texts by story byte of the cross-reference mark.
+    pub xrefs: HashMap<usize, String>,
 }
 
 pub(crate) struct StyleTable<'a> {
@@ -222,6 +224,8 @@ fn shape_run(
                 | story::RIGHT_INDENT_TAB
                 | story::TABLE_ANCHOR
                 | designcraft_doc::FOOTNOTE_REF
+                | designcraft_doc::XREF_MARK
+                | designcraft_doc::ANCHOR_MARK
         ) || designcraft_doc::vars::var_index(c).is_some();
         if special {
             flush(seg_start, i, &seg_face, out);
@@ -246,6 +250,14 @@ fn shape_run(
                     };
                     shape_segment(db, text, i..i + c.len_utf8(), Some(&s), p, &primary, auto_leading, style, out);
                 }
+                designcraft_doc::XREF_MARK => match sub.xrefs.get(&i).filter(|t| !t.is_empty()) {
+                    Some(t) => shape_segment(db, text, i..i + c.len_utf8(), Some(t), p, &primary, auto_leading, style, out),
+                    None => {
+                        let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
+                        g.adv = 0.0;
+                        out.push(g);
+                    }
+                },
                 designcraft_doc::FOOTNOTE_REF => {
                     let s = sub.notes.get(&i).map_or("#", String::as_str);
                     shape_segment(db, text, i..i + c.len_utf8(), Some(s), p, &primary, auto_leading, style, out);
@@ -253,7 +265,7 @@ fn shape_run(
                 _ => {
                     // Zero-width control glyph carrying metrics (tabs get their width at line layout).
                     let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
-                    if c == '\t' || c == story::RIGHT_INDENT_TAB || c == story::TABLE_ANCHOR {
+                    if c == '\t' || c == story::RIGHT_INDENT_TAB || c == story::TABLE_ANCHOR || c == designcraft_doc::ANCHOR_MARK {
                         g.adv = 0.0;
                     }
                     out.push(g);

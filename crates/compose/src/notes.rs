@@ -105,7 +105,13 @@ impl Notes {
             grid: None,
             left_page: f.left_page,
         };
-        let nopts = ComposeOptions { page_name: opts.page_name.clone(), page: opts.page, running: opts.running.clone(), label: Some(label) };
+        let nopts = ComposeOptions {
+            page_name: opts.page_name.clone(),
+            page: opts.page,
+            running: opts.running.clone(),
+            label: Some(label),
+            xrefs: opts.xrefs.clone(),
+        };
         let cs = crate::compose(doc, &self.notes[k].text, std::slice::from_ref(&spec), &nopts);
         let h = cs.frames.first().and_then(|ft| ft.lines.last()).map_or(0.0, |l| l.baseline + l.descent);
         let v = (Arc::new(cs), h);

@@ -27,6 +27,8 @@ pub struct Cache {
     map: Mutex<(HashMap<Key, Entry>, u64)>,
     /// Running-header index with the document signature it was built for.
     running: Mutex<Option<(u64, Arc<RunningIndex>)>>,
+    /// Cross-reference anchor pages with the document signature they were built for.
+    xrefs: Mutex<Option<(u64, Arc<crate::xref::XrefIndex>)>>,
 }
 
 /// Identity of everything a running header can depend on (stories, spreads, styles, variables).
@@ -68,6 +70,14 @@ impl Cache {
                 sig.push(doc_signature(doc) as usize);
             }
         }
+        let with_xrefs = crate::xref::has_xrefs(story);
+        if with_xrefs {
+            // Cross-references show other stories' text and pages.
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            format!("{:?}", doc.xref_formats).hash(&mut h);
+            sig.extend([doc_signature(doc) as usize, h.finish() as usize]);
+        }
         if !story.notes.is_empty() {
             // Footnote numbers continue from earlier stories; layout follows the options.
             use std::hash::{Hash, Hasher};
@@ -92,7 +102,11 @@ impl Cache {
             _ => None,
         };
         let running = running.then(|| self.running_index(doc));
-        let out = Arc::new(crate::compose_story(doc, sid, &ComposeOptions { page_name: page_name.map(str::to_string), page, running, label: None }));
+        let out = Arc::new(crate::compose_story(
+            doc,
+            sid,
+            &ComposeOptions { page_name: page_name.map(str::to_string), page, running, label: None, xrefs: with_xrefs.then(|| self.xref_index(doc)) },
+        ));
         let mut g = self.map.lock().unwrap_or_else(|e| e.into_inner());
         let stamp = g.1;
         if g.0.len() > 4096 {
@@ -105,6 +119,20 @@ impl Cache {
     pub fn clear(&self) {
         self.map.lock().unwrap_or_else(|e| e.into_inner()).0.clear();
         *self.running.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.xrefs.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// Anchor pages for cross-references (rebuilt when the document changes).
+    pub fn xref_index(&self, doc: &Document) -> Arc<crate::xref::XrefIndex> {
+        let sig = doc_signature(doc);
+        if let Some((s, r)) = &*self.xrefs.lock().unwrap_or_else(|e| e.into_inner())
+            && *s == sig
+        {
+            return r.clone();
+        }
+        let r = Arc::new(crate::xref::XrefIndex::build(doc, &|sid| self.get(doc, sid, None)));
+        *self.xrefs.lock().unwrap_or_else(|e| e.into_inner()) = Some((sig, r.clone()));
+        r
     }
 
     /// The running-header index for `doc` (rebuilt when the document changes).

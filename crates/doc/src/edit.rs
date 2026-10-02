@@ -231,6 +231,8 @@ impl Document {
                         let id = st.next_note_id();
                         st.notes.push(Arc::new(crate::Footnote { id, text: n.text.clone() }));
                     }
+                    st.anchors.extend(other.anchors.iter().cloned());
+                    st.xrefs.extend(other.xrefs.iter().cloned());
                     st.rev += 1;
                 }
                 let at = st.frames.iter().position(|f| *f == from).map_or(st.frames.len(), |p| p + 1);
@@ -358,6 +360,9 @@ impl Document {
         st.tables.clear();
         st.notes.clear();
         st.fix_notes();
+        st.anchors.clear();
+        st.xrefs.clear();
+        st.fix_marks();
         st.rev += 1;
         Ok(())
     }
