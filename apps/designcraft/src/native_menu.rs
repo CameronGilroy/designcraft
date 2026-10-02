@@ -75,8 +75,7 @@ impl NativeMenu {
     pub fn poll(&mut self, app: &mut DesignApp) {
         while let Ok(ev) = MenuEvent::receiver().try_recv() {
             if let Some((cmd, params, _)) = self.items.get(ev.id.as_ref()) {
-                let p = if params.is_null() { serde_json::json!({}) } else { params.clone() };
-                let _ = app.run(cmd, p);
+                designcraft_ui_egui::menus::activate(app, &cmd.clone(), &params.clone());
             }
         }
         let now = designcraft_ui_egui::now_ms();

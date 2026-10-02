@@ -10,7 +10,7 @@ Start the app with `--control <port>` (or `DESIGNCRAFT_CONTROL_PORT`). The serve
 
 | Method | Params | What it does |
 |---|---|---|
-| `engine.execute` / `ui.menu.invoke` | `{command, params}` | Run any engine or UI command (see `engine.commands`) |
+| `engine.execute` / `ui.menu.invoke` | `{command, params}` | Run any engine or UI command (see `engine.commands`). `ui.menu.invoke` without `params` acts like choosing the menu item: a command labelled "…" that takes parameters opens its dialog |
 | `engine.commands` | — | Every command: id, label, menu path, shortcut, params doc, enabled |
 | `document.inspect` | — | Pages, spreads, items, stories (overset), styles, swatches, selection |
 | `ui.inspect` | — | Tool, UI state, view (zoom/origin), canvas rect, perf |

@@ -68,6 +68,11 @@ pub struct SubstCtx {
     pub section_marker: Option<String>,
     /// Text variable values by index (on the page being composed).
     pub vars: Arc<Vec<String>>,
+    /// Footnote reference labels by story byte of the reference character.
+    pub notes: HashMap<usize, String>,
+    /// Footnote reference formatting: position and character style (`None` = the text's).
+    pub note_position: designcraft_doc::Position,
+    pub note_style: Option<String>,
 }
 
 pub(crate) struct StyleTable<'a> {
@@ -117,7 +122,31 @@ pub(crate) fn shape_para(
         }
         let props = styles.resolve_char(para_chars, fmt);
         let style = table.intern(&props);
-        shape_run(db, &story.text, a..b, &props, auto_leading, style, sub, &mut glyphs);
+        if !story.text[a..b].contains(designcraft_doc::FOOTNOTE_REF) {
+            shape_run(db, &story.text, a..b, &props, auto_leading, style, sub, &mut glyphs);
+            continue;
+        }
+        // Footnote references take the reference position / character style.
+        let mut rf = fmt.clone();
+        if let Some(cs) = &sub.note_style {
+            rf.style = cs.clone();
+        }
+        rf.over.position = Some(sub.note_position);
+        let rprops = styles.resolve_char(para_chars, &rf);
+        let rstyle = table.intern(&rprops);
+        let mut k = a;
+        for (i, _) in story.text[a..b].match_indices(designcraft_doc::FOOTNOTE_REF) {
+            let i = a + i;
+            if k < i {
+                shape_run(db, &story.text, k..i, &props, auto_leading, style, sub, &mut glyphs);
+            }
+            let e = i + designcraft_doc::FOOTNOTE_REF.len_utf8();
+            shape_run(db, &story.text, i..e, &rprops, auto_leading, rstyle, sub, &mut glyphs);
+            k = e;
+        }
+        if k < b {
+            shape_run(db, &story.text, k..b, &props, auto_leading, style, sub, &mut glyphs);
+        }
     }
     ShapedPara { glyphs, range }
 }
@@ -192,6 +221,7 @@ fn shape_run(
                 | story::INDENT_HERE
                 | story::RIGHT_INDENT_TAB
                 | story::TABLE_ANCHOR
+                | designcraft_doc::FOOTNOTE_REF
         ) || designcraft_doc::vars::var_index(c).is_some();
         if special {
             flush(seg_start, i, &seg_face, out);
@@ -215,6 +245,10 @@ fn shape_run(
                         sub.page_name.clone().unwrap_or_else(|| "#".into())
                     };
                     shape_segment(db, text, i..i + c.len_utf8(), Some(&s), p, &primary, auto_leading, style, out);
+                }
+                designcraft_doc::FOOTNOTE_REF => {
+                    let s = sub.notes.get(&i).map_or("#", String::as_str);
+                    shape_segment(db, text, i..i + c.len_utf8(), Some(s), p, &primary, auto_leading, style, out);
                 }
                 _ => {
                     // Zero-width control glyph carrying metrics (tabs get their width at line layout).

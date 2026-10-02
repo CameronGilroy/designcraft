@@ -10,7 +10,7 @@
 //! Special characters: `\t` tab, `\u{2028}` forced line break, [`PAGE_NUMBER`], [`SECTION_MARKER`],
 //! [`COLUMN_BREAK`], [`FRAME_BREAK`], [`PAGE_BREAK`], `\u{AD}` discretionary hyphen,
 //! `\u{2011}` non-breaking hyphen, `\u{A0}` non-breaking space, [`INDENT_HERE`], [`RIGHT_INDENT_TAB`],
-//! [`TABLE_ANCHOR`] (a table, see [`crate::table`]).
+//! [`TABLE_ANCHOR`] (a table, see [`crate::table`]), [`crate::notes::FOOTNOTE_REF`] (a footnote).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -94,6 +94,9 @@ pub struct Story {
     /// Tables anchored in the story, by id (see [`crate::table`]).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tables: BTreeMap<u64, Arc<Table>>,
+    /// Footnotes, one per [`crate::notes::FOOTNOTE_REF`] in text order (see [`crate::notes`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Arc<crate::notes::Footnote>>,
 }
 
 impl Story {
@@ -106,6 +109,7 @@ impl Story {
             frames: vec![],
             rev: 0,
             tables: BTreeMap::new(),
+            notes: Vec::new(),
         }
     }
 
@@ -189,6 +193,11 @@ impl Story {
             return;
         }
         let pos = floor_char_boundary(&self.text, pos);
+        let refs = text.matches(crate::notes::FOOTNOTE_REF).count();
+        if refs > 0 {
+            let k = self.notes_before(pos);
+            self.notes_inserted(k, refs);
+        }
         // Paragraph formats: each new '\n' splits the current paragraph; the new paragraphs copy it.
         let pi = self.para_at(pos);
         let newlines = text.bytes().filter(|b| *b == b'\n').count();
@@ -211,6 +220,11 @@ impl Story {
         let b = floor_char_boundary(&self.text, range.end.min(self.text.len())).max(a);
         if a == b {
             return;
+        }
+        let refs = self.text[a..b].matches(crate::notes::FOOTNOTE_REF).count();
+        if refs > 0 {
+            let k = self.notes_before(a);
+            self.notes.drain(k..(k + refs).min(self.notes.len()));
         }
         let pi = self.para_at(a);
         let removed = self.text[a..b].bytes().filter(|c| *c == b'\n').count();
@@ -314,7 +328,8 @@ impl Story {
                 return Err(format!("run boundary {pos} splits a character"));
             }
         }
-        self.check_tables()
+        self.check_tables()?;
+        self.check_notes()
     }
 
     // ---------- run helpers ----------

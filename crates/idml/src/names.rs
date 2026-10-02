@@ -391,6 +391,7 @@ pub fn number_style_out(n: NumberStyle) -> &'static str {
         NumberStyle::LowerRoman => "LowerRoman",
         NumberStyle::UpperLetters => "UpperLetters",
         NumberStyle::LowerLetters => "LowerLetters",
+        NumberStyle::Symbols => "Symbols",
     }
 }
 pub fn number_style_in(s: &str) -> NumberStyle {
@@ -399,6 +400,7 @@ pub fn number_style_in(s: &str) -> NumberStyle {
         "LowerRoman" => NumberStyle::LowerRoman,
         "UpperLetters" => NumberStyle::UpperLetters,
         "LowerLetters" => NumberStyle::LowerLetters,
+        "Symbols" => NumberStyle::Symbols,
         _ => NumberStyle::Arabic,
     }
 }
@@ -461,4 +463,46 @@ pub fn num(v: f64) -> String {
 
 pub fn pt(x: f64, y: f64) -> String {
     format!("{} {}", num(x), num(y))
+}
+
+// ---------- footnote options ----------
+
+pub fn note_style_out(n: NumberStyle) -> &'static str {
+    match n {
+        NumberStyle::ArabicLeadingZero => "SingleLeadingZeros",
+        n => number_style_out(n),
+    }
+}
+pub fn note_style_in(s: &str) -> NumberStyle {
+    match s {
+        "SingleLeadingZeros" | "DoubleLeadingZeros" => NumberStyle::ArabicLeadingZero,
+        "Asterisks" => NumberStyle::Symbols,
+        s => number_style_in(s),
+    }
+}
+pub const NOTE_RESTART: [(designcraft_doc::notes::NoteRestart, &str); 4] = [
+    (designcraft_doc::notes::NoteRestart::Never, "DontRestart"),
+    (designcraft_doc::notes::NoteRestart::Page, "PageRestart"),
+    (designcraft_doc::notes::NoteRestart::Spread, "SpreadRestart"),
+    (designcraft_doc::notes::NoteRestart::Section, "SectionRestart"),
+];
+pub const NOTE_AFFIX: [(designcraft_doc::notes::AffixIn, &str); 4] = [
+    (designcraft_doc::notes::AffixIn::None, "NoPrefixSuffix"),
+    (designcraft_doc::notes::AffixIn::Reference, "PrefixSuffixReference"),
+    (designcraft_doc::notes::AffixIn::Text, "PrefixSuffixMarker"),
+    (designcraft_doc::notes::AffixIn::Both, "PrefixSuffixBoth"),
+];
+pub fn note_marker_out(p: Position) -> &'static str {
+    match p {
+        Position::Superscript | Position::OtSuperscript => "SuperscriptMarker",
+        Position::Subscript | Position::OtSubscript => "SubscriptMarker",
+        _ => "NormalMarker",
+    }
+}
+pub fn note_marker_in(s: &str) -> Position {
+    match s {
+        "SuperscriptMarker" => Position::Superscript,
+        "SubscriptMarker" => Position::Subscript,
+        _ => Position::Normal,
+    }
 }

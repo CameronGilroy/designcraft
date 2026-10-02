@@ -140,6 +140,7 @@ impl Document {
             user_words: vec![],
             toc: None,
             text_variables: crate::vars::defaults(),
+            footnote_options: Default::default(),
             created: crate::vars::now(),
             modified: 0,
             next_id: 0,

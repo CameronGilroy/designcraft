@@ -13,6 +13,7 @@ pub mod build;
 mod edit;
 pub mod ids;
 pub mod item;
+pub mod notes;
 pub mod page;
 pub mod selection;
 pub mod story;
@@ -29,6 +30,7 @@ pub use designcraft_geom as geom;
 pub use edit::{ItemLoc, ItemPath, SpreadRef, item_hit as edit_hit};
 pub use ids::*;
 pub use item::*;
+pub use notes::{FOOTNOTE_REF, FOOTNOTE_TABLE, Footnote, FootnoteOptions};
 pub use page::*;
 pub use selection::*;
 pub use story::*;
@@ -247,6 +249,9 @@ pub struct Document {
     /// Text variable definitions (instances in stories are `vars::var_char(index)`).
     #[serde(default = "vars::defaults")]
     pub text_variables: Vec<vars::TextVariable>,
+    /// Type › Document Footnote Options.
+    #[serde(default)]
+    pub footnote_options: FootnoteOptions,
     /// Creation / last save time (Unix seconds, UTC).
     #[serde(default)]
     pub created: i64,

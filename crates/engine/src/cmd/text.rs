@@ -160,6 +160,9 @@ fn hit_byte(s: &Session, frame: ItemId, pt: Point) -> Option<(StoryId, usize, Op
     if let Some((table, row, col, b)) = compose::hit_cell(&cs, fi, inner) {
         return Some((sid, b, Some(CellAddr { table, row, col })));
     }
+    if let Some((id, b)) = compose::hit_note(&cs, fi, inner) {
+        return Some((sid, b, Some(CellAddr::footnote(id))));
+    }
     let b = compose::hit(&cs, fi, inner).unwrap_or(0);
     Some((sid, b, None))
 }
@@ -354,6 +357,7 @@ fn move_caret(s: &mut Session, p: &Value) -> Result<Value> {
     let cs = s.cache.get(&st.doc, t.story, None);
     // In a cell, lines come from the cell's own composition.
     let cs = match t.cell {
+        Some(c) if c.footnote_id().is_some() => compose::find_note(&cs, c.row as u64).map(|(_, n)| n.text.clone()).unwrap_or(cs),
         Some(c) => compose::find_cell(&cs, c.table, c.row, c.col).map(|(_, _, pc)| pc.text.clone()).unwrap_or(cs),
         None => cs,
     };

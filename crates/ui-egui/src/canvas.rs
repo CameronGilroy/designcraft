@@ -783,13 +783,18 @@ fn draw_cell_selection(
     ts: designcraft_doc::TextSel,
     cell: designcraft_doc::CellAddr,
 ) {
-    let Some((fi, _, pc)) = compose::find_cell(cs, cell.table, cell.row, cell.col) else { return };
+    // Footnote text or a cell: its composed story and where it sits in the frame.
+    let found = match cell.footnote_id() {
+        Some(id) => compose::find_note(cs, id).map(|(fi, n)| (fi, n.origin, n.text.clone())),
+        None => compose::find_cell(cs, cell.table, cell.row, cell.col).map(|(fi, _, pc)| (fi, pc.origin, pc.text.clone())),
+    };
+    let Some((fi, origin, text)) = found else { return };
     let Some(ft) = cs.frames.get(fi) else { return };
     let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { return };
-    let m = a * it.xf * designcraft_geom::Affine::translate(pc.origin.to_vec2());
+    let m = a * it.xf * designcraft_geom::Affine::translate(origin.to_vec2());
     let range = ts.range();
     if !range.is_empty()
-        && let Some(cft) = pc.text.frames.first()
+        && let Some(cft) = text.frames.first()
     {
         for l in &cft.lines {
             let s = range.start.max(l.range.start);
@@ -809,7 +814,10 @@ fn draw_cell_selection(
         }
     }
     if ts.is_caret()
-        && let Some((_, x, bl, asc, desc)) = compose::cell_caret(cs, cell.table, cell.row, cell.col, ts.focus)
+        && let Some((_, x, bl, asc, desc)) = match cell.footnote_id() {
+            Some(id) => compose::note_caret(cs, id, ts.focus),
+            None => compose::cell_caret(cs, cell.table, cell.row, cell.col, ts.focus),
+        }
     {
         let m = a * it.xf;
         let blink = (painter.ctx().input(|i| i.time) * 1.6) as i64 % 2 == 0;

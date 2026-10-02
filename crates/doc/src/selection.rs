@@ -14,6 +14,17 @@ pub struct CellAddr {
     pub col: usize,
 }
 
+impl CellAddr {
+    /// The text of footnote `id` (see [`crate::notes::FOOTNOTE_TABLE`]).
+    pub fn footnote(id: u64) -> Self {
+        CellAddr { table: crate::notes::FOOTNOTE_TABLE, row: id as usize, col: 0 }
+    }
+    /// The footnote id when this addresses footnote text.
+    pub fn footnote_id(&self) -> Option<u64> {
+        (self.table == crate::notes::FOOTNOTE_TABLE).then_some(self.row as u64)
+    }
+}
+
 /// Selected table cells (Table > Select, dragging across cells).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

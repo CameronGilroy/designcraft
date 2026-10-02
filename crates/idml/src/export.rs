@@ -637,6 +637,7 @@ impl<'a> Ex<'a> {
                 ),
         );
         root.push(El::new("PasteboardPreference").attr("PasteboardMargins", pt(s.pasteboard.0, s.pasteboard.1)));
+        root.push(self.footnote_option_el());
         document(&root)
     }
 
@@ -1227,6 +1228,79 @@ impl<'a> Ex<'a> {
         el
     }
 
+    fn footnote_option_el(&self) -> El {
+        let o = &self.d.footnote_options;
+        let marker = if o.ref_char_style == st::NO_CHAR_STYLE {
+            NO_CHAR_ID.to_string()
+        } else {
+            names::style_self("CharacterStyle", CHAR_BUILTINS, &o.ref_char_style)
+        };
+        let enumv = |name: &str, v: &str| {
+            let mut e = El::new(name).attr("type", "enumeration");
+            e.children.push(Node::Text(v.into()));
+            e
+        };
+        let mut color = El::new("RuleColor").attr("type", "object");
+        color.children.push(Node::Text(self.sw(&o.rule.color)));
+        let mut el = El::new("FootnoteOption")
+            .attr("StartAt", o.start_at)
+            .attr("Prefix", &o.prefix)
+            .attr("Suffix", &o.suffix)
+            .attr("FootnoteTextStyle", names::style_self("ParagraphStyle", PARA_BUILTINS, &o.para_style))
+            .attr("FootnoteMarkerStyle", marker)
+            .attr("SeparatorText", &o.separator)
+            .attr("SpaceBetween", num(o.space_between))
+            .attr("Spacer", num(o.space_before))
+            .attr("FootnoteFirstBaselineOffset", names::first_baseline_out(o.first_baseline))
+            .attr("FootnoteMinimumFirstBaselineOffset", num(o.first_baseline_min))
+            .attr("EnableStraddling", bool_s(o.span_columns))
+            .attr("RuleOn", bool_s(o.rule.on))
+            .attr("RuleLineWeight", num(o.rule.weight))
+            .attr("RuleTint", num(o.rule.tint as f64 * 100.0))
+            .attr("RuleLeftIndent", num(o.rule.left_indent))
+            .attr("RuleWidth", num(o.rule.width))
+            .attr("RuleOffset", num(o.rule.offset));
+        let restart = names::NOTE_RESTART.iter().find(|r| r.0 == o.restart).map_or("DontRestart", |r| r.1);
+        let affix = names::NOTE_AFFIX.iter().find(|r| r.0 == o.affix_in).map_or("NoPrefixSuffix", |r| r.1);
+        let mut props = El::new("Properties");
+        props.push(enumv("FootnoteNumberingStyle", names::note_style_out(o.style)));
+        props.push(enumv("RestartNumbering", restart));
+        props.push(enumv("ShowPrefixSuffix", affix));
+        props.push(enumv("MarkerPositioning", names::note_marker_out(o.ref_position)));
+        props.push(color);
+        el.push(props);
+        el
+    }
+
+    /// `<Footnote>`: the footnote's paragraphs, the first starting with the footnote number marker
+    /// and the separator (as InDesign stores them).
+    fn footnote_el(&mut self, note: &Story) -> El {
+        let mut el = El::new("Footnote");
+        let mut paras = self.story_paras(note);
+        let lead = vec![Node::Pi("ACE".into(), "4".into()), Node::Text(self.d.footnote_options.separator.clone())];
+        if let Some(Node::El(csr)) =
+            paras.first_mut().and_then(|p| p.children.iter_mut().find(|n| matches!(n, Node::El(e) if e.name == "CharacterStyleRange")))
+        {
+            match csr.children.iter_mut().find_map(|n| match n {
+                Node::El(c) if c.name == "Content" => Some(c),
+                _ => None,
+            }) {
+                Some(c) => {
+                    c.children.splice(0..0, lead);
+                }
+                None => {
+                    let mut c = El::new("Content");
+                    c.children = lead;
+                    csr.children.insert(0, Node::El(c));
+                }
+            }
+        }
+        for p in paras {
+            el.push(p);
+        }
+        el
+    }
+
     // ---------- stories ----------
 
     fn story_el(&mut self, s: &Story) -> El {
@@ -1269,6 +1343,7 @@ impl<'a> Ex<'a> {
             }
             let nseg = segs.len();
             for (k, (rr, f)) in segs.into_iter().enumerate() {
+                let seg_start = rr.start;
                 let text = &s.text[rr];
                 // Split at break characters.
                 let mut cur = String::new();
@@ -1287,7 +1362,7 @@ impl<'a> Ex<'a> {
                     }
                 };
                 let mut out: Vec<Node> = Vec::new();
-                for ch in text.chars() {
+                for (ci, ch) in text.char_indices() {
                     let ace = match ch {
                         st::PAGE_NUMBER | st::NEXT_PAGE_NUMBER | st::PREV_PAGE_NUMBER => Some("18"),
                         st::SECTION_MARKER => Some("19"),
@@ -1309,6 +1384,24 @@ impl<'a> Ex<'a> {
                         flush_content(&mut pending, &mut out);
                         if let Some(t) = s.para_table(pi) {
                             out.push(Node::El(self.table_el(t)));
+                        }
+                    } else if ch == designcraft_doc::FOOTNOTE_REF {
+                        // The reference: its own range carrying the reference position.
+                        flush_text(&mut cur, &mut pending);
+                        flush_content(&mut pending, &mut out);
+                        if !out.is_empty() {
+                            let mut c = self.csr_el(&f);
+                            c.children.append(&mut out);
+                            csrs.push(c);
+                        }
+                        if let Some(n) = s.notes.get(s.notes_before(seg_start + ci)) {
+                            let mut c = self.csr_el(&f);
+                            let pos = self.d.footnote_options.ref_position;
+                            if pos != designcraft_doc::Position::Normal {
+                                c.set("Position", names::position_out(pos));
+                            }
+                            c.push(self.footnote_el(&n.text));
+                            csrs.push(c);
                         }
                     } else if let Some(bt) = brk {
                         flush_text(&mut cur, &mut pending);

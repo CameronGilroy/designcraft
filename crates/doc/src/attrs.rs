@@ -301,6 +301,8 @@ pub enum NumberStyle {
     LowerLetters,
     /// 01, 02, …
     ArabicLeadingZero,
+    /// *, †, ‡, §, ¶, ‖, then doubled (**, ††, …): footnotes.
+    Symbols,
 }
 
 impl NumberStyle {
@@ -312,6 +314,11 @@ impl NumberStyle {
             NumberStyle::LowerRoman => roman(n).to_lowercase(),
             NumberStyle::UpperLetters => letters(n),
             NumberStyle::LowerLetters => letters(n).to_lowercase(),
+            NumberStyle::Symbols => {
+                const SYM: [char; 6] = ['*', '†', '‡', '§', '¶', '‖'];
+                let n = n.max(1) as usize - 1;
+                std::iter::repeat_n(SYM[n % SYM.len()], n / SYM.len() + 1).collect()
+            }
         }
     }
 }

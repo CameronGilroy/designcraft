@@ -695,6 +695,7 @@ impl crate::Document {
     pub fn text_story(&self, story: StoryId, cell: Option<crate::CellAddr>) -> Option<&Story> {
         let st = self.story(story)?;
         match cell {
+            Some(c) if c.table == crate::FOOTNOTE_TABLE => st.note(c.row as u64).map(|n| &n.text),
             Some(c) => st.tables.get(&c.table)?.cell(c.row, c.col).map(|x| &x.text),
             None => Some(st),
         }
@@ -704,6 +705,7 @@ impl crate::Document {
     pub fn text_story_mut(&mut self, story: StoryId, cell: Option<crate::CellAddr>) -> Option<&mut Story> {
         let st = self.story_mut(story)?;
         match cell {
+            Some(c) if c.table == crate::FOOTNOTE_TABLE => st.note_mut(c.row as u64).map(|n| &mut n.text),
             Some(c) => st.table_mut(c.table)?.cell_mut(c.row, c.col).map(|x| &mut x.text),
             None => Some(st),
         }

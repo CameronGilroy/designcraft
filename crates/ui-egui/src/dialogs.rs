@@ -37,6 +37,17 @@ impl Dialog {
                 fields.entry(k).or_insert(v);
             }
         }
+        if id == "footnoteOptions" {
+            // Flatten the rule and show special characters as InDesign metacharacters.
+            if let Some(Value::Object(r)) = fields.remove("rule") {
+                for (k, v) in r {
+                    fields.insert(format!("rule.{k}"), v);
+                }
+            }
+            let sep = fields.get("separator").and_then(Value::as_str).unwrap_or("").to_string();
+            fields.insert("separator".into(), json!(sep.replace('\t', "^t").replace('\u{2003}', "^m").replace('\u{2002}', "^>")));
+            fields.entry("tab".to_string()).or_insert(json!("numbering"));
+        }
         if id == "paragraphStyleOptions" {
             fields.entry("section".to_string()).or_insert(json!("general"));
         }
@@ -60,6 +71,14 @@ impl Dialog {
         match self.fields.get(k) {
             Some(Value::Number(n)) => n.as_f64(),
             Some(Value::String(s)) => parse_measure(s, Unit::Picas).ok(),
+            _ => None,
+        }
+    }
+    /// A measure in points ("6", "6 pt", "0p6", "2 mm").
+    fn pt(&self, k: &str) -> Option<f64> {
+        match self.fields.get(k) {
+            Some(Value::Number(n)) => n.as_f64(),
+            Some(Value::String(s)) => parse_measure(s, Unit::Points).ok(),
             _ => None,
         }
     }
@@ -101,7 +120,11 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "documentSetup" => "Document Setup",
         "findChange" => "Find/Change",
         "paragraphStyleOptions" => "Paragraph Style Options",
-        _ => "Dialog",
+        "footnoteOptions" => "Footnote Options",
+        id => match id.strip_prefix("cmd:").and_then(designcraft_engine::find_command) {
+            Some(c) => c.label.trim_end_matches('…'),
+            None => "Dialog",
+        },
     };
     egui::Modal::new(egui::Id::new("dialog")).show(ctx, |ui| {
         ui.set_min_width(380.0);
@@ -228,6 +251,8 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                 }
             }
             "paragraphStyleOptions" => paragraph_style_options(app, ui, &mut d),
+            "footnoteOptions" => footnote_options(app, ui, &mut d),
+            id if id.starts_with("cmd:") => command_form(ui, &mut d),
             "goToPage" => {
                 ui.horizontal(|ui| {
                     ui.label("Page");
@@ -376,7 +401,55 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             }
             app.run("style.paragraph.edit", params)
         }
+        "footnoteOptions" => {
+            let pt = |k: &str| d.pt(k).map_or(Value::Null, |v| json!(v));
+            let mut p = json!({
+                "style": d.s("style"), "startAt": d.n("startAt").unwrap_or(1.0).max(0.0) as u32, "restart": d.s("restart"),
+                "prefix": d.s("prefix"), "suffix": d.s("suffix"), "affixIn": d.s("affixIn"), "refPosition": d.s("refPosition"),
+                "refCharStyle": d.s("refCharStyle"), "paraStyle": d.s("paraStyle"),
+                "separator": d.s("separator").replace("^t", "\t").replace("^m", "\u{2003}").replace("^>", "\u{2002}"),
+                "spaceBefore": pt("spaceBefore"), "spaceBetween": pt("spaceBetween"), "firstBaseline": d.s("firstBaseline"),
+                "firstBaselineMin": pt("firstBaselineMin"), "spanColumns": d.b("spanColumns"),
+                "rule": {"on": d.b("rule.on"), "weight": pt("rule.weight"), "color": d.s("rule.color"), "width": pt("rule.width"),
+                    "offset": pt("rule.offset"), "leftIndent": pt("rule.leftIndent")},
+            });
+            // Unparsable measures keep their current values.
+            if let Some(o) = p.as_object_mut() {
+                o.retain(|_, v| !v.is_null());
+            }
+            if let Some(r) = p.get_mut("rule").and_then(Value::as_object_mut) {
+                r.retain(|_, v| !v.is_null());
+            }
+            app.run("footnote.options", p)
+        }
         "findChange" => app.run("find.change", json!({"find": d.s("find"), "change": d.s("change"), "grep": d.b("grep"), "caseSensitive": d.b("caseSensitive"), "wholeWord": d.b("wholeWord"), "scope": d.s("scope")})),
+        id if id.starts_with("cmd:") => {
+            let cid = &id[4..];
+            let doc = designcraft_engine::find_command(cid).map_or("", |c| c.params);
+            let mut p = Map::new();
+            for f in command_fields(doc) {
+                match d.fields.get(&f.key) {
+                    Some(Value::String(v)) if !v.trim().is_empty() => {
+                        let v = v.trim();
+                        // Numbers, booleans, arrays and objects as JSON; anything else is a string.
+                        let parsed = serde_json::from_str::<Value>(v).ok().filter(|x| !x.is_string());
+                        p.insert(f.key, parsed.unwrap_or_else(|| json!(v)));
+                    }
+                    Some(Value::Bool(b)) => {
+                        p.insert(f.key, json!(b));
+                    }
+                    _ => {}
+                }
+            }
+            let r = app.run(cid, Value::Object(p));
+            if let Err(e) = &r {
+                // Keep the dialog open with the error.
+                let mut d = d.clone();
+                d.fields.insert("status".into(), json!(e));
+                app.ui.dialog = Some(d);
+            }
+            r
+        }
         other => Err(format!("unknown dialog {other}")),
     }
 }
@@ -586,4 +659,293 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
             }
         });
     });
+}
+
+fn combo(ui: &mut egui::Ui, d: &mut Dialog, key: &str, opts: &[(&str, &str)]) {
+    let cur = d.s(key);
+    let shown = opts.iter().find(|o| o.0 == cur).map_or(cur.as_str(), |o| o.1).to_string();
+    egui::ComboBox::from_id_salt(key).selected_text(shown).width(170.0).show_ui(ui, |ui| {
+        for (v, label) in opts {
+            if ui.selectable_label(cur == *v, *label).clicked() {
+                d.fields.insert(key.into(), json!(v));
+            }
+        }
+    });
+}
+
+/// Style name picker (paragraph or character styles of the active document).
+fn style_combo(app: &DesignApp, ui: &mut egui::Ui, d: &mut Dialog, key: &str, character: bool) {
+    let names: Vec<String> = app
+        .session
+        .active()
+        .map(|st| {
+            if character {
+                st.doc.styles.character.iter().map(|s| s.name.clone()).collect()
+            } else {
+                st.doc.styles.paragraph.iter().map(|s| s.name.clone()).collect()
+            }
+        })
+        .unwrap_or_default();
+    let mut opts: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), n.as_str())).collect();
+    if character && !names.iter().any(|n| n == designcraft_doc::NO_CHAR_STYLE) {
+        opts.insert(0, (designcraft_doc::NO_CHAR_STYLE, designcraft_doc::NO_CHAR_STYLE));
+    }
+    combo(ui, d, key, &opts);
+}
+
+/// Document Footnote Options: Numbering and Formatting / Layout tabs.
+fn footnote_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    ui.horizontal(|ui| {
+        for (tab, label) in [("numbering", "Numbering and Formatting"), ("layout", "Layout")] {
+            if ui.selectable_label(d.s("tab") == tab, label).clicked() {
+                d.fields.insert("tab".into(), json!(tab));
+            }
+        }
+    });
+    ui.separator();
+    let head = |ui: &mut egui::Ui, t: &str| {
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new(t).font(semibold(12.0)));
+    };
+    if d.s("tab") == "layout" {
+        head(ui, "Spacing Options");
+        egui::Grid::new("fn_sp").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+            ui.label("Minimum Space Before First Footnote:");
+            text_field(ui, d, "spaceBefore", 70.0);
+            ui.end_row();
+            ui.label("Space Between Footnotes:");
+            text_field(ui, d, "spaceBetween", 70.0);
+            ui.end_row();
+        });
+        head(ui, "First Baseline");
+        egui::Grid::new("fn_fb").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+            ui.label("Offset:");
+            combo(
+                ui,
+                d,
+                "firstBaseline",
+                &[("ascent", "Ascent"), ("capHeight", "Cap Height"), ("leading", "Leading"), ("xHeight", "x Height"), ("fixed", "Fixed")],
+            );
+            ui.end_row();
+            ui.label("Min:");
+            text_field(ui, d, "firstBaselineMin", 70.0);
+            ui.end_row();
+        });
+        check(ui, d, "spanColumns", "Span Footnotes Across Columns");
+        head(ui, "Rule Above");
+        check(ui, d, "rule.on", "Rule On");
+        egui::Grid::new("fn_rule").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
+            ui.label("Weight:");
+            text_field(ui, d, "rule.weight", 60.0);
+            ui.label("Color:");
+            let swatches: Vec<String> = app.session.active().map(|st| st.doc.swatches.iter().map(|s| s.name.clone()).collect()).unwrap_or_default();
+            let opts: Vec<(&str, &str)> = swatches.iter().map(|n| (n.as_str(), n.as_str())).collect();
+            combo(ui, d, "rule.color", &opts);
+            ui.end_row();
+            ui.label("Width:");
+            text_field(ui, d, "rule.width", 60.0);
+            ui.label("Offset:");
+            text_field(ui, d, "rule.offset", 60.0);
+            ui.end_row();
+            ui.label("Left Indent:");
+            text_field(ui, d, "rule.leftIndent", 60.0);
+            ui.end_row();
+        });
+        return;
+    }
+    head(ui, "Numbering");
+    egui::Grid::new("fn_num").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+        ui.label("Style:");
+        combo(
+            ui,
+            d,
+            "style",
+            &[
+                ("arabic", "1, 2, 3, 4..."),
+                ("upperRoman", "I, II, III, IV..."),
+                ("lowerRoman", "i, ii, iii, iv..."),
+                ("upperLetters", "A, B, C, D..."),
+                ("lowerLetters", "a, b, c, d..."),
+                ("arabicLeadingZero", "01, 02, 03..."),
+                ("symbols", "*, †, ‡, §..."),
+            ],
+        );
+        ui.end_row();
+        ui.label("Start at:");
+        text_field(ui, d, "startAt", 60.0);
+        ui.end_row();
+        ui.label("Restart Numbering Every:");
+        combo(ui, d, "restart", &[("never", "Never (continuous)"), ("page", "Page"), ("spread", "Spread"), ("section", "Section")]);
+        ui.end_row();
+        ui.label("Show Prefix/Suffix in:");
+        combo(ui, d, "affixIn", &[("none", "None"), ("reference", "Footnote Reference"), ("text", "Footnote Text"), ("both", "Both")]);
+        ui.end_row();
+        ui.label("Prefix:");
+        text_field(ui, d, "prefix", 60.0);
+        ui.end_row();
+        ui.label("Suffix:");
+        text_field(ui, d, "suffix", 60.0);
+        ui.end_row();
+    });
+    head(ui, "Footnote Reference Number in Text");
+    egui::Grid::new("fn_ref").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+        ui.label("Position:");
+        combo(
+            ui,
+            d,
+            "refPosition",
+            &[
+                ("superscript", "Apply Superscript"),
+                ("subscript", "Apply Subscript"),
+                ("normal", "Apply Normal"),
+                ("otSuperscript", "OpenType Superscript"),
+            ],
+        );
+        ui.end_row();
+        ui.label("Character Style:");
+        style_combo(app, ui, d, "refCharStyle", true);
+        ui.end_row();
+    });
+    head(ui, "Footnote Formatting");
+    egui::Grid::new("fn_fmt").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+        ui.label("Paragraph Style:");
+        style_combo(app, ui, d, "paraStyle", false);
+        ui.end_row();
+        ui.label("Separator:");
+        text_field(ui, d, "separator", 60.0);
+        ui.end_row();
+    });
+}
+
+/// One parameter of a command, parsed from its params documentation
+/// (`{name, type?: a|b|c, count?, flag?: bool, …}`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CommandField {
+    pub key: String,
+    pub optional: bool,
+    /// Enumerated values (`a|b|c`).
+    pub choices: Vec<String>,
+    pub boolean: bool,
+    /// The documented value spec (shown as a hint).
+    pub hint: String,
+}
+
+/// Parameters of a command from its documentation string: the top-level keys of the first `{…}`.
+pub fn command_fields(doc: &str) -> Vec<CommandField> {
+    let Some(start) = doc.find('{') else { return vec![] };
+    let mut depth = 0i32;
+    let mut end = doc.len();
+    for (i, c) in doc[start..].char_indices() {
+        match c {
+            '{' | '[' | '(' => depth += 1,
+            '}' | ']' | ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = start + i;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let body = &doc[start + 1..end];
+    let mut parts = Vec::new();
+    let (mut depth, mut from) = (0i32, 0usize);
+    for (i, c) in body.char_indices() {
+        match c {
+            '{' | '[' | '(' => depth += 1,
+            '}' | ']' | ')' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&body[from..i]);
+                from = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&body[from..]);
+    let ident = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !s.starts_with(|c: char| c.is_ascii_digit());
+    let mut out = Vec::new();
+    for part in parts {
+        let part = part.trim();
+        let (k, spec) = match part.split_once(':') {
+            Some((k, v)) => (k.trim(), v.trim()),
+            None => (part, ""),
+        };
+        let optional = k.ends_with('?');
+        let key = k.trim_end_matches('?');
+        if !ident(key) || out.iter().any(|f: &CommandField| f.key == key) {
+            continue;
+        }
+        let word = spec.split_whitespace().next().unwrap_or("");
+        let choices: Vec<String> =
+            if word.contains('|') && word.split('|').all(ident) { word.split('|').map(str::to_string).collect() } else { vec![] };
+        let boolean = spec.starts_with("bool") || spec.starts_with("true|false") || spec.starts_with("true") && spec.len() <= 5;
+        out.push(CommandField { key: key.into(), optional, choices: if boolean { vec![] } else { choices }, boolean, hint: spec.into() });
+    }
+    out
+}
+
+fn humanize(key: &str) -> String {
+    let mut s = String::new();
+    for (i, c) in key.chars().enumerate() {
+        if i == 0 {
+            s.extend(c.to_uppercase());
+        } else if c.is_uppercase() {
+            s.push(' ');
+            s.extend(c.to_lowercase());
+        } else {
+            s.push(c);
+        }
+    }
+    s
+}
+
+/// A form for any command, from its parameter documentation.
+fn command_form(ui: &mut egui::Ui, d: &mut Dialog) {
+    let doc = designcraft_engine::find_command(&d.id[4..]).map_or("", |c| c.params);
+    let fields = command_fields(doc);
+    let dim = crate::theme::Tokens::get(ui.ctx()).text_dim;
+    egui::Grid::new("cmdform").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+        for f in &fields {
+            ui.label(format!("{}{}", humanize(&f.key), if f.optional { "" } else { " *" }));
+            if f.boolean {
+                check(ui, d, &f.key, "");
+            } else if !f.choices.is_empty() {
+                let mut opts: Vec<(&str, &str)> = vec![("", "—")];
+                opts.extend(f.choices.iter().map(|c| (c.as_str(), c.as_str())));
+                combo(ui, d, &f.key, &opts);
+            } else {
+                let mut s = d.s(&f.key);
+                let hint = if f.hint.is_empty() { String::new() } else { f.hint.clone() };
+                if ui.add(egui::TextEdit::singleline(&mut s).hint_text(egui::RichText::new(hint).color(dim)).desired_width(240.0)).changed() {
+                    d.fields.insert(f.key.clone(), Value::String(s));
+                }
+            }
+            ui.end_row();
+        }
+    });
+    if let Some(st) = d.fields.get("status").and_then(Value::as_str) {
+        ui.label(egui::RichText::new(st).color(crate::theme::Tokens::get(ui.ctx()).text_dim));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_command_params() {
+        let f = command_fields("{name, type: custom|lastPageNumber|chapterNumber, text?, rule?: {on, weight}, flag?: bool} — creates");
+        let keys: Vec<&str> = f.iter().map(|f| f.key.as_str()).collect();
+        assert_eq!(keys, ["name", "type", "text", "rule", "flag"]);
+        assert_eq!(f[1].choices, ["custom", "lastPageNumber", "chapterNumber"]);
+        assert!(!f[0].optional && f[2].optional);
+        assert!(f[4].boolean);
+        assert!(command_fields("{}").is_empty());
+        assert!(command_fields("no params").is_empty());
+        // Every command with a "…" label parses without panicking.
+        for c in designcraft_engine::command_specs() {
+            let _ = command_fields(c.params);
+        }
+    }
 }

@@ -102,6 +102,7 @@ pub fn magazine() -> Document {
         ..Default::default()
     });
     d.title = "Quarterly — Spring Issue".into();
+    d.footnote_options.para_style = "Footnote".into();
     // Swatches.
     d.swatches.push(Swatch::color("Ink Plum", Color::cmyk(0.62, 0.95, 0.30, 0.25)));
     d.swatches.push(Swatch::color("Sunset", Color::cmyk(0.0, 0.62, 0.78, 0.0)));
@@ -140,6 +141,22 @@ pub fn magazine() -> Document {
             Some(story::BASIC_PARAGRAPH),
             ParaAttrs { align: Some(Align::LeftJustified), first_line_indent: Some(12.0), hyph_min_word: Some(6), ..Default::default() },
             CharAttrs { leading: Some(Leading::Points(13.5)), ..serif("Regular", 9.75) },
+        ));
+        st.paragraph.push(para_style(
+            "Footnote",
+            Some(story::BASIC_PARAGRAPH),
+            ParaAttrs {
+                left_indent: Some(10.0),
+                first_line_indent: Some(-10.0),
+                tabs: Some(vec![designcraft_doc::TabStop {
+                    position: 10.0,
+                    align: Default::default(),
+                    leader: String::new(),
+                    align_on: String::new(),
+                }]),
+                ..Default::default()
+            },
+            CharAttrs { leading: Some(Leading::Points(9.0)), ..serif("Regular", 7.0) },
         ));
         st.paragraph.push(para_style(
             "Body First",
@@ -305,6 +322,14 @@ pub fn magazine() -> Document {
         let more = format!("\n{BODY}\n{BODY}");
         let end = st.len();
         st.insert(end, &more);
+        // A footnote on the last sentence of the article.
+        if let Some(at) = st.text.trim_end().rfind('.') {
+            st.insert_note(
+                at + 1,
+                "Every image, swatch and paragraph in this sample is generated in code — no stock assets.",
+                ParaFormat { style: "Footnote".into(), ..Default::default() },
+            );
+        }
     }
     // Pull quote with shading, wrapped.
     let (pq, pqs) = text(

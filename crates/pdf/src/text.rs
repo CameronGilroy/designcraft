@@ -106,6 +106,13 @@ impl Exporter<'_> {
                 self.fill_rect(s, r, c);
             }
         }
+        for n in &ft.notes {
+            if let Some(nft) = n.text.frames.first() {
+                s.push_transform(&tf(Affine::translate(n.origin.to_vec2())));
+                self.frame_text(s, &n.text, nft, &n.source);
+                s.pop();
+            }
+        }
     }
 
     /// Table fragments: cell fills, cell text (real text), edges and the border.

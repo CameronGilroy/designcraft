@@ -227,6 +227,10 @@ impl Document {
                     }
                     st.chars.extend(other.chars.iter().filter(|r| r.len > 0).cloned());
                     st.tables.extend(other.tables.iter().map(|(k, v)| (*k, v.clone())));
+                    for n in &other.notes {
+                        let id = st.next_note_id();
+                        st.notes.push(Arc::new(crate::Footnote { id, text: n.text.clone() }));
+                    }
                     st.rev += 1;
                 }
                 let at = st.frames.iter().position(|f| *f == from).map_or(st.frames.len(), |p| p + 1);
@@ -352,6 +356,8 @@ impl Document {
         st.paras = vec![para; n];
         st.chars = vec![CharRun { len: text.len(), format: fmt }];
         st.tables.clear();
+        st.notes.clear();
+        st.fix_notes();
         st.rev += 1;
         Ok(())
     }

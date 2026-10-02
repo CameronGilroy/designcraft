@@ -733,3 +733,57 @@ fn tab_leaders_fill_the_gap() {
     let num_x = line.glyphs.iter().find(|g| g.byte == 6).unwrap().x;
     assert!(last_dot < num_x, "leaders stop before the page number");
 }
+
+#[test]
+fn footnotes_sit_at_the_column_bottom_and_push_text() {
+    // A short frame: without footnotes the text fills it; with two footnotes the body text
+    // makes room and the footnotes stack against the bottom with a rule above.
+    let text = format!("{LOREM} {LOREM} {LOREM}");
+    let (mut d, sid, fid) = doc_with(&text, Rect::new(36.0, 36.0, 300.0, 236.0), ParaAttrs::default());
+    let plain = compose_story(&d, sid, &ComposeOptions::default());
+    let plain_lines = plain.frames[0].lines.len();
+    {
+        let st = d.story_mut(sid).unwrap();
+        st.insert_note(10, "First note, long enough to take two lines in this narrow frame for sure.", ParaFormat::default());
+        st.insert_note(40, "Second note.", ParaFormat::default());
+        st.check().unwrap();
+    }
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let ft = cs.frame(fid).unwrap();
+    assert_eq!(ft.notes.len(), 2);
+    assert!(ft.lines.len() < plain_lines, "body text makes room: {} vs {plain_lines}", ft.lines.len());
+    let (a, b) = (&ft.notes[0], &ft.notes[1]);
+    assert_eq!(a.label, "1");
+    assert_eq!(b.label, "2");
+    assert!(a.rect.y1 <= b.rect.y0 + 1e-6, "stacked in order");
+    let area = ft.columns[0];
+    assert!((b.rect.y1 - area.y1).abs() < 1e-6, "last footnote ends at the column bottom");
+    let last = ft.lines.last().unwrap();
+    assert!(last.baseline + last.descent <= a.rect.y0 - d.footnote_options.space_before + 0.01, "text clears the footnotes");
+    assert!(a.text.frames[0].lines.len() >= 2);
+    // The rule sits above the first footnote.
+    assert!(ft.decos.iter().any(|dc| (dc.rect.width() - 72.0).abs() < 1e-6 && dc.rect.y1 <= a.rect.y0 + 1e-6));
+    // The reference shows its number as superscript glyphs in the text.
+    let refs: Vec<&PlacedGlyph> = ft.lines.iter().flat_map(|l| l.glyphs.iter()).filter(|g| g.byte == 10 && g.len > 0).collect();
+    assert_eq!(refs.len(), 1);
+    // Numbering continues from options and restarts per page when asked.
+    d.footnote_options.start_at = 5;
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    assert_eq!(cs.frames[0].notes[1].label, "6");
+    // Hit testing and carets reach footnote text.
+    let n = &cs.frames[0].notes[1];
+    let (id, _) = hit_note(&cs, 0, Point::new(n.rect.x0 + 40.0, n.rect.y0 + 5.0)).unwrap();
+    assert_eq!(id, n.id);
+    assert!(note_caret(&cs, n.id, 0).is_some());
+}
+
+#[test]
+fn footnote_line_at_column_top_still_sets() {
+    // A note taller than the frame can't push its reference line forever.
+    let (mut d, sid, _) = doc_with("Short text.", Rect::new(0.0, 0.0, 200.0, 40.0), ParaAttrs::default());
+    let long = LOREM.repeat(3);
+    d.story_mut(sid).unwrap().insert_note(5, &long, ParaFormat::default());
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    assert!(!cs.frames[0].lines.is_empty());
+    assert_eq!(cs.frames[0].notes.len(), 1);
+}

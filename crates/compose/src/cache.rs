@@ -68,6 +68,13 @@ impl Cache {
                 sig.push(doc_signature(doc) as usize);
             }
         }
+        if !story.notes.is_empty() {
+            // Footnote numbers continue from earlier stories; layout follows the options.
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            format!("{:?}", doc.footnote_options).hash(&mut h);
+            sig.extend([doc.footnote_start(sid) as usize, h.finish() as usize]);
+        }
         {
             let mut g = self.map.lock().unwrap_or_else(|e| e.into_inner());
             g.1 += 1;
@@ -85,7 +92,7 @@ impl Cache {
             _ => None,
         };
         let running = running.then(|| self.running_index(doc));
-        let out = Arc::new(crate::compose_story(doc, sid, &ComposeOptions { page_name: page_name.map(str::to_string), page, running }));
+        let out = Arc::new(crate::compose_story(doc, sid, &ComposeOptions { page_name: page_name.map(str::to_string), page, running, label: None }));
         let mut g = self.map.lock().unwrap_or_else(|e| e.into_inner());
         let stamp = g.1;
         if g.0.len() > 4096 {

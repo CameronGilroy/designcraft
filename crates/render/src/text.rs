@@ -263,6 +263,11 @@ impl Renderer {
             ctx.set_paint(color_of(&designcraft_color::Color::gray(0.35), 0.5));
             ctx.fill_path(&greek);
         }
+        for n in &ft.notes {
+            if let Some(nft) = n.text.frames.first() {
+                self.draw_text(ctx, f, &n.text, nft, xf * Affine::translate(n.origin.to_vec2()));
+            }
+        }
     }
 }
 

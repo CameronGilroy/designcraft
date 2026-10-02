@@ -115,6 +115,7 @@ struct Importer<'r> {
     assets: BTreeMap<AssetId, Arc<Asset>>,
     ctx: ItemCtx,
     sections: Vec<Section>,
+    footnote_options: designcraft_doc::FootnoteOptions,
 }
 
 fn lab_to_color(l: f32, a: f32, b: f32) -> Color {
@@ -180,6 +181,7 @@ impl<'r> Importer<'r> {
             assets: BTreeMap::new(),
             ctx: ItemCtx { threads: Vec::new() },
             sections: Vec::new(),
+            footnote_options: Default::default(),
         }
     }
 
@@ -223,6 +225,9 @@ impl<'r> Importer<'r> {
         }
         self.graphics(top);
         self.styles(top);
+        if let Some(e) = top.iter().find(|e| e.local() == "FootnoteOption") {
+            self.footnote_option(e);
+        }
         for e in top.iter().filter(|e| e.local() == "Layer") {
             let id = LayerId(self.alloc());
             let color = match e.prop_el("LayerColor") {
@@ -650,6 +655,54 @@ impl<'r> Importer<'r> {
         }
     }
 
+    /// Preferences › `FootnoteOption` (after styles: it names the footnote text and marker styles).
+    fn footnote_option(&mut self, e: &El) {
+        let mut o = designcraft_doc::FootnoteOptions::default();
+        if let Some(v) = e.num("StartAt") {
+            o.start_at = v.max(0.0) as u32;
+        }
+        o.prefix = e.get("Prefix").unwrap_or("").into();
+        o.suffix = e.get("Suffix").unwrap_or("").into();
+        if let Some(r) = e.get("FootnoteTextStyle") {
+            o.para_style = self.para_style_ref(r);
+        }
+        if let Some(r) = e.get("FootnoteMarkerStyle") {
+            o.ref_char_style = self.char_style_ref(r);
+        }
+        if let Some(v) = e.get("SeparatorText") {
+            o.separator = v.into();
+        }
+        o.space_between = e.num("SpaceBetween").unwrap_or(0.0);
+        o.space_before = e.num("Spacer").unwrap_or(0.0);
+        if let Some(v) = e.prop("FootnoteFirstBaselineOffset") {
+            o.first_baseline = names::first_baseline_in(v.trim());
+        }
+        o.first_baseline_min = e.num("FootnoteMinimumFirstBaselineOffset").unwrap_or(0.0);
+        o.span_columns = e.boolean("EnableStraddling").unwrap_or(false);
+        o.rule.on = e.boolean("RuleOn").unwrap_or(true);
+        o.rule.weight = e.num("RuleLineWeight").unwrap_or(1.0);
+        o.rule.tint = (e.num("RuleTint").unwrap_or(100.0) / 100.0).clamp(0.0, 1.0) as f32;
+        o.rule.left_indent = e.num("RuleLeftIndent").unwrap_or(0.0);
+        o.rule.width = e.num("RuleWidth").unwrap_or(72.0);
+        o.rule.offset = e.num("RuleOffset").unwrap_or(0.0);
+        if let Some(c) = e.prop("RuleColor") {
+            o.rule.color = self.swatch_ref(c.trim());
+        }
+        if let Some(v) = e.prop("FootnoteNumberingStyle") {
+            o.style = names::note_style_in(v.trim());
+        }
+        if let Some(v) = e.prop("RestartNumbering") {
+            o.restart = names::NOTE_RESTART.iter().find(|r| r.1 == v.trim()).map_or(Default::default(), |r| r.0);
+        }
+        if let Some(v) = e.prop("ShowPrefixSuffix") {
+            o.affix_in = names::NOTE_AFFIX.iter().find(|r| r.1 == v.trim()).map_or(Default::default(), |r| r.0);
+        }
+        if let Some(v) = e.prop("MarkerPositioning") {
+            o.ref_position = names::note_marker_in(v.trim());
+        }
+        self.footnote_options = o;
+    }
+
     fn para_style_ref(&self, r: &str) -> String {
         self.para_names.get(r).cloned().unwrap_or_else(|| names::style_name_in(PARA_BUILTINS, &unescape_id(r.trim_start_matches("ParagraphStyle/"))))
     }
@@ -827,9 +880,10 @@ impl<'r> Importer<'r> {
             last: CharFormat::default(),
             tables: Vec::new(),
             after_table: None,
+            notes: Vec::new(),
         };
         self.walk_story(e, &mut b, &ParaFormat::default(), &CharAttrs::default(), &CharFormat::default(), None);
-        let StoryBuilder { text, mut paras, runs, last, tables: tbls, .. } = b;
+        let StoryBuilder { text, mut paras, runs, last, tables: tbls, notes, .. } = b;
         let mut chars: Vec<CharRun> = runs.into_iter().filter(|r| r.len > 0).collect();
         if chars.is_empty() {
             chars.push(CharRun { len: 0, format: last });
@@ -841,7 +895,9 @@ impl<'r> Importer<'r> {
                 tables.insert(t.id, Arc::new(t));
             }
         }
-        let mut st = Story { id, text, paras, chars, frames: vec![], rev: 0, tables };
+        let notes = notes.into_iter().enumerate().map(|(i, text)| Arc::new(designcraft_doc::Footnote { id: i as u64 + 1, text })).collect();
+        let mut st = Story { id, text, paras, chars, frames: vec![], rev: 0, tables, notes };
+        st.fix_notes();
         // Drop anything inconsistent (e.g. a table sharing a paragraph with another).
         if st.check().is_err() {
             st.tables.retain(|_, _| false);
@@ -1022,9 +1078,21 @@ impl<'r> Importer<'r> {
                         let t = self.table(c);
                         b.push_table(t, pf, cf);
                     }
+                    "Footnote" => {
+                        // The text starts with the number marker (ACE 4, dropped) and the separator.
+                        let mut note = self.story(StoryId(0), c);
+                        let sep = self.footnote_options.separator.clone();
+                        if !sep.is_empty() && note.text.starts_with(&sep) {
+                            note.delete(0..sep.len());
+                        }
+                        b.notes.push(note);
+                        // The reference's position comes from the footnote options.
+                        let mut rcf = cf.clone();
+                        rcf.over.position = None;
+                        b.push(&designcraft_doc::FOOTNOTE_REF.to_string(), &rcf);
+                    }
                     // Not supported yet: skip their content entirely.
                     "Properties"
-                    | "Footnote"
                     | "Note"
                     | "Rectangle"
                     | "Oval"
@@ -1488,6 +1556,7 @@ impl<'r> Importer<'r> {
             user_words: vec![],
             toc: None,
             text_variables: designcraft_doc::vars::defaults(),
+            footnote_options: std::mem::take(&mut self.footnote_options),
             created: designcraft_doc::vars::now(),
             modified: 0,
             next_id: self.next_id,
@@ -1516,6 +1585,8 @@ struct StoryBuilder {
     tables: Vec<(usize, Table)>,
     /// Content after a table anchor starts a new paragraph (with this format).
     after_table: Option<ParaFormat>,
+    /// Footnote texts in reference order.
+    notes: Vec<Story>,
 }
 
 impl StoryBuilder {

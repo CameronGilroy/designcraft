@@ -182,6 +182,18 @@ fn fixture() -> Vec<u8> {
     ])
 }
 
+fn fixture_with_story(story: &str) -> Vec<u8> {
+    zip_files(&[
+        ("designmap.xml", DESIGNMAP),
+        ("Resources/Graphic.xml", GRAPHIC),
+        ("Resources/Styles.xml", STYLES),
+        ("Resources/Preferences.xml", PREFS),
+        ("MasterSpreads/MasterSpread_m1.xml", MASTER),
+        ("Spreads/Spread_sp1.xml", SPREAD),
+        ("Stories/Story_s1.xml", story),
+    ])
+}
+
 #[test]
 fn imports_hand_written_fixture() {
     let d = import_idml_with(&fixture(), &|_| None).unwrap();
@@ -363,4 +375,54 @@ fn round_trips_tables() {
     assert!((bt.rows[2].height - 30.0).abs() < 1e-6);
     assert!((bt.columns[0].width - 50.0).abs() < 1e-6);
     assert_eq!(bt.options.alt_rows.as_ref().map(|a| a.first_color.as_str()), Some("Brand"));
+}
+
+#[test]
+fn round_trips_footnotes_and_options() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(40.0, 40.0, 400.0, 400.0), lid, "Body text here.", ParaFormat::default()).unwrap();
+    {
+        let s = d.story_mut(sid).unwrap();
+        s.insert_note(4, "First note.", ParaFormat::default());
+        s.insert_note(9, "Second\nnote.", ParaFormat::default());
+    }
+    d.footnote_options.style = designcraft_doc::NumberStyle::LowerRoman;
+    d.footnote_options.restart = designcraft_doc::notes::NoteRestart::Page;
+    d.footnote_options.affix_in = designcraft_doc::notes::AffixIn::Both;
+    d.footnote_options.prefix = "[".into();
+    d.footnote_options.rule.width = 100.0;
+    d.footnote_options.space_before = 4.0;
+    d.check().unwrap();
+    let bytes = export_idml(&d);
+    let back = import_idml(&bytes).unwrap();
+    back.check().unwrap();
+    let s = back.stories.values().next().unwrap();
+    assert_eq!(s.text, d.story(sid).unwrap().text);
+    assert_eq!(s.notes.len(), 2);
+    assert_eq!(s.notes[0].text.text, "First note.");
+    assert_eq!(s.notes[1].text.text, "Second\nnote.");
+    assert_eq!(back.footnote_options, d.footnote_options);
+}
+
+/// The structure InDesign writes: the footnote in its own superscript range, its text starting
+/// with the number marker and the separator.
+#[test]
+fn imports_indesign_style_footnote() {
+    let story = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<idPkg:Story xmlns:idPkg="http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging" DOMVersion="16.0">
+<Story Self="s1"><ParagraphStyleRange AppliedParagraphStyle="ParagraphStyle/$ID/NormalParagraphStyle">
+<CharacterStyleRange AppliedCharacterStyle="CharacterStyle/$ID/[No character style]"><Content>Body text with a</Content></CharacterStyleRange>
+<CharacterStyleRange AppliedCharacterStyle="CharacterStyle/$ID/[No character style]" Position="Superscript"><Footnote>
+<ParagraphStyleRange AppliedParagraphStyle="ParagraphStyle/$ID/NormalParagraphStyle"><CharacterStyleRange AppliedCharacterStyle="CharacterStyle/$ID/[No character style]"><Content><?ACE 4?>&#x9;A source note.</Content></CharacterStyleRange></ParagraphStyleRange>
+</Footnote></CharacterStyleRange>
+<CharacterStyleRange AppliedCharacterStyle="CharacterStyle/$ID/[No character style]"><Content> note here.</Content></CharacterStyleRange>
+</ParagraphStyleRange></Story></idPkg:Story>"#;
+    let d = import_idml(&fixture_with_story(story)).unwrap();
+    d.check().unwrap();
+    let s = d.stories.values().find(|s| !s.notes.is_empty()).expect("story with a footnote");
+    assert_eq!(s.text, format!("Body text with a{} note here.", designcraft_doc::FOOTNOTE_REF));
+    assert_eq!(s.notes[0].text.text, "A source note.");
+    // One run: the reference takes its position from the options, not an override.
+    assert_eq!(s.chars.len(), 1);
 }

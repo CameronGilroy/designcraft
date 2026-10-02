@@ -17,6 +17,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.palette", "Command Palette…", Some("Cmd+K"), "{}"),
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
     ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
+    ("app.footnoteOptionsDialog", "Document Footnote Options…", None, "{} — numbering, formatting and layout of footnotes"),
     ("app.tablePanel", "Table Panel", Some("Shift+F9"), "{}"),
     ("app.storyEditor", "Edit in Story Editor", Some("Cmd+Y"), "{story?}"),
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "{}"),
@@ -125,6 +126,10 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:type.sizeDown",
             "-",
             "ui:view.hiddenCharacters",
+            "-",
+            "cmd:footnote.insert",
+            "ui:app.footnoteOptionsDialog",
+            "cmd:footnote.goToReference",
         ],
     ),
     (
@@ -281,6 +286,12 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 return Some(Err("place the insertion point in a text frame to create a table".into()));
             }
             app.ui.dialog = Some(crate::dialogs::Dialog::new("insertTable", p.clone()));
+            Ok(Value::Null)
+        }
+        "app.footnoteOptionsDialog" => {
+            let Some(st) = app.session.active() else { return Some(Err("no document open".into())) };
+            let o = serde_json::to_value(&st.doc.footnote_options).unwrap_or_default();
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("footnoteOptions", o));
             Ok(Value::Null)
         }
         "app.tablePanel" => {
@@ -602,6 +613,22 @@ pub fn menu_enabled(app: &DesignApp, id: &str) -> bool {
     enabled(app, id)
 }
 
+/// A menu item was chosen. An engine command whose label ends in "…" and that takes parameters
+/// opens a dialog built from its parameter documentation (see [`crate::dialogs::command_fields`]).
+pub fn activate(app: &mut DesignApp, id: &str, params: &Value) {
+    if params.is_null()
+        && ui_label(id).is_none()
+        && let Some(c) = designcraft_engine::find_command(id)
+        && c.label.ends_with('…')
+        && !crate::dialogs::command_fields(c.params).is_empty()
+    {
+        app.ui.dialog = Some(crate::dialogs::Dialog::new(&format!("cmd:{id}"), json!({})));
+        return;
+    }
+    let p = if params.is_null() { json!({}) } else { params.clone() };
+    let _ = app.run(id, p);
+}
+
 /// The menu bar contents (inside the app bar; macOS uses the native menu instead).
 pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
     for (menu, entries) in menu_tree() {
@@ -632,8 +659,7 @@ fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item]) {
                     b = b.shortcut_text(shortcut_text(sc));
                 }
                 if ui.add_enabled(menu_enabled(app, id), b).clicked() {
-                    let p = if params.is_null() { json!({}) } else { params.clone() };
-                    let _ = app.run(id, p);
+                    activate(app, id, params);
                     ui.close();
                 }
             }

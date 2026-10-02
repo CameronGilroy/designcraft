@@ -9,6 +9,7 @@ mod inspect;
 mod interactive;
 pub mod interchange;
 mod layout;
+mod notes;
 mod object;
 pub mod preflight;
 pub mod spelling;
@@ -122,6 +123,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(find::specs());
         v.extend(variables::specs());
         v.extend(toc::specs());
+        v.extend(notes::specs());
         v.extend(spelling::specs());
         v.extend(datamerge::specs());
         v.extend(interactive::specs());

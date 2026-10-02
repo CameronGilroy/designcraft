@@ -103,6 +103,12 @@ pub fn handle(app: &mut DesignApp, ctx: &egui::Context, req: &ControlRequest) ->
     let p = &req.params;
     let s = |k: &str| p.get(k).and_then(Value::as_str);
     match req.method.as_str() {
+        "ui.menu.invoke" if p.get("params").is_none_or(Value::is_null) => {
+            // Exactly like choosing the menu item (commands ending in "…" open their dialog).
+            let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
+            menus::activate(app, id, &Value::Null);
+            ok(json!({"dialog": app.ui.dialog.as_ref().map(|d| d.id.clone())}))
+        }
         "engine.execute" | "ui.menu.invoke" | "command" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().unwrap_or(json!({}));

@@ -12,13 +12,14 @@
 pub mod breaker;
 mod cache;
 pub mod hyphen;
+mod notes;
 pub mod shape;
 pub mod table;
 pub mod vars;
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use designcraft_doc::{
     Align, Composer, Document, FirstBaseline, GridAlign, ItemId, ParaProps, SpanColumns, StartParagraph, Story, StoryId, TabAlign, TextFrameOptions,
@@ -29,6 +30,8 @@ use designcraft_geom::{Point, Rect};
 
 use crate::breaker::{Break, Spacing};
 pub use crate::cache::Cache;
+use crate::notes::Notes;
+pub use crate::notes::{find_note, hit_note, note_caret};
 use crate::shape::{Glyph, StyleTable, SubstCtx};
 pub use crate::table::{PlacedCell, StrokeSeg, TableFrag, cell_caret, find_cell, hit_cell};
 
@@ -108,6 +111,26 @@ pub struct FrameText {
     pub content_height: f64,
     /// Table fragments placed in this frame (each also has a glyph-less line in `lines`).
     pub tables: Vec<TableFrag>,
+    /// Footnotes placed at the bottom of this frame's columns.
+    pub notes: Vec<PlacedNote>,
+}
+
+/// A footnote composed at the bottom of a column.
+#[derive(Clone, Debug)]
+pub struct PlacedNote {
+    /// Footnote id (in the story's [`Story::notes`]) and its index there.
+    pub id: u64,
+    pub index: usize,
+    pub column: u32,
+    /// The number shown.
+    pub label: String,
+    /// Where the footnote's composed text (its frame 0) sits in the frame.
+    pub origin: Point,
+    /// Area of the footnote in frame inner space.
+    pub rect: Rect,
+    pub text: Arc<ComposedStory>,
+    /// The footnote's story text (exporters map glyphs back to text).
+    pub source: Arc<str>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -183,6 +206,8 @@ pub struct ComposeOptions {
     pub page: Option<usize>,
     /// Running-header index (needed when the story contains running-header variables).
     pub running: Option<std::sync::Arc<vars::RunningIndex>>,
+    /// Generated text before the first paragraph (a footnote's number and separator).
+    pub label: Option<String>,
 }
 
 /// Build the frame specs of a story from the document (geometry, wrap, page names, grid).
@@ -269,12 +294,16 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
     let mut restores = 0usize;
     let mut pi = 0;
     let var_story = vars::has_vars(story);
+    let mut notes = Notes::new(doc, story);
+    let mut note_snaps: Vec<(u32, Option<usize>, usize)> = Vec::with_capacity(np);
     let mut var_cache: std::collections::HashMap<Option<usize>, std::sync::Arc<Vec<String>>> = Default::default();
     'paras: while pi < np {
         let prange = para_ranges[pi].clone();
         let snap = Snapshot::take(&out, &cur, list_counter);
         snaps.truncate(pi);
         snaps.push(snap);
+        note_snaps.truncate(pi);
+        note_snaps.push((notes.num, notes.key, notes.placed.len()));
         info.truncate(pi);
         let pf = &story.paras[pi];
         let (pp, base_chars) = doc.styles.resolve_para(pf);
@@ -320,11 +349,15 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         } else {
             Default::default()
         };
-        let sub = SubstCtx {
+        let mut sub = SubstCtx {
             page_name: opts.page_name.clone().or_else(|| cur_frame.and_then(|f| f.page_name.clone())),
             section_marker: None,
             vars: var_values,
+            ..Default::default()
         };
+        if notes.active() {
+            notes.number_refs(doc, prange.clone(), cur_frame.and_then(|f| f.page), &mut sub);
+        }
         let mut table = StyleTable { styles: &mut styles_tab };
         let mut sp = shape::shape_para(db, &doc.styles, story, pi, prange.clone(), &base_chars, pp.auto_leading, &sub, &mut table);
         match pp.list_type {
@@ -338,6 +371,11 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
             }
             designcraft_doc::ListType::None => list_counter = 0,
+        }
+        if pi == 0
+            && let Some(label) = &opts.label
+        {
+            prepend_label(db, &mut sp.glyphs, label, prange.start, &base_chars, &pp, &mut table);
         }
         let mut glyphs = sp.glyphs;
         apply_desired_spacing(&mut glyphs, &pp);
@@ -438,7 +476,13 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                     }
                 }
                 let capped = line_cap[pi] == Some(line_no) && line_no > col_first_line;
-                let fits = baseline + desc <= col.y1 + 0.01 && !capped;
+                // Footnotes referenced on this line need room at the bottom of the column too
+                // (a line at the top of a column is set anyway).
+                let line_notes = if notes.active() { notes.refs_in(line_glyphs) } else { Vec::new() };
+                let col_w = cols[cur.fi][cur.col.min(cols[cur.fi].len() - 1)].width();
+                let reserve = notes.reserve(doc, cur.fi, cur.col, &line_notes, col_w, f, opts);
+                let reserve = if cur.last_baseline.is_none() { notes.reserve(doc, cur.fi, cur.col, &[], col_w, f, opts) } else { reserve };
+                let fits = baseline + desc <= col.y1 - reserve + 0.01 && !capped;
                 if !fits {
                     if !capped {
                         let ctx = KeepCtx {
@@ -468,6 +512,8 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                                 line_cap[k] = None;
                             }
                             snaps[j].restore(&mut out, &mut cur, &mut list_counter);
+                            (notes.num, notes.key) = (note_snaps[j].0, note_snaps[j].1);
+                            notes.placed.truncate(note_snaps[j].2);
                             pi = j;
                             continue 'paras;
                         }
@@ -509,6 +555,9 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                     end_x,
                     spacing: ratio,
                 });
+                for k in line_notes {
+                    notes.place(doc, k, cur.fi, cur.col, col_w, f, opts);
+                }
                 cur.last_baseline = Some(baseline);
                 cur.last_descent = desc;
                 cur.pending = 0.0;
@@ -593,6 +642,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         cur.pending += pp.space_after;
         pi += 1;
     }
+    notes.finish(doc, story, frames, &cols, &mut out);
     // Ranges, content heights and vertical justification.
     for (fi, ft) in out.frames.iter_mut().enumerate() {
         let f = &frames[fi];
