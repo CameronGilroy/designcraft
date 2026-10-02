@@ -496,7 +496,7 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
                     }
                 }
             }
-            for g in &p.guides {
+            for g in p.guides.iter().filter(|g| g.visible_in(doc)) {
                 // Spread guides cross the pasteboard; page guides their page.
                 let span = if g.spread { layout.pasteboard } else { pr };
                 let (a, bb) = match g.orientation {
@@ -1359,6 +1359,9 @@ fn guide_at(app: &DesignApp, xf: &Xf, p: Pos2) -> Option<(designcraft_doc::Sprea
         for (pi, pg) in sp.pages.iter().enumerate() {
             let pr = if pg.guides.iter().any(|g| g.spread) { layout.pasteboard - slot.offset } else { pg.bounds() };
             for (gi, g) in pg.guides.iter().enumerate() {
+                if !g.editable_in(&st.doc) {
+                    continue;
+                }
                 let r = if g.spread { pr } else { pg.bounds() };
                 let hit = match g.orientation {
                     designcraft_doc::Orientation::Horizontal => (local.y - g.position).abs() <= tol && local.x >= r.x0 && local.x <= r.x1,

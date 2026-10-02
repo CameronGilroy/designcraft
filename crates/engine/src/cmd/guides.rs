@@ -88,10 +88,11 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
             page_at(d, r, x)
         }
     };
+    let layer = s.doc()?.active_layer;
     s.edit(|d, _| {
         let sp = d.spread_mut(r).ok_or_else(|| bad("guide.add", "no such spread"))?;
         let pg = sp.pages.get_mut(pi).ok_or_else(|| bad("guide.add", "no such page"))?;
-        pg.guides.push(Guide { orientation: o, position: pos, spread: spread_guide, locked: false });
+        pg.guides.push(Guide { orientation: o, position: pos, spread: spread_guide, locked: false, layer: Some(layer) });
         Ok(json!({"page": pi, "index": pg.guides.len() - 1}))
     })
 }
@@ -157,6 +158,7 @@ fn create_guides(s: &mut Session, p: &Value) -> Result<Value> {
     let remove = p.get("removeExisting").and_then(Value::as_bool).unwrap_or(false);
     let r = spread_param(p, "spread");
     let only = p.get("page").and_then(Value::as_u64).map(|v| v as usize);
+    let layer = s.doc()?.active_layer;
     s.edit(|d, _| {
         let sp = d.spread_mut(r).ok_or_else(|| bad("layout.createGuides", "no such spread"))?;
         let mut n = 0;
@@ -169,11 +171,11 @@ fn create_guides(s: &mut Session, p: &Value) -> Result<Value> {
             }
             let area: Rect = if to_page { pg.bounds() } else { pg.margin_rect() };
             for y in grid_positions(area.y0, area.y1, rows, rg) {
-                pg.guides.push(Guide { orientation: Orientation::Horizontal, position: y, spread: false, locked: false });
+                pg.guides.push(Guide { orientation: Orientation::Horizontal, position: y, spread: false, locked: false, layer: Some(layer) });
                 n += 1;
             }
             for x in grid_positions(area.x0, area.x1, cols, cg) {
-                pg.guides.push(Guide { orientation: Orientation::Vertical, position: x, spread: false, locked: false });
+                pg.guides.push(Guide { orientation: Orientation::Vertical, position: x, spread: false, locked: false, layer: Some(layer) });
                 n += 1;
             }
         }
@@ -213,5 +215,30 @@ mod tests {
         assert!(s.doc().unwrap().doc.spreads[0].pages[0].guides.is_empty());
         s.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(s.doc().unwrap().doc.spreads[0].pages[0].guides.len(), 5);
+    }
+}
+
+#[cfg(test)]
+mod layer_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn guides_follow_their_layer() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let l = s.execute("layer.new", &json!({"name": "Grid"})).unwrap()["id"].as_u64().unwrap();
+        s.execute("layer.activate", &json!({"id": l})).unwrap();
+        s.execute("guide.add", &json!({"orientation": "vertical", "position": 100})).unwrap();
+        let g = |s: &Session| s.doc().unwrap().doc.spreads[0].pages[0].guides[0].clone();
+        assert_eq!(g(&s).layer.map(|x| x.0), Some(l));
+        assert!(g(&s).visible_in(&s.doc().unwrap().doc));
+        s.execute("layer.set", &json!({"id": l, "visible": false})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        assert!(!g(&s).visible_in(&d) && !g(&s).editable_in(&d));
+        s.execute("layer.set", &json!({"id": l, "visible": true, "locked": true})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        assert!(g(&s).visible_in(&d) && !g(&s).editable_in(&d));
     }
 }

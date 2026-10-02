@@ -60,6 +60,20 @@ pub struct Guide {
     pub spread: bool,
     #[serde(default)]
     pub locked: bool,
+    /// The layer the guide is on: hidden with it, locked with it (`None` = always shown).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<crate::LayerId>,
+}
+
+impl Guide {
+    /// Shown when its layer is visible with Show Guides on.
+    pub fn visible_in(&self, d: &crate::Document) -> bool {
+        self.layer.is_none_or(|l| d.layer(l).is_none_or(|l| l.visible && l.show_guides))
+    }
+    /// Can be dragged: neither it nor its layer is locked.
+    pub fn editable_in(&self, d: &crate::Document) -> bool {
+        !self.locked && self.layer.is_none_or(|l| d.layer(l).is_none_or(|l| !l.locked && l.visible && l.show_guides))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
