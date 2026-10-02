@@ -8,6 +8,7 @@
 //! Pointer positions are **canvas** coordinates (see [`layout::CanvasLayout`]).
 #![forbid(unsafe_code)]
 
+mod anchors;
 pub mod catalog;
 mod frame;
 mod gradient;
@@ -259,6 +260,9 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "type" => Box::new(text::TypeTool::default()),
         "pen" => Box::new(pen::PenTool::default()),
         "gradientSwatch" => Box::new(gradient::GradientTool::default()),
+        "addAnchor" => Box::new(anchors::AnchorTool::new(anchors::Kind::Add)),
+        "deleteAnchor" => Box::new(anchors::AnchorTool::new(anchors::Kind::Delete)),
+        "convertDirection" => Box::new(anchors::AnchorTool::new(anchors::Kind::Convert)),
         "rotate" => Box::new(xform::XformTool::new("rotate")),
         "scale" => Box::new(xform::XformTool::new("scale")),
         "shear" => Box::new(xform::XformTool::new("shear")),

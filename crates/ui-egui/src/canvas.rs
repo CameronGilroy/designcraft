@@ -656,7 +656,7 @@ fn draw_selection(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Docum
             painter.rect_stroke(gb, 0.0, Stroke::new(1.0, Color32::from_rgb(196, 111, 43)), StrokeKind::Middle);
         }
     }
-    let direct = matches!(app.session.tool_id(), "directSelection" | "pen");
+    let direct = matches!(app.session.tool_id(), "directSelection" | "pen" | "addAnchor" | "deleteAnchor" | "convertDirection");
     if direct {
         for id in &sel.items {
             let (Some(it), Some((a, _))) = (doc.item(*id), item_canvas_xf(doc, layout, *id)) else { continue };

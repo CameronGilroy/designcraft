@@ -1,6 +1,7 @@
 //! The command registry. Ids follow InDesign's menu structure.
 
 mod anchored;
+pub mod anchors;
 mod datamerge;
 mod edit;
 mod export;
@@ -124,6 +125,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(export::specs());
         v.extend(edit::specs());
         v.extend(object::specs());
+        v.extend(anchors::specs());
         v.extend(text::specs());
         v.extend(style::specs());
         v.extend(table::specs());

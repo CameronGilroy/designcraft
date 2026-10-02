@@ -104,3 +104,41 @@ fn gradient_tool_drag_sets_the_vector() {
     }
     assert_eq!(t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 220.0 + off.x, 153.0 + off.y)), vec![Action::Commit]);
 }
+
+#[test]
+fn anchor_tools_emit_path_commands() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (fid, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 200.0), lid, "", ParaFormat::default()).unwrap();
+    let (s, c, l) = (Selection::items(vec![fid]), Cache::new(), CanvasLayout::new(&d, false));
+    let cx = ctx(&d, &s, &c, &l);
+    let off = l.offset(SpreadRef::Doc(0));
+    let at = |x: f64, y: f64| (x + off.x, y + off.y);
+    let ev = |k, (x, y): (f64, f64)| PointerEvent::new(k, x, y);
+    let mut add = create("addAnchor");
+    match &add.pointer(&cx, &ev(PointerKind::Down, at(150.0, 101.0)))[..] {
+        [Action::Exec(cmd, p)] => {
+            assert_eq!(cmd, "path.addAnchor");
+            assert_eq!(p["at"], serde_json::json!([150.0, 101.0]));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(add.pointer(&cx, &ev(PointerKind::Down, at(150.0, 150.0))).is_empty(), "inside, away from the edge");
+    let mut del = create("deleteAnchor");
+    assert_eq!(
+        del.pointer(&cx, &ev(PointerKind::Down, at(200.0, 100.0))),
+        vec![Action::Exec("path.deleteAnchor".into(), serde_json::json!({"id": fid.0, "subpath": 0, "anchor": 1}))]
+    );
+    // Convert: click toggles, drag pulls out handles.
+    let mut conv = create("convertDirection");
+    conv.pointer(&cx, &ev(PointerKind::Down, at(100.0, 100.0)));
+    assert_eq!(
+        conv.pointer(&cx, &ev(PointerKind::Up, at(100.0, 100.0))),
+        vec![Action::Exec("path.convertAnchor".into(), serde_json::json!({"id": fid.0, "subpath": 0, "anchor": 0}))]
+    );
+    conv.pointer(&cx, &ev(PointerKind::Down, at(100.0, 100.0)));
+    let a = conv.pointer(&cx, &ev(PointerKind::Drag, at(120.0, 90.0)));
+    assert_eq!(a[0], Action::Begin("Convert Direction Point".into()));
+    assert!(matches!(&a[1], Action::Preview(c, p) if c == "path.convertAnchor" && p["to"] == serde_json::json!([120.0, 90.0])));
+    assert_eq!(conv.pointer(&cx, &ev(PointerKind::Up, at(120.0, 90.0))), vec![Action::Commit]);
+}

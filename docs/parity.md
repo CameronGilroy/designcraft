@@ -9,7 +9,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
-| P0 | 102 | 93 | 9 | 0 | 96% |
+| P0 | 102 | 94 | 8 | 0 | 96% |
 | P1 | 97 | 33 | 23 | 41 | 46% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
@@ -18,7 +18,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Application shell & workspace | 65% |
 | Documents, pages, spreads | 71% |
 | Layers | 74% |
-| Frames, shapes & paths | 74% |
+| Frames, shapes & paths | 76% |
 | Transform | 78% |
 | Fill, stroke, colour | 69% |
 | Effects & transparency | 50% |
@@ -35,7 +35,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Undo, history, saving | 100% |
 | Accessibility | 20% |
 
-Open P0 items: Dockable panels, Preferences, Pen, add/delete anchor, convert direction, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, OpenType features, Export to PDF (print), Display performance.
+Open P0 items: Dockable panels, Preferences, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, OpenType features, Export to PDF (print), Display performance.
 
 ## Rows
 
@@ -98,7 +98,7 @@ Open P0 items: Dockable panels, Preferences, Pen, add/delete anchor, convert dir
 | Frames, shapes & paths | Rectangle/Ellipse/Polygon shapes | P0 | D |
 | Frames, shapes & paths | Polygon settings | P0 | D |
 | Frames, shapes & paths | Line tool | P0 | D |
-| Frames, shapes & paths | Pen, add/delete anchor, convert direction | P0 | P |
+| Frames, shapes & paths | Pen, add/delete anchor, convert direction | P0 | D |
 | Frames, shapes & paths | Pencil, Smooth, Erase | P1 | M |
 | Frames, shapes & paths | Scissors | P1 | M |
 | Frames, shapes & paths | Content type | P0 | D |

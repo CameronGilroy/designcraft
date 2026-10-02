@@ -23,8 +23,13 @@ enum Drag {
 
 /// Anchor or handle of a selected item under `p` (canvas): (item, subpath, anchor, handle).
 pub fn anchor_at(cx: &ToolContext, p: Point) -> Option<(u64, usize, usize, Option<&'static str>)> {
+    anchor_at_in(cx, &cx.selection.items, p)
+}
+
+/// [`anchor_at`] over the given items.
+pub fn anchor_at_in(cx: &ToolContext, ids: &[designcraft_doc::ItemId], p: Point) -> Option<(u64, usize, usize, Option<&'static str>)> {
     let tol = cx.tol(5.0);
-    for id in &cx.selection.items {
+    for id in ids {
         let (Some(it), Some(xf)) = (cx.doc.item(*id), cx.item_canvas_xf(*id)) else { continue };
         let m = xf * it.xf;
         for (si, sp) in it.path.subpaths.iter().enumerate() {
