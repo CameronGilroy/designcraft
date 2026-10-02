@@ -306,7 +306,12 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
         let w = (target.size.0 as f64 * ppp).round().max(1.0) as u32;
         let h = (target.size.1 as f64 * ppp).round().max(1.0) as u32;
         let view = Affine::scale(ppp) * Affine::scale(xf.zoom) * Affine::translate((-target.origin.x, -target.origin.y));
-        let opts = designcraft_render::RenderOptions { printing_only: preview, greek_below_px: 3.0 * ppp, ..Default::default() };
+        let opts = designcraft_render::RenderOptions {
+            printing_only: preview,
+            greek_below_px: 3.0 * ppp,
+            highlight_missing_fonts: !preview,
+            ..Default::default()
+        };
         (st.doc.clone(), placed, w, h, view, opts)
     };
     // Synchronous path: document edits (keep editing crisp), first frame, or no worker.

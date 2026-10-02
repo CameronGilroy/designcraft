@@ -96,11 +96,21 @@ pub struct RenderOptions {
     pub greek_below_px: f64,
     /// Drop shadow on pages (screen view).
     pub page_shadow: bool,
+    /// Pink highlight behind text set in fonts that aren't installed (screen view).
+    pub highlight_missing_fonts: bool,
 }
 
 impl Default for RenderOptions {
     fn default() -> Self {
-        Self { background: None, paper: true, printing_only: false, hidden: vec![], greek_below_px: 0.0, page_shadow: false }
+        Self {
+            background: None,
+            paper: true,
+            printing_only: false,
+            hidden: vec![],
+            greek_below_px: 0.0,
+            page_shadow: false,
+            highlight_missing_fonts: false,
+        }
     }
 }
 
@@ -646,6 +656,28 @@ mod tests {
         assert!(dark > 50, "text pixels: {dark}");
         let _ = fid;
         assert!(r.stats.glyphs >= 15);
+    }
+
+    #[test]
+    fn missing_fonts_are_highlighted_on_screen_only() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 336.0, 100.0), lid, "Missing font", ParaFormat::default()).unwrap();
+        d.story_mut(sid).unwrap().format_chars(0..12, |f| f.over.font_family = Some("No Such Family".into()));
+        let cache = Cache::new();
+        let cs = cache.get(&d, sid, None);
+        assert!(cs.styles.iter().any(|s| s.missing_font));
+        let l = &cs.frames[0].lines[0];
+        // A point inside the line box but between glyph strokes: the space after "Missing".
+        let g = l.glyphs.iter().find(|g| g.byte == 7).unwrap();
+        let (x, y) = ((g.x + g.adv / 2.0) as u32, (l.baseline - l.ascent * 0.5) as u32);
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let plain = r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions::default()).unwrap();
+        let shown = r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions { highlight_missing_fonts: true, ..Default::default() }).unwrap();
+        assert_eq!(plain.pixel(x, y)[1], 255, "no highlight in output");
+        let p = shown.pixel(x, y);
+        assert!(p[0] > 240 && p[1] < 200, "pink on screen: {p:?}");
     }
 
     #[test]

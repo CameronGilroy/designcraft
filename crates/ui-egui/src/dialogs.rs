@@ -123,6 +123,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "paragraphStyleOptions" => "Paragraph Style Options",
         "footnoteOptions" => "Footnote Options",
         "insertXref" => "New Cross-Reference",
+        "findFont" => "Find/Replace Font",
         id => match id.strip_prefix("cmd:").and_then(designcraft_engine::find_command) {
             Some(c) => c.label.trim_end_matches('…'),
             None => "Dialog",
@@ -256,6 +257,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             "paragraphStyleOptions" => paragraph_style_options(app, ui, &mut d),
             "footnoteOptions" => footnote_options(app, ui, &mut d),
             "insertXref" => insert_xref(app, ui, &mut d),
+            "findFont" => find_font(app, ui, &mut d),
             id if id.starts_with("cmd:") => command_form(ui, &mut d),
             "goToPage" => {
                 ui.horizontal(|ui| {
@@ -404,6 +406,13 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
                 params["rename"] = json!(rename);
             }
             app.run("style.paragraph.edit", params)
+        }
+        "findFont" => {
+            let (f, st) = (d.s("family"), d.s("style"));
+            if f.is_empty() || d.s("toFamily").is_empty() {
+                return Ok(Value::Null);
+            }
+            app.run("font.replace", json!({"family": f, "style": st, "toFamily": d.s("toFamily"), "toStyle": d.s("toStyle")}))
         }
         "insertXref" => {
             let format = d.s("format");
@@ -1030,6 +1039,52 @@ fn insert_xref(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
     if let Some(m) = d.fields.get("status").and_then(Value::as_str) {
         ui.label(egui::RichText::new(m).color(dim));
     }
+}
+
+/// Find/Replace Font: the document's fonts (missing ones first, flagged) and a replacement.
+fn find_font(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    // Listed once when the dialog opens (it scans every story).
+    if !d.fields.contains_key("_fonts") {
+        let list = app.session.execute("font.list", &json!({})).unwrap_or_default();
+        d.fields.insert("_fonts".into(), list);
+    }
+    let fonts = d.fields.get("_fonts").and_then(Value::as_array).cloned().unwrap_or_default();
+    let missing = fonts.iter().filter(|f| f["missing"] == true || f["styleMissing"] == true).count();
+    ui.label(format!("Fonts in Document: {}    Missing: {missing}", fonts.len()));
+    egui::ScrollArea::vertical().id_salt("ff_list").max_height(180.0).show(ui, |ui| {
+        for f in &fonts {
+            let (fam, st) = (f["family"].as_str().unwrap_or(""), f["style"].as_str().unwrap_or(""));
+            let warn = f["missing"] == true || f["styleMissing"] == true;
+            let label = format!("{}{fam} {st}", if warn { "\u{26A0} " } else { "" });
+            let on = d.s("family") == fam && d.s("style") == st;
+            let mut text = egui::RichText::new(label);
+            if warn {
+                text = text.color(egui::Color32::from_rgb(0xe5, 0x4b, 0x4b));
+            }
+            if ui.selectable_label(on, text).clicked() {
+                d.fields.insert("family".into(), json!(fam));
+                d.fields.insert("style".into(), json!(st));
+            }
+        }
+    });
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Replace With").font(semibold(12.0)));
+    let db = designcraft_fonts::FontDb::global();
+    let families = db.families();
+    let fam_opts: Vec<(&str, &str)> = families.iter().map(|f| (f.as_str(), f.as_str())).collect();
+    egui::Grid::new("ff_to").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+        ui.label("Font Family:");
+        combo(ui, d, "toFamily", &fam_opts);
+        ui.end_row();
+        let styles = db.styles(&d.s("toFamily"));
+        let st_opts: Vec<(&str, &str)> = styles.iter().map(|s| (s.as_str(), s.as_str())).collect();
+        ui.label("Font Style:");
+        combo(ui, d, "toStyle", &st_opts);
+        ui.end_row();
+    });
+    ui.label(
+        egui::RichText::new("OK changes all: text and paragraph/character styles.").color(crate::theme::Tokens::get(ui.ctx()).text_dim).size(11.0),
+    );
 }
 
 #[cfg(test)]

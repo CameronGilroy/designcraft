@@ -93,6 +93,8 @@ pub struct ObjectSpec {
 
 pub(crate) struct StyleTable<'a> {
     pub styles: &'a mut Vec<RunStyle>,
+    /// Font availability by family (looked up once per composition).
+    pub missing: &'a mut HashMap<String, bool>,
 }
 
 impl StyleTable<'_> {
@@ -107,6 +109,10 @@ impl StyleTable<'_> {
             strikethrough: p.strikethrough,
             skew: p.skew,
             size: p.size,
+            missing_font: *self
+                .missing
+                .entry(p.font_family.clone())
+                .or_insert_with(|| !p.font_family.is_empty() && !designcraft_fonts::FontDb::global().has_family(&p.font_family)),
         };
         if let Some(i) = self.styles.iter().rposition(|s| *s == rs) {
             return i as u32;

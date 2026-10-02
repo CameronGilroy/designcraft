@@ -18,6 +18,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
     ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
     ("app.footnoteOptionsDialog", "Document Footnote Options…", None, "{} — numbering, formatting and layout of footnotes"),
+    ("app.findFontDialog", "Find/Replace Font…", None, "{} — fonts used (missing ones flagged) and replacing them"),
     ("app.insertXrefDialog", "Insert Cross-Reference…", None, "{} — New Cross-Reference dialog (paragraph or text anchor, format)"),
     ("app.deleteAllGuides", "Delete All Guides on Spread", None, "{} — the spread in view"),
     ("app.deletePage", "Delete Page", None, "{} — deletes the page in view"),
@@ -150,6 +151,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
     (
         "Type",
         &[
+            "ui:app.findFontDialog",
+            "-",
             "cmd:type.fillWithPlaceholder",
             ">Insert Special Character",
             ">Symbols",
@@ -453,6 +456,13 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             let Some(st) = app.session.active() else { return Some(Err("no document open".into())) };
             let o = serde_json::to_value(&st.doc.footnote_options).unwrap_or_default();
             app.ui.dialog = Some(crate::dialogs::Dialog::new("footnoteOptions", o));
+            Ok(Value::Null)
+        }
+        "app.findFontDialog" => {
+            if app.session.active().is_none() {
+                return Some(Err("no document open".into()));
+            }
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("findFont", json!({})));
             Ok(Value::Null)
         }
         "app.insertXrefDialog" => {

@@ -48,6 +48,8 @@ pub struct RunStyle {
     pub strikethrough: bool,
     pub skew: f64,
     pub size: f64,
+    /// The run's font isn't installed (shown in a substitute; highlighted on screen).
+    pub missing_font: bool,
 }
 
 /// A positioned glyph. `x` is absolute in frame inner space; `y` is relative to the line baseline.
@@ -298,6 +300,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
     let db = FontDb::global();
     let mut out = ComposedStory { story: story.id, rev: story.rev, text_len: story.text.len(), ..Default::default() };
     let mut styles_tab: Vec<RunStyle> = Vec::new();
+    let mut missing_fonts: HashMap<String, bool> = HashMap::new();
     out.frames = frames.iter().map(|f| FrameText { frame: f.id, columns: f.columns(), ..Default::default() }).collect();
     let cols: Vec<Vec<Rect>> = frames.iter().map(FrameSpec::columns).collect();
     let mut cur = Cursor { fi: 0, col: 0, last_baseline: None, last_descent: 0.0, pending: 0.0 };
@@ -393,7 +396,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             notes.number_refs(doc, prange.clone(), cur_frame.and_then(|f| f.page), &mut sub);
         }
         let sub_objects = sub.objects.clone();
-        let mut table = StyleTable { styles: &mut styles_tab };
+        let mut table = StyleTable { styles: &mut styles_tab, missing: &mut missing_fonts };
         let mut sp = shape::shape_para(db, &doc.styles, story, pi, prange.clone(), &base_chars, pp.auto_leading, &sub, &mut table);
         match pp.list_type {
             designcraft_doc::ListType::Numbers => {

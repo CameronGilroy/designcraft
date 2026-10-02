@@ -201,6 +201,16 @@ impl Renderer {
         if !ft.tables.is_empty() {
             self.draw_tables(ctx, f, ft, xf);
         }
+        // Text in fonts that aren't installed: pink behind the glyphs (screen only).
+        if f.opts.highlight_missing_fonts && cs.styles.iter().any(|s| s.missing_font) {
+            ctx.set_transform(m);
+            ctx.set_paint(peniko::Color::from_rgb8(255, 166, 214));
+            for l in &ft.lines {
+                for g in l.glyphs.iter().filter(|g| g.adv > 0.0 && cs.styles.get(g.style as usize).is_some_and(|s| s.missing_font)) {
+                    ctx.fill_rect(&kurbo::Rect::new(g.x, l.baseline - l.ascent, g.x + g.adv, l.baseline + l.descent));
+                }
+            }
+        }
         let scale = m.determinant().abs().sqrt();
         let greek_px = f.opts.greek_below_px;
         let mut greek = BezPath::new();
