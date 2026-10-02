@@ -25,33 +25,23 @@ fn list(app: &mut DesignApp, ui: &mut egui::Ui, para: bool) {
         .size(11.0)
         .color(t.text_dim),
     );
-    for n in &names {
+    // Groups (`Group/Name`) as folders, ungrouped styles first.
+    let groups: Vec<String> = {
+        let mut g: Vec<String> = names.iter().filter_map(|n| n.rsplit_once('/').map(|(g, _)| g.to_string())).collect();
+        g.sort();
+        g.dedup();
+        g
+    };
+    for n in names.iter().filter(|n| !n.contains('/')) {
         if para && n == designcraft_doc::NO_PARA_STYLE {
             continue;
         }
-        let (row, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
-        if current.as_deref() == Some(n.as_str()) {
-            ui.painter().rect_filled(row, 0.0, t.row_selected);
-        } else if resp.hovered() {
-            ui.painter().rect_filled(row, 0.0, t.hover);
-        }
-        ui.painter().text(row.min + vec2(8.0, 11.0), egui::Align2::LEFT_CENTER, n, egui::FontId::proportional(12.5), t.text);
-        if resp.double_clicked() && para {
-            app.ui.dialog = Some(crate::dialogs::Dialog::new("paragraphStyleOptions", json!({"name": n})));
-        } else if resp.clicked() {
-            let cmd = if para { "style.paragraph.apply" } else { "style.character.apply" };
-            let clear = ui.input(|i| i.modifiers.alt);
-            let _ = app.run(cmd, json!({"name": n, "clearOverrides": clear}));
-        }
-        resp.context_menu(|ui| {
-            if ui.button(format!("Apply \"{n}\"")).clicked() {
-                let cmd = if para { "style.paragraph.apply" } else { "style.character.apply" };
-                let _ = app.run(cmd, json!({"name": n}));
-                ui.close();
-            }
-            if current.as_deref() == Some(n.as_str()) && ui.button("Break Link to Style").clicked() {
-                let _ = app.run("style.breakLink", json!({"kind": if para { "paragraph" } else { "character" }}));
-                ui.close();
+        style_row(app, ui, para, n, current.as_deref(), &groups, &t);
+    }
+    for g in &groups {
+        egui::CollapsingHeader::new(g.as_str()).id_salt(("style_group", para, g)).default_open(true).show(ui, |ui| {
+            for n in names.iter().filter(|n| n.rsplit_once('/').is_some_and(|(x, _)| x == g)) {
+                style_row(app, ui, para, n, current.as_deref(), &groups, &t);
             }
         });
     }
@@ -74,4 +64,60 @@ pub fn paragraph(app: &mut DesignApp, ui: &mut egui::Ui) {
 
 pub fn character(app: &mut DesignApp, ui: &mut egui::Ui) {
     list(app, ui, false);
+}
+
+/// One style in the list: click applies (⌥ clears overrides), double-click edits (paragraph),
+/// right-click: apply, break link, move to group.
+fn style_row(app: &mut DesignApp, ui: &mut egui::Ui, para: bool, n: &str, current: Option<&str>, groups: &[String], t: &Tokens) {
+    let (row, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+    if current == Some(n) {
+        ui.painter().rect_filled(row, 0.0, t.row_selected);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(row, 0.0, t.hover);
+    }
+    let shown = n.rsplit('/').next().unwrap_or(n);
+    ui.painter().text(row.min + vec2(8.0, 11.0), egui::Align2::LEFT_CENTER, shown, egui::FontId::proportional(12.5), t.text);
+    if resp.double_clicked() && para {
+        app.ui.dialog = Some(crate::dialogs::Dialog::new("paragraphStyleOptions", json!({"name": n})));
+    } else if resp.clicked() {
+        let cmd = if para { "style.paragraph.apply" } else { "style.character.apply" };
+        let clear = ui.input(|i| i.modifiers.alt);
+        let _ = app.run(cmd, json!({"name": n, "clearOverrides": clear}));
+    }
+    let kind = if para { "paragraph" } else { "character" };
+    resp.context_menu(|ui| {
+        if ui.button(format!("Apply \"{shown}\"")).clicked() {
+            let cmd = if para { "style.paragraph.apply" } else { "style.character.apply" };
+            let _ = app.run(cmd, json!({"name": n}));
+            ui.close();
+        }
+        if current == Some(n) && ui.button("Break Link to Style").clicked() {
+            let _ = app.run("style.breakLink", json!({"kind": kind}));
+            ui.close();
+        }
+        if !n.starts_with('[') {
+            ui.menu_button("Move to Group", |ui| {
+                if n.contains('/') && ui.button("[No Group]").clicked() {
+                    let _ = app.run("style.group", json!({"kind": kind, "names": [n], "group": ""}));
+                    ui.close();
+                }
+                for g in groups {
+                    if n.rsplit_once('/').map(|(x, _)| x) != Some(g.as_str()) && ui.button(g).clicked() {
+                        let _ = app.run("style.group", json!({"kind": kind, "names": [n], "group": g}));
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                let id = egui::Id::new(("new_style_group", para));
+                let mut name: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+                let r = ui.add(egui::TextEdit::singleline(&mut name).hint_text("New group…").desired_width(140.0));
+                if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !name.trim().is_empty() {
+                    let _ = app.run("style.group", json!({"kind": kind, "names": [n], "group": name.trim()}));
+                    name.clear();
+                    ui.close();
+                }
+                ui.data_mut(|d| d.insert_temp(id, name));
+            });
+        }
+    });
 }

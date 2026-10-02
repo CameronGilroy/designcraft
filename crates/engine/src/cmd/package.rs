@@ -111,7 +111,7 @@ fn package(s: &mut Session, p: &Value) -> Result<Value> {
     for l in links.as_array().into_iter().flatten() {
         r += &format!("  {} ({})\n", l["name"].as_str().unwrap_or(""), l["status"].as_str().unwrap_or(""));
     }
-    if let Some(issues) = pre.as_array() {
+    if let Some(issues) = pre.get("issues").and_then(Value::as_array) {
         r += &format!("\nPreflight: {} issue(s)\n", issues.len());
         for i in issues {
             r += &format!("  {}\n", i.get("message").and_then(Value::as_str).unwrap_or(""));
@@ -159,6 +159,7 @@ mod tests {
         assert!(out.join("Links").join("logo.svg").exists());
         let report = std::fs::read_to_string(out.join("Instructions.txt")).unwrap();
         assert!(report.contains("Print on matte.") && report.contains("logo.svg"), "{report}");
+        assert!(report.contains("Preflight:"), "{report}");
         // The packaged document links to its Links folder.
         let doc_file = files.iter().find(|f| f.ends_with(".designcraft")).unwrap();
         let packed = super::super::from_bytes(&std::fs::read(doc_file).unwrap()).unwrap();

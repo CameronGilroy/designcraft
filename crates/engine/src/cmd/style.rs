@@ -61,6 +61,15 @@ pub fn specs() -> Vec<CommandSpec> {
             apply_gradient
         ),
         cmd!(
+            "style.group",
+            "Move to Group",
+            [],
+            None,
+            "{kind: paragraph|character, names: [style names], group: \"Heads\" | \"Heads/Display\" | \"\" (out of any group)} — styles are named Group/Name; every use is renamed → {renamed: {old: new}}",
+            has_doc,
+            group_styles
+        ),
+        cmd!(
             "swatch.load",
             "Load Swatches…",
             [],
@@ -238,18 +247,90 @@ fn edit_para(s: &mut Session, p: &Value) -> Result<Value> {
             _ => {}
         }
         if let Some(n) = rename.clone() {
-            st.name = n.clone();
-            for sid in d.stories.keys().copied().collect::<Vec<_>>() {
-                if let Some(story) = d.story_mut(sid) {
-                    for f in &mut story.paras {
-                        if f.style == name {
-                            f.style = n.clone();
-                        }
-                    }
+            // Every use: other styles, stories, table cells, footnotes, object styles.
+            rename_style(d, true, &name, &n);
+        }
+        ok()
+    })
+}
+
+/// Rename a paragraph or character style everywhere it's used.
+fn rename_style(d: &mut designcraft_doc::Document, para: bool, from: &str, to: &str) {
+    let st = d.styles_mut();
+    if para {
+        for s in &mut st.paragraph {
+            if s.name == from {
+                s.name = to.to_string();
+            }
+            for r in [&mut s.based_on, &mut s.next_style] {
+                if r.as_deref() == Some(from) {
+                    *r = Some(to.to_string());
                 }
             }
         }
-        ok()
+        for o in &mut st.object {
+            if o.paragraph_style.as_deref() == Some(from) {
+                o.paragraph_style = Some(to.to_string());
+            }
+        }
+    } else {
+        for s in &mut st.character {
+            if s.name == from {
+                s.name = to.to_string();
+            }
+            if s.based_on.as_deref() == Some(from) {
+                s.based_on = Some(to.to_string());
+            }
+        }
+    }
+    for sid in d.stories.keys().copied().collect::<Vec<_>>() {
+        let Some(story) = d.story_mut(sid) else { continue };
+        story.for_each_text_mut(&mut |st| {
+            if para {
+                for f in st.paras.iter_mut().filter(|f| f.style == from) {
+                    f.style = to.to_string();
+                }
+            } else {
+                for r in st.chars.iter_mut().filter(|r| r.format.style == from) {
+                    r.format.style = to.to_string();
+                }
+            }
+            st.rev += 1;
+        });
+    }
+}
+
+fn group_styles(s: &mut Session, p: &Value) -> Result<Value> {
+    let para = match str_param(p, "kind").unwrap_or("paragraph") {
+        "paragraph" => true,
+        "character" => false,
+        k => return Err(bad("style.group", format!("unknown kind `{k}`"))),
+    };
+    let names: Vec<String> =
+        p.get("names").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    let group = str_param(p, "group").unwrap_or("").trim_matches('/').to_string();
+    s.edit(|d, _| {
+        let mut renamed = serde_json::Map::new();
+        for n in &names {
+            if n.starts_with('[') {
+                return Err(bad("style.group", format!("`{n}` is built in")));
+            }
+            let exists = if para { d.styles.para(n).is_some() } else { d.styles.character.iter().any(|c| c.name == *n) };
+            if !exists {
+                return Err(bad("style.group", format!("no style `{n}`")));
+            }
+            let base = n.rsplit('/').next().unwrap_or(n);
+            let mut to = if group.is_empty() { base.to_string() } else { format!("{group}/{base}") };
+            let taken = |d: &designcraft_doc::Document, x: &str| {
+                if para { d.styles.para(x).is_some() } else { d.styles.character.iter().any(|c| c.name == x) }
+            };
+            if to != *n {
+                to = Styles::unique_name(|x| taken(d, x), &to);
+                rename_style(d, para, n, &to);
+                renamed.insert(n.clone(), json!(to));
+            }
+        }
+        Ok(json!({"renamed": renamed}))
     })
 }
 
@@ -644,6 +725,27 @@ mod color_tests {
     use super::*;
 
     #[test]
+    fn style_groups_rename_every_use() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("style.paragraph.create", &json!({"name": "Head"})).unwrap();
+        s.execute("style.paragraph.create", &json!({"name": "Sub", "basedOn": "Head"})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 300, 200], "content": "text", "text": "Hi"})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 2})).unwrap();
+        s.execute("style.paragraph.apply", &json!({"name": "Head"})).unwrap();
+        let r = s.execute("style.group", &json!({"kind": "paragraph", "names": ["Head", "Sub"], "group": "Titles"})).unwrap();
+        assert_eq!(r["renamed"]["Head"], "Titles/Head");
+        let d = s.doc().unwrap().doc.clone();
+        assert_eq!(d.story(designcraft_doc::StoryId(sid)).unwrap().paras[0].style, "Titles/Head");
+        assert_eq!(d.styles.para("Titles/Sub").unwrap().based_on.as_deref(), Some("Titles/Head"));
+        // Out of the group again.
+        s.execute("style.group", &json!({"kind": "paragraph", "names": ["Titles/Head"], "group": ""})).unwrap();
+        assert!(s.doc().unwrap().doc.styles.para("Head").is_some());
+        assert!(s.execute("style.group", &json!({"names": ["[Basic Paragraph]"], "group": "X"})).is_err());
+    }
+
+    #[test]
     fn swatches_save_and_load_ase() {
         let mut s = Session::new();
         s.execute("file.new", &json!({})).unwrap();
@@ -684,5 +786,23 @@ mod color_tests {
         // A colour equal to an existing swatch applies that swatch.
         s.execute("object.color", &json!({"color": {"c": 10, "m": 20, "y": 30, "k": 0}})).unwrap();
         assert_eq!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(id)).unwrap().fill.swatch, "Sand");
+    }
+}
+
+#[cfg(test)]
+mod group_sample_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    /// Grouping the sample's table styles keeps its table cells styled (no missing styles).
+    #[test]
+    fn grouping_reaches_table_cells() {
+        let mut s = Session::new();
+        s.execute("file.newSample", &json!({})).unwrap();
+        let before = s.execute("preflight.run", &json!({})).unwrap()["errors"].as_u64().unwrap();
+        s.execute("style.group", &json!({"kind": "paragraph", "names": ["Table Head", "Table Body"], "group": "Tables"})).unwrap();
+        let after = s.execute("preflight.run", &json!({})).unwrap();
+        assert_eq!(after["errors"].as_u64().unwrap(), before, "{after}");
     }
 }

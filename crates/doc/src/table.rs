@@ -713,6 +713,19 @@ impl crate::Document {
 }
 
 impl Story {
+    /// Visit this story and every text inside it (table cells, footnotes), mutably.
+    pub fn for_each_text_mut(&mut self, f: &mut impl FnMut(&mut Story)) {
+        f(self);
+        for t in self.tables.values_mut() {
+            for c in &mut std::sync::Arc::make_mut(t).cells {
+                c.text.for_each_text_mut(f);
+            }
+        }
+        for n in &mut self.notes {
+            std::sync::Arc::make_mut(n).text.for_each_text_mut(f);
+        }
+    }
+
     /// The table whose anchor paragraph is `pi`.
     pub fn para_table(&self, pi: usize) -> Option<&Arc<Table>> {
         self.tables.get(&self.paras.get(pi)?.table?)
