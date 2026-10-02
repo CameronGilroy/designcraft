@@ -50,6 +50,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 resvg = { version = "0.47", default-features = false, features = ["text"] }
 krilla-svg = "0.8"
 psd = "0.3"
+# Boolean operations on Bézier paths (Pathfinder).
+flo_curves = "0.8"
 krilla = { version = "0.8", features = ["pdf"] }
 hayro = "0.7"
 quick-xml = "0.38"

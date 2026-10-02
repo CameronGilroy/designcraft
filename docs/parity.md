@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 42 | 23 | 32 | 55% |
+| P1 | 97 | 43 | 23 | 31 | 56% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
@@ -18,7 +18,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Application shell & workspace | 69% |
 | Documents, pages, spreads | 71% |
 | Layers | 95% |
-| Frames, shapes & paths | 83% |
+| Frames, shapes & paths | 85% |
 | Transform | 93% |
 | Fill, stroke, colour | 69% |
 | Effects & transparency | 50% |
@@ -104,7 +104,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Frames, shapes & paths | Content type | P0 | D |
 | Frames, shapes & paths | Convert Shape | P1 | P |
 | Frames, shapes & paths | Corner Options | P0 | D |
-| Frames, shapes & paths | Pathfinder | P1 | M |
+| Frames, shapes & paths | Pathfinder | P1 | D |
 | Frames, shapes & paths | Compound paths | P1 | D |
 | Frames, shapes & paths | Text outlines | P1 | D |
 | Frames, shapes & paths | Clipping paths | P2 | M |

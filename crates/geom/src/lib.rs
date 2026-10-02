@@ -10,6 +10,7 @@
 pub mod corners;
 pub mod hit;
 pub mod path;
+pub mod pathfinder;
 pub mod shapes;
 pub mod snap;
 pub mod units;

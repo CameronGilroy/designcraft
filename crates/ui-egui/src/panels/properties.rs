@@ -1445,6 +1445,30 @@ pub fn wrap_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     });
 }
 
+/// Pathfinder panel: combine the selected shapes; make or release compound paths.
+pub fn pathfinder_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
+    ui.label(egui::RichText::new("Pathfinder").strong());
+    ui.horizontal_wrapped(|ui| {
+        for (label, op) in
+            [("Add", "add"), ("Subtract", "subtract"), ("Intersect", "intersect"), ("Exclude Overlap", "exclude"), ("Minus Back", "minusBack")]
+        {
+            if ui.button(label).clicked() {
+                let _ = app.run("object.pathfinder", json!({"op": op}));
+            }
+        }
+    });
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new("Paths").strong());
+    ui.horizontal(|ui| {
+        if ui.button("Make Compound").clicked() {
+            let _ = app.run("object.makeCompoundPath", json!({}));
+        }
+        if ui.button("Release").clicked() {
+            let _ = app.run("object.releaseCompoundPath", json!({}));
+        }
+    });
+}
+
 pub fn align_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         for (edge, tip) in [

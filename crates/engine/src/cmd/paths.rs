@@ -40,6 +40,15 @@ pub fn specs() -> Vec<CommandSpec> {
             create_outlines
         ),
         cmd!(
+            "object.pathfinder",
+            "Pathfinder",
+            ["Object", "Pathfinder"],
+            None,
+            "{op: add|subtract|intersect|exclude|minusBack, ids?} — combine the selected shapes into one (the backmost keeps its look; the frontmost for minusBack) → {id}",
+            has_selection,
+            pathfinder
+        ),
+        cmd!(
             "path.split",
             "Split Path",
             [],
@@ -101,6 +110,49 @@ fn make_compound(s: &mut Session, p: &Value) -> Result<Value> {
         it.shape = Shape::Path;
         *sel = Selection::items(vec![base_id]);
         Ok(json!({"id": base_id.0}))
+    })
+}
+
+fn pathfinder(s: &mut Session, p: &Value) -> Result<Value> {
+    use designcraft_geom::pathfinder::{Op, combine};
+    let op_s = super::str_param(p, "op").unwrap_or("add");
+    let op = Op::parse(op_s).ok_or_else(|| bad("object.pathfinder", format!("unknown op `{op_s}`")))?;
+    let ids = targets(s, p)?;
+    if ids.len() < 2 {
+        return Err(bad("object.pathfinder", "select two or more shapes"));
+    }
+    s.edit(|d, sel| {
+        let (sr, _) = spread_xf(d, ids[0]).ok_or(designcraft_doc::DocError::NoItem(ids[0]))?;
+        let order: Vec<ItemId> = d
+            .spread(sr)
+            .map(|sp| {
+                sp.items
+                    .iter()
+                    .filter(|i| ids.contains(&i.id) && !matches!(i.content, Content::Group { .. } | Content::Text(_)))
+                    .map(|i| i.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if order.len() < 2 {
+            return Err(bad("object.pathfinder", "select two or more shapes on one spread (not text frames or groups)"));
+        }
+        let keep = if op == Op::MinusBack { *order.last().expect("two") } else { order[0] };
+        let shapes: Vec<PathData> =
+            order.iter().filter_map(|id| spread_xf(d, *id).and_then(|(_, xf)| Some(d.item(*id)?.path.transformed(xf)))).collect();
+        let Some(result) = combine(op, &shapes) else { return Err(bad("object.pathfinder", "the shapes don't overlap: nothing is left")) };
+        let (_, kxf) = spread_xf(d, keep).ok_or(designcraft_doc::DocError::NoItem(keep))?;
+        for id in &order {
+            if *id != keep {
+                d.remove_item(*id)?;
+            }
+        }
+        let it = d.item_mut(keep).ok_or(designcraft_doc::DocError::NoItem(keep))?;
+        it.path = result.transformed(kxf.inverse());
+        orient_holes(&mut it.path);
+        it.shape = Shape::Path;
+        it.corners = Default::default();
+        *sel = Selection::items(vec![keep]);
+        Ok(json!({"id": keep.0}))
     })
 }
 
@@ -300,6 +352,22 @@ mod tests {
         let r = s.execute("object.releaseCompoundPath", &json!({})).unwrap();
         assert_eq!(r["ids"].as_array().unwrap().len(), 2);
         s.doc().unwrap().doc.check().unwrap();
+    }
+
+    #[test]
+    fn pathfinder_subtracts_front_from_back() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [100, 100, 300, 300]})).unwrap()["id"].as_u64().unwrap();
+        let b = s.execute("frame.create", &json!({"rect": [200, 100, 400, 300], "shape": "ellipse"})).unwrap()["id"].as_u64().unwrap();
+        s.execute("selection.set", &json!({"ids": [a, b]})).unwrap();
+        let r = s.execute("object.pathfinder", &json!({"op": "subtract"})).unwrap();
+        assert_eq!(r["id"], a);
+        let d = s.doc().unwrap().doc.clone();
+        assert!(d.item(ItemId(b)).is_none());
+        let bb = d.item(ItemId(a)).unwrap().bounds();
+        assert!((bb.x1 - 300.0).abs() < 0.5 && (bb.x0 - 100.0).abs() < 0.5, "{bb:?}");
+        assert!(s.execute("object.pathfinder", &json!({"op": "nope"})).is_err());
     }
 
     #[test]
