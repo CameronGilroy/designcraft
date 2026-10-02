@@ -366,8 +366,20 @@ impl Document {
                 p
             })
             .collect();
-        // Splice into the spread holding page `at` (or append a new spread), then repaginate.
-        match self.page_loc(at) {
+        // Splice into the spread holding page `at` (or append a new spread), then repaginate. At
+        // the start of a spread that doesn't shuffle, the pages go in before it instead.
+        let loc = match self.page_loc(at) {
+            Some((si, 0)) if !self.spreads[si].allow_shuffle => {
+                let id = SpreadId(self.alloc());
+                let mut sp = Spread { id, pages: new_pages, items: vec![], parent: None, allow_shuffle: true };
+                sp.relayout();
+                self.spreads.insert(si, Arc::new(sp));
+                self.repaginate();
+                return Ok(ids);
+            }
+            l => l,
+        };
+        match loc {
             Some((si, pi)) => {
                 let sp = Arc::make_mut(&mut self.spreads[si]);
                 let x = sp.pages[pi].x;
@@ -450,6 +462,47 @@ impl Document {
         self.spreads.insert(to, sp);
         self.settings.facing_pages = facing;
         self.repaginate();
+        Ok(())
+    }
+
+    /// Move absolute page `abs` (with the objects on it) to the end of spread `to`, which stops
+    /// shuffling (Layout › Pages: spreads of up to 10 pages).
+    pub fn page_to_spread(&mut self, abs: usize, to: usize) -> Result<()> {
+        let (si, pi) = self.page_loc(abs).ok_or(DocError::NoPage(abs))?;
+        if to >= self.spreads.len() {
+            return Err(DocError::Invalid(format!("no spread {to}")));
+        }
+        if si == to {
+            return Ok(());
+        }
+        if self.spreads[to].pages.len() >= 10 {
+            return Err(DocError::Invalid("a spread holds at most 10 pages".into()));
+        }
+        // Take the page and its objects out of their spread.
+        let src = Arc::make_mut(&mut self.spreads[si]);
+        let page = src.pages.remove(pi);
+        let pb = page.bounds();
+        let (moving, staying): (Vec<_>, Vec<_>) = std::mem::take(&mut src.items).into_iter().partition(|it| {
+            let c = it.bounds().center();
+            c.x >= pb.x0 && c.x < pb.x1
+        });
+        src.items = staying;
+        src.relayout();
+        // Append to the target; objects keep their place on the page.
+        let dst = Arc::make_mut(&mut self.spreads[to]);
+        let x = dst.pages.last().map_or(0.0, |p| p.x + p.width);
+        let dx = x - page.x;
+        dst.pages.push(page);
+        dst.relayout();
+        dst.allow_shuffle = false;
+        for it in moving {
+            let mut it = Arc::unwrap_or_clone(it);
+            it.xf = Affine::translate((dx, 0.0)) * it.xf;
+            dst.items.push(Arc::new(it));
+        }
+        if self.spreads[si].pages.is_empty() {
+            self.spreads.remove(si);
+        }
         Ok(())
     }
 

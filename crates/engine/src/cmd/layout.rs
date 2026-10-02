@@ -220,6 +220,43 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "layout.pages.toSpread",
+            "Add Page to Spread",
+            ["Layout", "Pages"],
+            None,
+            "{page (1-based), spread (0-based)} — the page joins that spread (up to 10 pages; the spread stops shuffling)",
+            has_doc,
+            |s, p| {
+                let page =
+                    p.get("page").and_then(Value::as_u64).filter(|n| *n >= 1).ok_or_else(|| bad("layout.pages.toSpread", "missing page"))? as usize;
+                let spread = p.get("spread").and_then(Value::as_u64).ok_or_else(|| bad("layout.pages.toSpread", "missing spread"))? as usize;
+                s.edit(|d, _| {
+                    d.page_to_spread(page - 1, spread)?;
+                    Ok(json!({"spreads": d.spreads.len()}))
+                })
+            }
+        ),
+        cmd!(
+            "layout.spreadShuffle",
+            "Allow Selected Spread to Shuffle",
+            ["Layout", "Pages"],
+            None,
+            "{spread (0-based), allow: bool} — off keeps the spread's pages together when pages are added or removed",
+            has_doc,
+            |s, p| {
+                let si = p.get("spread").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let allow = p.get("allow").and_then(Value::as_bool).unwrap_or(true);
+                s.edit(|d, _| {
+                    let sp = d.spreads.get_mut(si).ok_or_else(|| bad("layout.spreadShuffle", "no such spread"))?;
+                    std::sync::Arc::make_mut(sp).allow_shuffle = allow;
+                    if allow {
+                        d.repaginate();
+                    }
+                    ok()
+                })
+            }
+        ),
+        cmd!(
             "layout.pageSize",
             "Page Size",
             [],
@@ -616,5 +653,32 @@ mod page_size_tests {
         let d = s.doc().unwrap().doc.clone();
         assert!((d.spreads[si].pages[1].width - 595.276).abs() < 0.01);
         assert!(s.execute("layout.pageSize", &json!({"pages": [9], "width": 100})).is_err());
+    }
+}
+
+#[cfg(test)]
+mod spread_tests {
+    use serde_json::json;
+
+    #[test]
+    fn three_page_spread_survives_page_inserts() {
+        let mut s = crate::Session::new();
+        s.execute("file.new", &json!({"pages": 5})).unwrap();
+        // [1] [2 3] [4 5]: page 4 joins spread 1 → [1] [2 3 4] [5].
+        let d = s.doc().unwrap().doc.clone();
+        let (si, pi) = d.page_loc(3).unwrap();
+        let x = d.spreads[si].pages[pi].x;
+        let id = s.execute("frame.create", &json!({"spread": si, "rect": [x + 50.0, 50, x + 150.0, 150]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("layout.pages.toSpread", &json!({"page": 4, "spread": 1})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        assert_eq!(d.spreads[1].pages.len(), 3);
+        assert!(!d.spreads[1].allow_shuffle);
+        assert_eq!(d.page_of_item(designcraft_doc::ItemId(id)), Some(3), "the object went with its page");
+        // Adding a page at the start reshuffles the others but keeps the 3-page spread.
+        s.execute("layout.pages.insert", &json!({"after": 0, "count": 1})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        assert!(d.spreads.iter().any(|sp| sp.pages.len() == 3 && !sp.allow_shuffle));
+        assert_eq!(d.page_count(), 6);
+        d.check().unwrap();
     }
 }

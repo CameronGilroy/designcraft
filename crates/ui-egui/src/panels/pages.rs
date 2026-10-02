@@ -220,6 +220,15 @@ fn page_menu(app: &mut DesignApp, ui: &mut egui::Ui, doc: &designcraft_doc::Docu
         let _ = app.run("layout.pages.duplicateSpread", json!({"spread": si}));
         ui.close();
     }
+    if si > 0 && ui.button("Add to Previous Spread").on_hover_text("Spreads of up to 10 pages").clicked() {
+        let _ = app.run("layout.pages.toSpread", json!({"page": abs + 1, "spread": si - 1}));
+        ui.close();
+    }
+    let mut shuffle = doc.spreads.get(si).is_none_or(|sp| sp.allow_shuffle);
+    if ui.checkbox(&mut shuffle, "Allow Spread to Shuffle").clicked() {
+        let _ = app.run("layout.spreadShuffle", json!({"spread": si, "allow": shuffle}));
+        ui.close();
+    }
     ui.separator();
     for (id, label) in [
         ("layout.overrideParentItems", "Override All Parent Page Items"),
