@@ -9,6 +9,7 @@
 pub mod cmd;
 pub mod links;
 pub mod sample;
+pub mod script;
 mod tooling;
 
 use std::sync::Arc;

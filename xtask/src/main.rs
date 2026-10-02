@@ -5,6 +5,7 @@
 
 mod assets;
 mod layers;
+mod parity;
 mod stats;
 
 use std::path::{Path, PathBuf};
@@ -21,6 +22,7 @@ commands:
   corpus [--download]
                   show where test corpora live; --download fetches PngSuite into corpus/pngsuite
   stats [--exact] count tests and lines per crate (--exact: ask the test harness via `-- --list`)
+  parity          recompute the InDesign feature-parity summary in docs/parity.md
 ";
 
 fn main() -> ExitCode {
@@ -33,6 +35,7 @@ fn main() -> ExitCode {
         Some("ci") => cmd_ci(),
         Some("corpus") => cmd_corpus(rest.contains(&"--download")),
         Some("stats") => stats::run(&root(), rest.contains(&"--exact")),
+        Some("parity") => parity::run(&root()),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())

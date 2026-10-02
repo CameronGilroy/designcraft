@@ -391,3 +391,28 @@ fn control_addr_accepts_port_or_address() {
     assert_eq!(control_addr("localhost:8000"), "localhost:8000");
     assert!(Remote::connect("127.0.0.1:1").is_err());
 }
+
+#[test]
+fn batch_steps_use_earlier_results() {
+    let mut s = server();
+    let v = ok(
+        &mut s,
+        "batch",
+        json!({"commands": [
+            {"command": "frame.create", "params": {"rect": [72, 72, 300, 200], "content": "text", "text": "Hello"}},
+            {"command": "text.select", "params": {"story": "$0.story", "anchor": 5, "focus": 5}},
+            {"command": "footnote.insert", "params": {"text": "A note for frame ${0.id}."}},
+            {"command": "footnote.list", "params": {"story": "$0.story"}},
+        ]}),
+    );
+    assert_eq!(v["completed"], 4);
+    let id = v["results"][0]["id"].as_u64().unwrap();
+    assert_eq!(v["results"][3][0]["text"], format!("A note for frame {id}."));
+    // The same as script text.
+    let v = ok(
+        &mut s,
+        "batch",
+        json!({"script": "# one per line\nframe.create {\"rect\": [0, 0, 50, 50]}\nobject.rename {\"ids\": [\"$0.id\"], \"name\": \"Box\"}"}),
+    );
+    assert_eq!(v["completed"], 2);
+}

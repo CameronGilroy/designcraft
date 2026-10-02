@@ -35,6 +35,33 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 
 **Next (in order):** books, footnotes in EPUB / span columns / split footnotes · table/cell styles, text rotation in cells · PDF/X-4 output intent, tagged PDF · UI for Data Merge/spelling/hyperlinks.
 
+## How far from full parity (estimate, 2026-10-02)
+
+**Breadth: ~63% weighted** (P0 core 86%, P1 44%, P2 15%) over the 275 features of the InDesign catalogue, scored
+row by row in [docs/parity.md](docs/parity.md) (`cargo xtask parity` recomputes it). Many features scored done still
+lack some of InDesign's options or dialog details, so **overall parity including depth is about 55%**.
+
+**Remaining work: about 600 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 150–200 hours with
+four agents in parallel on separate crates:
+
+| Work | Estimate |
+|---|---|
+| Open P0 (23: autosave/recovery, Preferences, Color panel/picker, Gradient tool, Place PDF/SVG, DOCX/RTF import, PDF/X-4, parent overrides UI, …) | 35 h |
+| Open P1 (66: type on a path, nested/GREP styles, table/cell styles, pathfinder, glyphs panel, package, print, variable fonts, …) | 165 h |
+| Open P2 (68: liquid/alternate layouts, books, buttons & forms, XML, conditional text, HTML, tagged PDF, …) | 205 h |
+| Depth and pixel fidelity of every dialog, panel and menu against InDesign 2026 | 130 h |
+| Performance (incremental composition, GPU raster) and interchange hardening (IDML/PDF corpus) | 85 h |
+
+Basis: this session landed 12 arcs (footnotes, cross-references, index, anchored objects, guides, Links, Find Font,
+clipboard, menus, damage repaint, agent scripting) in about 13 hours on a heavily loaded machine — roughly 1–3 hours per
+catalogue row depending on size.
+
+## Agents: CLI and MCP
+
+Every command is reachable from `designcraft-cli` (`run`, `script` with `$N.path` result references, `app` for the
+running window, `describe`, `commands`), from MCP (`designcraft-cli mcp`, tools including `execute` and `batch` with the
+same references), and from the app's JSON control channel. See [docs/agents.md](docs/agents.md).
+
 ## Milestones
 
 | # | Milestone | State |

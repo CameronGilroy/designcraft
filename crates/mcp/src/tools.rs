@@ -114,15 +114,21 @@ pub fn tool_definitions() -> Vec<Value> {
             "batch",
             "Execute commands",
             "Run several commands in order, stopping at the first error. Returns each result; on failure also the failing index \
-             and message (earlier commands stay applied; use edit.undo to revert them).",
+             and message (earlier commands stay applied; use edit.undo to revert them). Later steps can use earlier results: a \
+             parameter string \"$N.path\" is replaced by that value of step N's result (0-based; \"$last.path\" for the previous \
+             step), e.g. after frame.create → {\"id\": 8, \"story\": 9}, {\"story\": \"$0.story\"} passes 9; \"${N.path}\" \
+             interpolates into longer strings. Give `commands`, or `script` text (one `command.id {json}` per line).",
             obj(
-                json!({"commands": {
-                    "type": "array",
-                    "minItems": 1,
-                    "description": "Commands to run in order",
-                    "items": obj(json!({"command": string("Command id"), "params": params_schema()}), &["command"]),
-                }}),
-                &["commands"],
+                json!({
+                    "commands": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "Commands to run in order",
+                        "items": obj(json!({"command": string("Command id"), "params": params_schema()}), &["command"]),
+                    },
+                    "script": string("Alternative to `commands`: lines of `command.id {json params}` (# comments allowed)"),
+                }),
+                &[],
             ),
             false,
         ),
@@ -433,22 +439,18 @@ fn filter_commands(all: Value, a: &Args) -> Value {
 }
 
 fn batch(b: &mut dyn Backend, a: &Args) -> Result<ToolResult, String> {
-    let cmds = a.get("commands").and_then(Value::as_array).filter(|c| !c.is_empty()).ok_or("`commands` must be a non-empty array")?;
-    let mut results = vec![];
-    for (i, c) in cmds.iter().enumerate() {
-        let step = (|| {
-            let id = c.get("command").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or("missing `command`")?;
-            exec(b, id, command_params(c.get("params"))?)
-        })();
-        match step {
-            Ok(r) => results.push(r),
-            Err(e) => {
-                let v = json!({"completed": i, "results": results, "failedIndex": i, "failedCommand": c.get("command"), "error": e});
-                return Ok(ToolResult { is_error: true, ..ToolResult::json(&v) });
-            }
-        }
+    use designcraft_engine::script;
+    let steps = match (a.get("commands").and_then(Value::as_array), a.get("script").and_then(Value::as_str)) {
+        (Some(c), _) if !c.is_empty() => script::parse(&Value::Array(c.clone()).to_string())?,
+        (_, Some(t)) => script::parse(t)?,
+        _ => return Err("give a non-empty `commands` array or `script` text".into()),
+    };
+    if steps.is_empty() {
+        return Err("the script has no steps".into());
     }
-    Ok(ToolResult::json(&json!({"completed": results.len(), "results": results})))
+    let report = script::run(&steps, |id, p| exec(b, id, p));
+    let v = report.to_json();
+    Ok(if report.failed.is_some() { ToolResult { is_error: true, ..ToolResult::json(&v) } } else { ToolResult::json(&v) })
 }
 
 /// The story id from `story` or the text frame `frame` (else the selection).

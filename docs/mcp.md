@@ -49,7 +49,7 @@ see `ui_inspect` → `canvasRect`).
 |---|---|
 | `list_commands` | Every command (id, label, menu path, shortcut, params, enabled), with `filter` / `enabledOnly` |
 | `execute` | Run any command: `{command, params}` |
-| `batch` | Run `commands: [{command, params}]` in order, stopping at the first error (reports `failedIndex`) |
+| `batch` | Run `commands: [{command, params}]` (or `script` text, one `command.id {json}` per line) in order, stopping at the first error (reports `failedIndex`); `"$N.path"` parameters use earlier results ([agents.md](agents.md)) |
 | `inspect_document` | Pages, spreads, items (ids, bounds, fill, story), stories (overset), layers, styles, swatches, selection |
 | `get_story` | Text, frames, paragraphs, lines, overset of a story (`story` or text `frame`) |
 | `set_story_text` | Replace a story's text (`\n` = new paragraph) |
