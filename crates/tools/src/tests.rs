@@ -180,3 +180,26 @@ fn pencil_draws_a_smooth_path() {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn zoom_tool_click_and_scrub() {
+    let d = Document::new(&NewDocument::default());
+    let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
+    let cx = ctx(&d, &s, &c, &l);
+    let mut t = create("zoom");
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 100.0, 100.0));
+    assert_eq!(
+        t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 100.0, 100.0)),
+        vec![Action::View(serde_json::json!({"zoomAt": [100.0, 100.0], "factor": 2.0}))]
+    );
+    // Dragging 150 px right zooms in by e, anchored at the press point; no click zoom after.
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 100.0, 100.0));
+    match &t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 250.0, 100.0))[..] {
+        [Action::View(v)] => {
+            assert_eq!(v["zoomAt"], serde_json::json!([100.0, 100.0]));
+            assert!((v["factor"].as_f64().unwrap() - std::f64::consts::E).abs() < 1e-9);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 250.0, 100.0)).is_empty());
+}

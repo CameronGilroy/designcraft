@@ -41,19 +41,51 @@ impl Tool for HandTool {
     }
 }
 
+/// Zoom tool: click zooms in (Alt: out); dragging left or right zooms out or in continuously
+/// around the press point (scrubby zoom).
 #[derive(Default)]
-pub struct ZoomTool;
+pub struct ZoomTool {
+    /// Press point (canvas), zoom at the press, whether it has been dragged.
+    press: Option<(Point, f64, bool)>,
+}
+
+/// Screen pixels of horizontal drag per e-fold of zoom.
+const SCRUB_PX: f64 = 150.0;
 
 impl Tool for ZoomTool {
     fn id(&self) -> &'static str {
         "zoom"
     }
-    fn pointer(&mut self, _cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
-        if ev.kind == PointerKind::Up {
-            let f = if ev.mods.alt { 0.5 } else { 2.0 };
-            return vec![Action::View(json!({"zoomAt": [ev.pos.x, ev.pos.y], "factor": f}))];
+    fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
+        match ev.kind {
+            PointerKind::Down => {
+                self.press = Some((ev.pos, cx.zoom, false));
+                vec![]
+            }
+            PointerKind::Drag => {
+                let Some((start, z0, _)) = self.press else { return vec![] };
+                // The press point stays put on screen, so this is the on-screen distance.
+                let dx = (ev.pos.x - start.x) * cx.zoom;
+                if dx.abs() < 3.0 && self.press.is_some_and(|p| !p.2) {
+                    return vec![];
+                }
+                self.press = Some((start, z0, true));
+                let want = (z0 * (dx / SCRUB_PX).exp()).clamp(0.05, 40.0);
+                vec![Action::View(json!({"zoomAt": [start.x, start.y], "factor": want / cx.zoom.max(1e-9)}))]
+            }
+            PointerKind::Up => {
+                let dragged = self.press.take().is_some_and(|p| p.2);
+                if dragged {
+                    return vec![];
+                }
+                let f = if ev.mods.alt { 0.5 } else { 2.0 };
+                vec![Action::View(json!({"zoomAt": [ev.pos.x, ev.pos.y], "factor": f}))]
+            }
+            _ => vec![],
         }
-        vec![]
+    }
+    fn busy(&self) -> bool {
+        self.press.is_some_and(|p| p.2)
     }
     fn cursor(&self, _cx: &ToolContext, _p: Point, m: Mods) -> Cursor {
         if m.alt { Cursor::ZoomOut } else { Cursor::ZoomIn }

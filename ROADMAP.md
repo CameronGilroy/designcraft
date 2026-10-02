@@ -30,6 +30,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Edit › Paste Into (copied objects become a frame's content, clipped by it; rendered, PDF and IDML both ways — verified in InDesign 2026); Polygon Settings (sides, star inset; double-click the Polygon tool).
 - Color panel (fill/stroke proxy, CMYK/RGB/Lab sliders with channel ramps, tint slider for swatches, spectrum ramp, Add to Swatches) and Color Picker (double-click the proxy); mixed colours are unnamed (not listed in Swatches until added); `object.color`, `swatch.addToSwatches`, `swatch.addUnnamed`.
 - Place text files: Word (.docx: styles by name with their attributes, bold/italic/underline/size/font, footnotes, tables, tabs, breaks), RTF and plain text, into the insertion point, the selected frame or a new frame; autoflow adds pages and threaded frames until the text fits; Remove Styles option (`designcraft-textimport`).
+- Scrubby zoom: drag the Zoom tool left or right to zoom continuously around the press point.
 - Guides belong to the active layer: hidden with it (or with its Show Guides off) and locked with it.
 - Pencil tool (N): freehand strokes simplified to smooth paths (Alt closes); Smooth and Erase are still to come.
 - Edit › Keyboard Shortcuts: every command, click and press the new keys, conflicts shown, per-command and global reset; `window.setShortcut`.

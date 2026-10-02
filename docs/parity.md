@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 53 | 24 | 20 | 67% |
+| P1 | 97 | 54 | 24 | 19 | 68% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
@@ -31,7 +31,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Interactivity & digital | 30% |
 | Output & production | 58% |
 | XML & automation | 39% |
-| View & navigation | 68% |
+| View & navigation | 75% |
 | Undo, history, saving | 100% |
 | Accessibility | 20% |
 
@@ -298,7 +298,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | XML & automation | Object Library | P2 | M |
 | View & navigation | Zoom commands | P0 | D |
 | View & navigation | Power Zoom | P2 | M |
-| View & navigation | Animated/scrubby zoom | P1 | M |
+| View & navigation | Animated/scrubby zoom | P1 | D |
 | View & navigation | Screen modes | P0 | D |
 | View & navigation | Overprint preview | P1 | M |
 | View & navigation | Rulers, guides, grids toggles | P0 | D |
