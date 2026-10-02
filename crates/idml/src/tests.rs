@@ -490,3 +490,34 @@ fn round_trips_index_references() {
     assert_eq!(s.text.replace(designcraft_doc::INDEX_MARK, ""), "Kerning adjusts pairs.\nMore.");
     assert!(s.text.starts_with(&format!("{0}{0}Ke{0}rning", designcraft_doc::INDEX_MARK)), "{:?}", s.text);
 }
+
+#[test]
+fn round_trips_anchored_objects() {
+    use designcraft_doc::{AnchorPosition, AnchoredObject, anchored::AnchorAlign};
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (_, sid) =
+        d.add_text_frame(SpreadRef::Doc(0), Rect::new(40.0, 40.0, 400.0, 400.0), lid, "Inline here.\nAbove.", ParaFormat::default()).unwrap();
+    let mut a =
+        designcraft_doc::Item::new(designcraft_doc::ItemId(d.alloc()), lid, Shape::Rectangle, shapes::rectangle(Rect::new(0.0, 0.0, 20.0, 16.0)));
+    a.fill = Fill::swatch(designcraft_color::swatch::BLACK);
+    let b = designcraft_doc::Item::new(designcraft_doc::ItemId(d.alloc()), lid, Shape::Oval, shapes::ellipse(Rect::new(0.0, 0.0, 60.0, 30.0)));
+    {
+        let s = d.story_mut(sid).unwrap();
+        s.insert_object(7, AnchoredObject::new(a, AnchorPosition::Inline { y_offset: 2.0 }));
+        let at = s.text.find("Above").unwrap();
+        s.insert_object(at, AnchoredObject::new(b, AnchorPosition::AboveLine { align: AnchorAlign::Center, space_before: 3.0, space_after: 4.0 }));
+    }
+    d.check().unwrap();
+    let back = import_idml(&export_idml(&d)).unwrap();
+    back.check().unwrap();
+    let s = back.stories.values().find(|s| !s.objects.is_empty()).unwrap();
+    assert_eq!(s.text, d.story(sid).unwrap().text);
+    assert_eq!(s.objects.len(), 2);
+    let (w, h) = s.objects[0].size();
+    assert!((w - 20.0).abs() < 1e-6 && (h - 16.0).abs() < 1e-6);
+    assert_eq!(s.objects[0].position, AnchorPosition::Inline { y_offset: 2.0 });
+    assert_eq!(s.objects[0].item.fill.swatch, designcraft_color::swatch::BLACK);
+    assert_eq!(s.objects[1].item.shape, Shape::Oval);
+    assert_eq!(s.objects[1].position, AnchorPosition::AboveLine { align: AnchorAlign::Center, space_before: 3.0, space_after: 4.0 });
+}

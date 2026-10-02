@@ -987,9 +987,10 @@ impl<'r> Importer<'r> {
             anchors: Vec::new(),
             xrefs: Vec::new(),
             index_refs: Vec::new(),
+            objects: Vec::new(),
         };
         self.walk_story(e, &mut b, &ParaFormat::default(), &CharAttrs::default(), &CharFormat::default(), None);
-        let StoryBuilder { text, mut paras, runs, last, tables: tbls, notes, anchors, xrefs, index_refs, .. } = b;
+        let StoryBuilder { text, mut paras, runs, last, tables: tbls, notes, anchors, xrefs, index_refs, objects, .. } = b;
         let mut chars: Vec<CharRun> = runs.into_iter().filter(|r| r.len > 0).collect();
         if chars.is_empty() {
             chars.push(CharRun { len: 0, format: last });
@@ -1026,7 +1027,7 @@ impl<'r> Importer<'r> {
             anchors: anchor_list,
             xrefs: xref_list,
             index_refs: index_refs.into_iter().map(Arc::new).collect(),
-            objects: vec![],
+            objects: objects.into_iter().map(Arc::new).collect(),
         };
         st.fix_notes();
         st.fix_marks();
@@ -1250,17 +1251,30 @@ impl<'r> Importer<'r> {
                         b.push(&designcraft_doc::FOOTNOTE_REF.to_string(), &rcf);
                     }
                     // Not supported yet: skip their content entirely.
-                    "Properties"
-                    | "Note"
-                    | "Rectangle"
-                    | "Oval"
-                    | "Polygon"
-                    | "GraphicLine"
-                    | "TextFrame"
-                    | "Group"
-                    | "StoryPreference"
-                    | "InCopyExportOption"
-                    | "TextVariableInstance" => {}
+                    "Rectangle" | "Oval" | "Polygon" | "GraphicLine" | "Group" => {
+                        // An anchored object (text frames inside stories aren't supported yet).
+                        let has_text = c.find_all("TextFrame").next().is_some();
+                        if !has_text && let Some(item) = self.item(c, designcraft_geom::Affine::IDENTITY) {
+                            use designcraft_doc::anchored::AnchorAlign as A;
+                            let set = c.find("AnchoredObjectSetting");
+                            let get = |k: &str| set.and_then(|s| s.num(k)).unwrap_or(0.0);
+                            let position = match set.and_then(|s| s.get("AnchoredPosition")) {
+                                Some("AboveLine") => designcraft_doc::AnchorPosition::AboveLine {
+                                    align: match set.and_then(|s| s.get("HorizontalAlignment")) {
+                                        Some("CenterAlign") => A::Center,
+                                        Some("RightAlign") => A::Right,
+                                        _ => A::Left,
+                                    },
+                                    space_before: get("AnchorSpaceAbove"),
+                                    space_after: get("AnchorYoffset"),
+                                },
+                                _ => designcraft_doc::AnchorPosition::Inline { y_offset: get("AnchorYoffset") },
+                            };
+                            b.objects.push(designcraft_doc::AnchoredObject::new(item, position));
+                            b.push(&designcraft_doc::OBJECT_MARK.to_string(), cf);
+                        }
+                    }
+                    "Properties" | "Note" | "TextFrame" | "StoryPreference" | "InCopyExportOption" | "TextVariableInstance" => {}
                     _ => self.walk_story(c, b, pf, pchars, cf, brk),
                 },
                 Node::Pi(t, v) if t == "ACE" => {
@@ -1751,6 +1765,7 @@ struct StoryBuilder {
     anchors: Vec<(String, String)>,
     index_refs: Vec<designcraft_doc::IndexRef>,
     xrefs: Vec<(String, String)>,
+    objects: Vec<designcraft_doc::AnchoredObject>,
 }
 
 impl StoryBuilder {

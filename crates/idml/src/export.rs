@@ -1476,6 +1476,34 @@ impl<'a> Ex<'a> {
                                     .attr("DestinationUniqueKey", a.id & 0xFFFF_FFFF),
                             ));
                         }
+                    } else if ch == designcraft_doc::OBJECT_MARK {
+                        // An anchored object: the item inside the range with its anchoring settings.
+                        flush_text(&mut cur, &mut pending);
+                        flush_content(&mut pending, &mut out);
+                        let k = s.text[..seg_start + ci].matches(designcraft_doc::OBJECT_MARK).count();
+                        if let Some(o) = s.objects.get(k) {
+                            let mut e = self.item_el(&o.item, o.item.xf);
+                            use designcraft_doc::anchored::AnchorAlign as A;
+                            let setting = match &o.position {
+                                designcraft_doc::AnchorPosition::Inline { y_offset } => {
+                                    El::new("AnchoredObjectSetting").attr("AnchoredPosition", "InlinePosition").attr("AnchorYoffset", num(*y_offset))
+                                }
+                                designcraft_doc::AnchorPosition::AboveLine { align, space_before, space_after } => El::new("AnchoredObjectSetting")
+                                    .attr("AnchoredPosition", "AboveLine")
+                                    .attr(
+                                        "HorizontalAlignment",
+                                        match align {
+                                            A::Left => "LeftAlign",
+                                            A::Center => "CenterAlign",
+                                            A::Right => "RightAlign",
+                                        },
+                                    )
+                                    .attr("AnchorSpaceAbove", num(*space_before))
+                                    .attr("AnchorYoffset", num(*space_after)),
+                            };
+                            e.push(setting);
+                            out.push(Node::El(e));
+                        }
                     } else if ch == designcraft_doc::INDEX_MARK {
                         flush_text(&mut cur, &mut pending);
                         flush_content(&mut pending, &mut out);
