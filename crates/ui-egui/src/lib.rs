@@ -83,6 +83,8 @@ pub struct UiState {
     pub document_grid: bool,
     pub text_threads: bool,
     pub hidden_characters: bool,
+    /// View › Display Performance.
+    pub display_quality: designcraft_render::DisplayQuality,
     pub control_bar: bool,
     pub tools_double_column: bool,
     /// Expanded right-dock panel group tab.
@@ -128,6 +130,7 @@ impl Default for UiState {
             document_grid: false,
             text_threads: false,
             hidden_characters: false,
+            display_quality: designcraft_render::DisplayQuality::High,
             control_bar: false,
             tools_double_column: false,
             dock_tab: "properties".into(),

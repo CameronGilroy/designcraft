@@ -1033,6 +1033,7 @@ dependencies = [
  "hayro",
  "image",
  "log",
+ "serde",
  "vello_common 0.2.0",
  "vello_cpu 0.2.0",
 ]

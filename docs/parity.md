@@ -9,7 +9,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
-| P0 | 102 | 95 | 7 | 0 | 97% |
+| P0 | 102 | 97 | 5 | 0 | 98% |
 | P1 | 97 | 33 | 23 | 41 | 46% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
@@ -22,7 +22,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Transform | 78% |
 | Fill, stroke, colour | 69% |
 | Effects & transparency | 50% |
-| Placing & links | 57% |
+| Placing & links | 62% |
 | Type & text frames | 77% |
 | Typography | 79% |
 | Styles | 61% |
@@ -31,11 +31,11 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Interactivity & digital | 30% |
 | Output & production | 48% |
 | XML & automation | 39% |
-| View & navigation | 62% |
+| View & navigation | 68% |
 | Undo, history, saving | 100% |
 | Accessibility | 20% |
 
-Open P0 items: Dockable panels, Preferences, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, Export to PDF (print), Display performance.
+Open P0 items: Dockable panels, Preferences, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print).
 
 ## Rows
 
@@ -179,7 +179,7 @@ Open P0 items: Dockable panels, Preferences, Raster formats, Vector/page formats
 | Placing & links | Captions | P2 | M |
 | Placing & links | Image import options | P1 | M |
 | Placing & links | Linked text/stories | P2 | M |
-| Placing & links | Display performance | P0 | P |
+| Placing & links | Display performance | P0 | D |
 | Placing & links | Video/audio | P2 | M |
 | Type & text frames | Text frames | P0 | D |
 | Type & text frames | Threading | P0 | D |
@@ -304,7 +304,7 @@ Open P0 items: Dockable panels, Preferences, Raster formats, Vector/page formats
 | View & navigation | Rulers, guides, grids toggles | P0 | D |
 | View & navigation | Show/hide frame edges, threads, hidden chars | P0 | D |
 | View & navigation | Structure / tag markers | P2 | M |
-| View & navigation | Display performance | P0 | P |
+| View & navigation | Display performance | P0 | D |
 | View & navigation | Navigate pages | P0 | D |
 | View & navigation | Split window | P2 | M |
 | View & navigation | Rotate spread view | P2 | M |

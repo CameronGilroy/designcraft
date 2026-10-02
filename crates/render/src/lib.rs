@@ -99,6 +99,21 @@ pub struct RenderOptions {
     pub page_shadow: bool,
     /// Pink highlight behind text set in fonts that aren't installed (screen view).
     pub highlight_missing_fonts: bool,
+    /// View › Display Performance.
+    pub quality: DisplayQuality,
+}
+
+/// View › Display Performance: how placed graphics and effects are drawn on screen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DisplayQuality {
+    /// Graphics as grey boxes, no transparency effects.
+    Fast,
+    /// Low-resolution proxies (72 ppi at 100%).
+    Typical,
+    /// Full resolution.
+    #[default]
+    High,
 }
 
 impl Default for RenderOptions {
@@ -111,6 +126,7 @@ impl Default for RenderOptions {
             greek_below_px: 0.0,
             page_shadow: false,
             highlight_missing_fonts: false,
+            quality: DisplayQuality::High,
         }
     }
 }
@@ -391,7 +407,8 @@ impl Renderer {
             Content::Text(_) => 36.0 + 0.25 * vb.width().max(vb.height()),
             _ => 0.0,
         };
-        let fx_outset = if it.effects.any() { fx::outset(it) } else { 0.0 };
+        let effects = it.effects.any() && f.opts.quality != DisplayQuality::Fast;
+        let fx_outset = if effects { fx::outset(it) } else { 0.0 };
         if !rect_overlaps(vb.inflate(margin + fx_outset, margin + fx_outset), f.visible) {
             return;
         }
@@ -402,7 +419,7 @@ impl Renderer {
             ctx.set_transform(Affine::IDENTITY);
             ctx.push_layer(None, Some(blend_mode(it.blend)), Some(it.opacity), None, None);
         }
-        if it.effects.any() {
+        if effects {
             self.draw_item_fx(ctx, f, it, &bp, xf, page_name);
         } else {
             self.draw_body(ctx, f, it, &bp, xf, page_name);
@@ -536,8 +553,15 @@ impl Renderer {
 
     fn draw_graphic(&mut self, ctx: &mut RenderContext, f: &Frame, g: &designcraft_doc::Graphic, xf: Affine) {
         let Some(asset) = f.doc.assets.get(&g.asset) else { return };
-        // Pick a mip level close to the on-screen size.
+        if f.opts.quality == DisplayQuality::Fast {
+            ctx.set_transform(f.view * xf * g.xf);
+            ctx.set_paint(peniko::Color::from_rgba8(178, 178, 178, 255));
+            ctx.fill_rect(&Rect::new(0.0, 0.0, g.size.0, g.size.1));
+            return;
+        }
+        // Pick a mip level close to the on-screen size (Typical: a 72 ppi proxy).
         let on_screen = (f.view * xf * g.xf).determinant().abs().sqrt();
+        let on_screen = if f.opts.quality == DisplayQuality::Typical { on_screen.min(1.0) } else { on_screen };
         let Some(pm) = images::mip(&asset.data, g.size.0, on_screen) else { return };
         let rect = Rect::new(0.0, 0.0, g.size.0, g.size.1);
         ctx.set_transform(f.view * xf * g.xf);
@@ -806,6 +830,48 @@ mod tests {
         let (dash, gap) = (img.pixel(106, 500), img.pixel(114, 500));
         assert!(dash[0] < 80 && dash[2] < 80, "dash {dash:?}");
         assert!(gap[0] < 80 && gap[2] > 150, "gap {gap:?}");
+    }
+
+    #[test]
+    fn display_performance_fast_draws_grey_boxes() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        // A 4×4 red PNG placed at 100,100 (100×100 pt).
+        let mut png = Vec::new();
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([255, 0, 0, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let aid = designcraft_doc::AssetId(d.alloc());
+        d.assets.insert(
+            aid,
+            Arc::new(designcraft_doc::Asset {
+                id: aid,
+                name: "red.png".into(),
+                mime: "image/png".into(),
+                link: None,
+                data: Arc::new(png),
+                pixels: Some((4, 4)),
+            }),
+        );
+        let id = designcraft_doc::ItemId(d.alloc());
+        let mut it =
+            Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(100.0, 100.0, 200.0, 200.0)));
+        it.content = designcraft_doc::Content::Graphic(designcraft_doc::Graphic {
+            asset: aid,
+            size: (100.0, 100.0),
+            xf: Affine::translate((100.0, 100.0)),
+            auto_fit: Default::default(),
+        });
+        d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
+        let cache = Cache::new();
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let px = |q: DisplayQuality, r: &mut Renderer| {
+            r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions { quality: q, ..Default::default() }).unwrap().pixel(150, 150)
+        };
+        assert_eq!(px(DisplayQuality::High, &mut r)[..3], [255, 0, 0]);
+        assert_eq!(px(DisplayQuality::Typical, &mut r)[..3], [255, 0, 0]);
+        assert_eq!(px(DisplayQuality::Fast, &mut r)[..3], [178, 178, 178]);
     }
 
     #[test]
