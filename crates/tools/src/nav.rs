@@ -148,3 +148,27 @@ impl Tool for PlaceGun {
         Cursor::LoadedGraphic
     }
 }
+
+/// Page tool (Shift+P): click a page to set its own size.
+#[derive(Default)]
+pub struct PageTool;
+
+impl Tool for PageTool {
+    fn id(&self) -> &'static str {
+        "page"
+    }
+    fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
+        if ev.kind != PointerKind::Up {
+            return vec![];
+        }
+        let Some((designcraft_doc::SpreadRef::Doc(si), sp)) = cx.layout.spread_at(ev.pos) else { return vec![] };
+        let Some(spread) = cx.doc.spreads.get(si) else { return vec![] };
+        let Some(pi) = spread.pages.iter().position(|p| p.bounds().contains(sp)) else { return vec![] };
+        let pg = &spread.pages[pi];
+        let n = cx.doc.first_page_of_spread(si) + pi + 1;
+        vec![Action::Dialog("cmd:layout.pageSize".into(), json!({"pages": [n], "width": pg.width, "height": pg.height}))]
+    }
+    fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
+        Cursor::Arrow
+    }
+}

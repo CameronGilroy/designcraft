@@ -10,13 +10,13 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 58 | 25 | 14 | 73% |
+| P1 | 97 | 59 | 25 | 13 | 74% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
 |---|---|
 | Application shell & workspace | 80% |
-| Documents, pages, spreads | 77% |
+| Documents, pages, spreads | 81% |
 | Layers | 95% |
 | Frames, shapes & paths | 87% |
 | Transform | 93% |
@@ -64,7 +64,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Documents, pages, spreads | Facing pages / spreads | P0 | D |
 | Documents, pages, spreads | Pages per spread up to 10 | P1 | M |
 | Documents, pages, spreads | Insert/move/duplicate/delete pages | P0 | D |
-| Documents, pages, spreads | Per-page size (Page tool) | P1 | M |
+| Documents, pages, spreads | Per-page size (Page tool) | P1 | D |
 | Documents, pages, spreads | Margins and Columns per page | P0 | D |
 | Documents, pages, spreads | Spread rotation (view) | P2 | M |
 | Documents, pages, spreads | Pasteboard | P0 | D |

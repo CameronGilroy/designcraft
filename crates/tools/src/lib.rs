@@ -273,6 +273,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "hand" => Box::new(nav::HandTool::default()),
         "placeGun" => Box::new(nav::PlaceGun::default()),
         "zoom" => Box::new(nav::ZoomTool::default()),
+        "page" => Box::new(nav::PageTool),
         other => Box::new(NoopTool(tool_info(other).map(|t| t.id).unwrap_or("selection"))),
     }
 }

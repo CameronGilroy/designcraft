@@ -220,6 +220,15 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "layout.pageSize",
+            "Page Size",
+            [],
+            None,
+            "{pages: [1-based page numbers], width?, height?, preset?: \"A4\"|\"Letter\"|…} — pages of their own size (Page tool); objects on the pages keep their place on them",
+            has_doc,
+            page_size
+        ),
+        cmd!(
             "layout.section",
             "Numbering & Section Options…",
             ["Layout"],
@@ -461,6 +470,63 @@ fn parent_ref(d: &designcraft_doc::Document, v: Option<&Value>) -> Option<Option
 #[allow(dead_code)]
 fn _r(_: Result<()>) {}
 
+/// Layout › Page Size (the Page tool): resize pages one by one. Left pages grow to the left
+/// (the spine stays put); objects move with their page.
+fn page_size(s: &mut crate::Session, p: &Value) -> Result<Value> {
+    let pages: Vec<usize> =
+        p.get("pages").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(|n| n as usize).collect()).unwrap_or_default();
+    let n = s.doc()?.doc.page_count();
+    if pages.is_empty() || pages.iter().any(|x| *x == 0 || *x > n) {
+        return Err(bad("layout.pageSize", "give `pages` (1-based)"));
+    }
+    let (mut w, mut h) = (p.get("width").and_then(Value::as_f64), p.get("height").and_then(Value::as_f64));
+    if let Some(name) = str_param(p, "preset") {
+        let pr = designcraft_doc::build::PRESETS
+            .iter()
+            .find(|x| x.name.eq_ignore_ascii_case(name))
+            .ok_or_else(|| bad("layout.pageSize", format!("no preset `{name}`")))?;
+        w = Some(pr.width);
+        h = Some(pr.height);
+    }
+    s.edit(|d, _| {
+        for page in &pages {
+            let Some((si, pi)) = d.page_loc(page - 1) else { continue };
+            let sp = std::sync::Arc::make_mut(&mut d.spreads[si]);
+            let old: Vec<f64> = sp.pages.iter().map(|x| x.x).collect();
+            let pg = &mut sp.pages[pi];
+            let dw = w.map_or(0.0, |w| w.max(1.0) - pg.width);
+            if let Some(w) = w {
+                pg.width = w.max(1.0);
+            }
+            if let Some(h) = h {
+                pg.height = h.max(1.0);
+            }
+            let left = pg.side == designcraft_doc::PageSide::Left;
+            sp.relayout();
+            // Keep the spine: shift the whole spread back when a left page grows.
+            if left && dw != 0.0 {
+                for q in &mut sp.pages {
+                    q.x -= dw;
+                }
+            }
+            let new: Vec<f64> = sp.pages.iter().map(|x| x.x).collect();
+            // Objects follow their page.
+            let shifts: Vec<(f64, f64, f64)> =
+                sp.pages.iter().enumerate().map(|(k, q)| (old[k], old[k] + q.width - if k == pi { dw } else { 0.0 }, new[k] - old[k])).collect();
+            for it in &mut sp.items {
+                let cx = it.bounds().center().x;
+                if let Some((_, _, dx)) = shifts.iter().find(|(a, b, _)| cx >= *a && cx < *b)
+                    && *dx != 0.0
+                {
+                    let it = std::sync::Arc::make_mut(it);
+                    it.xf = designcraft_geom::Affine::translate((*dx, 0.0)) * it.xf;
+                }
+            }
+        }
+        Ok(json!({"pages": pages.len()}))
+    })
+}
+
 /// File › Document Setup values.
 fn document_setup(d: &designcraft_doc::Document) -> Value {
     let st = &d.settings;
@@ -522,5 +588,33 @@ mod layer_tests {
         let d = &s.doc().unwrap().doc;
         assert_eq!(d.layers.len(), 1);
         assert_eq!(d.item(designcraft_doc::ItemId(f)).unwrap().layer.0, l4);
+    }
+}
+
+#[cfg(test)]
+mod page_size_tests {
+    use serde_json::json;
+
+    #[test]
+    fn page_size_per_page_keeps_objects_on_their_page() {
+        let mut s = crate::Session::new();
+        s.execute("file.new", &json!({"pages": 3})).unwrap();
+        // Page 3 is the right page of spread 2 (pages 2–3); an object on it.
+        let d = s.doc().unwrap().doc.clone();
+        let (si, pi) = d.page_loc(2).unwrap();
+        let x0 = d.spreads[si].pages[pi].x;
+        let id = s.execute("frame.create", &json!({"spread": si, "rect": [x0 + 100.0, 100, x0 + 200.0, 200]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("layout.pageSize", &json!({"pages": [2], "width": 300, "height": 500})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let left = &d.spreads[si].pages[0];
+        assert_eq!((left.width, left.height), (300.0, 500.0));
+        assert_eq!(d.spreads[si].pages[1].x, x0, "the spine stays");
+        let it = d.item(designcraft_doc::ItemId(id)).unwrap();
+        assert_eq!(it.bounds().x0, x0 + 100.0);
+        assert_eq!(d.page_of_item(it.id), Some(2));
+        s.execute("layout.pageSize", &json!({"pages": [3], "preset": "A4"})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        assert!((d.spreads[si].pages[1].width - 595.276).abs() < 0.01);
+        assert!(s.execute("layout.pageSize", &json!({"pages": [9], "width": 100})).is_err());
     }
 }
