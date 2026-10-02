@@ -11,6 +11,8 @@ use crate::{Action, Cursor, Mods, PointerEvent, PointerKind, Tool, ToolContext};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Add,
+    /// Scissors: cut the path at the click.
+    Scissors,
     Delete,
     Convert,
 }
@@ -36,6 +38,7 @@ impl Tool for AnchorTool {
     fn id(&self) -> &'static str {
         match self.kind {
             Kind::Add => "addAnchor",
+            Kind::Scissors => "scissors",
             Kind::Delete => "deleteAnchor",
             Kind::Convert => "convertDirection",
         }
@@ -44,7 +47,7 @@ impl Tool for AnchorTool {
     fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
         let p = ev.pos;
         match (self.kind, ev.kind) {
-            (Kind::Add, PointerKind::Down) => {
+            (Kind::Add | Kind::Scissors, PointerKind::Down) => {
                 let Some((_, sp)) = cx.layout.spread_at(p) else { return vec![] };
                 // The first target whose outline passes near the pointer.
                 for id in targets(cx, p) {
@@ -53,7 +56,11 @@ impl Tool for AnchorTool {
                     let inner = (xf * it.xf).inverse() * p;
                     let scale = (xf * it.xf).inverse().determinant().abs().sqrt();
                     if it.path.nearest(inner).is_some_and(|n| n.4 <= cx.tol(5.0) * scale) {
-                        return vec![Action::Exec("path.addAnchor".into(), json!({"id": id.0, "at": [sp.x, sp.y], "tolerance": cx.tol(5.0)}))];
+                        return vec![if self.kind == Kind::Scissors {
+                            Action::Exec("path.split".into(), json!({"id": id.0, "at": [sp.x, sp.y]}))
+                        } else {
+                            Action::Exec("path.addAnchor".into(), json!({"id": id.0, "at": [sp.x, sp.y], "tolerance": cx.tol(5.0)}))
+                        }];
                     }
                 }
                 vec![]
@@ -93,7 +100,7 @@ impl Tool for AnchorTool {
     }
 
     fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
-        Cursor::Pen
+        if self.kind == Kind::Scissors { Cursor::Crosshair } else { Cursor::Pen }
     }
 
     fn busy(&self) -> bool {

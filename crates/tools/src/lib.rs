@@ -263,6 +263,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "addAnchor" => Box::new(anchors::AnchorTool::new(anchors::Kind::Add)),
         "deleteAnchor" => Box::new(anchors::AnchorTool::new(anchors::Kind::Delete)),
         "convertDirection" => Box::new(anchors::AnchorTool::new(anchors::Kind::Convert)),
+        "scissors" => Box::new(anchors::AnchorTool::new(anchors::Kind::Scissors)),
         "rotate" => Box::new(xform::XformTool::new("rotate")),
         "scale" => Box::new(xform::XformTool::new("scale")),
         "shear" => Box::new(xform::XformTool::new("shear")),

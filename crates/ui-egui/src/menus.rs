@@ -165,6 +165,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
         &[
             "ui:app.findFontDialog",
             "-",
+            "cmd:type.createOutlines",
             "cmd:type.fillWithPlaceholder",
             ">Insert Special Character",
             ">Symbols",
@@ -280,6 +281,10 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:transform.again|Transform Again Individually|{\"individually\": true}",
             "cmd:transform.again|Transform Sequence Again|{\"sequence\": true}",
             "cmd:transform.again|Transform Sequence Again Individually|{\"sequence\": true, \"individually\": true}",
+            "<",
+            ">Paths",
+            "cmd:object.makeCompoundPath",
+            "cmd:object.releaseCompoundPath",
             "<",
             ">Arrange",
             "cmd:object.bringToFront",
