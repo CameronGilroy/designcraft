@@ -9,13 +9,13 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
-| P0 | 102 | 98 | 4 | 0 | 98% |
+| P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 33 | 23 | 41 | 46% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
 |---|---|
-| Application shell & workspace | 65% |
+| Application shell & workspace | 69% |
 | Documents, pages, spreads | 71% |
 | Layers | 74% |
 | Frames, shapes & paths | 76% |
@@ -35,7 +35,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Undo, history, saving | 100% |
 | Accessibility | 20% |
 
-Open P0 items: Dockable panels, Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print).
+Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print).
 
 ## Rows
 
@@ -44,7 +44,7 @@ Open P0 items: Dockable panels, Preferences, Vector/page formats (PDF/AI/SVG/EPS
 | Application shell & workspace | Start/Home screen | P0 | D |
 | Application shell & workspace | Multiple documents in tabs | P0 | D |
 | Application shell & workspace | New Window for same document | P1 | M |
-| Application shell & workspace | Dockable panels | P0 | P |
+| Application shell & workspace | Dockable panels | P0 | D |
 | Application shell & workspace | Workspaces | P1 | P |
 | Application shell & workspace | Control panel | P0 | D |
 | Application shell & workspace | Properties panel | P0 | D |

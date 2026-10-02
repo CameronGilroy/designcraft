@@ -52,6 +52,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
         None,
         "{panel: properties|pages|layers|swatches|paragraphStyles|characterStyles|stroke|character|paragraph|textWrap|links|table}",
     ),
+    ("window.floatPanel", "Float Panel", None, "{panel, x?, y?} — the panel in its own movable window"),
+    ("window.dockPanel", "Dock Panel", None, "{panel} — back into the dock's icon column"),
     ("window.controlBar", "Control", Some("Cmd+Alt+6"), "{}"),
     ("window.taskBar", "Contextual Task Bar", None, "{}"),
     ("help.discord", "Join the ArtCraft Discord…", None, "{} — opens https://discord.gg/artcraft in the browser"),
@@ -630,10 +632,26 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 app.ui.dock_tab = panel;
                 app.ui.dock_expanded = true;
                 app.ui.open_panel = None;
-            } else {
+            } else if !app.ui.floating.iter().any(|(p, _)| *p == panel) {
                 app.ui.open_panel = if app.ui.open_panel.as_deref() == Some(panel.as_str()) { None } else { Some(panel) };
             }
             Ok(Value::Null)
+        }
+        "window.floatPanel" | "window.dockPanel" => {
+            let panel = p.get("panel").and_then(Value::as_str).unwrap_or("");
+            if !crate::dock::ICON_PANELS.iter().any(|(id, _, _)| *id == panel) {
+                return Some(Err(format!("{id}: unknown panel `{panel}`")));
+            }
+            if id == "window.floatPanel" {
+                let at = egui::pos2(
+                    p.get("x").and_then(Value::as_f64).unwrap_or(400.0) as f32,
+                    p.get("y").and_then(Value::as_f64).unwrap_or(160.0) as f32,
+                );
+                crate::dock::float_panel(app, panel, at);
+            } else {
+                crate::dock::dock_panel(app, panel);
+            }
+            Ok(json!({"floating": app.ui.floating.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()}))
         }
         "window.controlBar" => flag(&mut app.ui.control_bar),
         "window.taskBar" => flag(&mut app.ui.task_bar),
@@ -1142,6 +1160,20 @@ mod tests {
                 Item::Sep => {}
             }
         }
+    }
+
+    #[test]
+    fn panels_float_and_dock() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        let r = run_ui(&mut app, "window.floatPanel", &json!({"panel": "swatches", "x": 50, "y": 60})).unwrap().unwrap();
+        assert_eq!(r["floating"], json!(["swatches"]));
+        assert_eq!(app.ui.floating[0].1, [50.0, 60.0]);
+        // Showing a floating panel doesn't also open its flyout.
+        run_ui(&mut app, "window.panel", &json!({"panel": "swatches"})).unwrap().unwrap();
+        assert_eq!(app.ui.open_panel, None);
+        run_ui(&mut app, "window.dockPanel", &json!({"panel": "swatches"})).unwrap().unwrap();
+        assert!(app.ui.floating.is_empty());
+        assert!(run_ui(&mut app, "window.floatPanel", &json!({"panel": "nope"})).unwrap().is_err());
     }
 
     #[test]

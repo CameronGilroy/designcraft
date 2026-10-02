@@ -91,6 +91,8 @@ pub struct UiState {
     pub dock_tab: String,
     /// Panel opened from the collapsed icon column (flyout).
     pub open_panel: Option<String>,
+    /// Panels torn off the dock into their own floating windows: (panel id, top-left position).
+    pub floating: Vec<(String, [f32; 2])>,
     pub dock_expanded: bool,
     pub units: Unit,
     pub workspace: String,
@@ -135,6 +137,7 @@ impl Default for UiState {
             tools_double_column: false,
             dock_tab: "properties".into(),
             open_panel: None,
+            floating: Vec::new(),
             dock_expanded: true,
             units: Unit::Picas,
             workspace: "Essentials".into(),
@@ -483,6 +486,7 @@ impl DesignApp {
             canvas::show(self, ui);
         });
         dock::flyout(self, &ctx);
+        dock::floating(self, &ctx);
         story_editor::show(self, &ctx);
         dialogs::show(self, &ctx);
         about::show(self, &ctx);

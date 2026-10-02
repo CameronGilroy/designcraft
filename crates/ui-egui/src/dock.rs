@@ -79,8 +79,13 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             for (id, label, icon) in ICON_PANELS {
                 let open = app.ui.open_panel.as_deref() == Some(*id);
-                if icons::button(ui, icon, 28.0, open, label).clicked() {
-                    app.ui.open_panel = if open { None } else { Some(id.to_string()) };
+                let floats = app.ui.floating.iter().any(|(p, _)| p == id);
+                if icons::button(ui, icon, 28.0, open || floats, label).clicked() {
+                    if floats {
+                        ui.ctx().move_to_top(egui::LayerId::new(egui::Order::Middle, egui::Id::new(("floating_panel", *id))));
+                    } else {
+                        app.ui.open_panel = if open { None } else { Some(id.to_string()) };
+                    }
                 }
                 ui.add_space(1.0);
             }
@@ -116,28 +121,118 @@ pub fn flyout(app: &mut DesignApp, ctx: &egui::Context) {
                 open = false;
             }
             ui.painter().text(close.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(15.0), t.text_dim);
+            // Float: the button beside the close box, or drag the header away from the dock.
+            let float_r = egui::Rect::from_min_size(egui::pos2(strip.max.x - 44.0, strip.min.y + 4.0), vec2(18.0, 18.0));
+            let fr = ui.interact(float_r, ui.id().with("flyfloat"), Sense::click()).on_hover_text("Float panel");
+            float_glyph(ui.painter(), float_r, t.text_dim);
+            let head = egui::Rect::from_min_max(strip.min, egui::pos2(float_r.min.x - 2.0, strip.max.y));
+            let hr = ui.interact(head, ui.id().with("flyhead"), Sense::drag());
+            let torn = hr.drag_stopped() && hr.total_drag_delta().is_some_and(|d| d.length() > 24.0);
+            if fr.clicked() || torn {
+                let at = if torn { ui.ctx().pointer_latest_pos().unwrap_or(pos) - vec2(20.0, 10.0) } else { pos - vec2(30.0, -30.0) };
+                float_panel(app, &id, at);
+                return;
+            }
             egui::Frame::NONE.inner_margin(egui::Margin::same(10)).show(ui, |ui| {
-                egui::ScrollArea::vertical().max_height(screen.height() - 220.0).show(ui, |ui| match id.as_str() {
-                    "swatches" => panels::swatches::show(app, ui),
-                    "paragraphStyles" => panels::styles::paragraph(app, ui),
-                    "characterStyles" => panels::styles::character(app, ui),
-                    "stroke" => panels::properties::stroke_panel(app, ui),
-                    "character" => panels::properties::character_panel(app, ui),
-                    "paragraph" => panels::properties::paragraph_panel(app, ui),
-                    "textWrap" => panels::properties::wrap_panel(app, ui),
-                    "align" => panels::properties::align_panel(app, ui),
-                    "color" => panels::swatches::color_panel(app, ui),
-                    "gradient" => panels::swatches::gradient_panel(app, ui),
-                    "effects" => panels::properties::effects_panel(app, ui),
-                    "links" => panels::properties::links_panel(app, ui),
-                    "preflight" => panels::properties::preflight_panel(app, ui),
-                    "table" => panels::table::show(app, ui),
-                    _ => panels::properties::info_panel(app, ui),
-                });
+                egui::ScrollArea::vertical().max_height(screen.height() - 220.0).show(ui, |ui| panel_body(app, ui, &id));
             });
         });
     });
     if !open {
         app.ui.open_panel = None;
     }
+}
+
+/// The contents of an icon-column panel.
+pub fn panel_body(app: &mut DesignApp, ui: &mut egui::Ui, id: &str) {
+    match id {
+        "swatches" => panels::swatches::show(app, ui),
+        "paragraphStyles" => panels::styles::paragraph(app, ui),
+        "characterStyles" => panels::styles::character(app, ui),
+        "stroke" => panels::properties::stroke_panel(app, ui),
+        "character" => panels::properties::character_panel(app, ui),
+        "paragraph" => panels::properties::paragraph_panel(app, ui),
+        "textWrap" => panels::properties::wrap_panel(app, ui),
+        "align" => panels::properties::align_panel(app, ui),
+        "color" => panels::swatches::color_panel(app, ui),
+        "gradient" => panels::swatches::gradient_panel(app, ui),
+        "effects" => panels::properties::effects_panel(app, ui),
+        "links" => panels::properties::links_panel(app, ui),
+        "preflight" => panels::properties::preflight_panel(app, ui),
+        "table" => panels::table::show(app, ui),
+        _ => panels::properties::info_panel(app, ui),
+    }
+}
+
+/// Tear panel `id` off the dock into a floating window at `at`.
+pub fn float_panel(app: &mut DesignApp, id: &str, at: egui::Pos2) {
+    if app.ui.open_panel.as_deref() == Some(id) {
+        app.ui.open_panel = None;
+    }
+    app.ui.floating.retain(|(p, _)| p != id);
+    app.ui.floating.push((id.to_string(), [at.x, at.y]));
+}
+
+/// Put a floating panel back in the dock's icon column.
+pub fn dock_panel(app: &mut DesignApp, id: &str) {
+    app.ui.floating.retain(|(p, _)| p != id);
+}
+
+/// Floating panels: movable, resizable windows; "Dock" returns one to the icon column.
+pub fn floating(app: &mut DesignApp, ctx: &egui::Context) {
+    let t = Tokens::get(ctx);
+    for (id, at) in app.ui.floating.clone() {
+        let label = ICON_PANELS.iter().find(|p| p.0 == id).map(|p| p.1).unwrap_or("Panel");
+        let mut open = true;
+        let mut dock = false;
+        let r = egui::Window::new(label)
+            .id(egui::Id::new(("floating_panel", &id)))
+            .title_bar(false)
+            .default_pos(egui::pos2(at[0], at[1]))
+            .default_width(256.0)
+            .resizable(true)
+            .frame(egui::Frame::window(&ctx.global_style()).fill(t.panel).inner_margin(egui::Margin::same(0)))
+            .show(ctx, |ui| {
+                // Header strip (drag it to move the panel): name, Dock, close.
+                let (strip, _) = ui.allocate_exact_size(vec2(ui.available_width().max(200.0), 24.0), Sense::hover());
+                ui.painter().rect_filled(strip, 0.0, t.panel_darker);
+                ui.painter().text(strip.min + vec2(10.0, 12.0), egui::Align2::LEFT_CENTER, label, semibold(12.0), t.text_strong);
+                let close = egui::Rect::from_min_size(egui::pos2(strip.max.x - 22.0, strip.min.y + 3.0), vec2(18.0, 18.0));
+                if ui.interact(close, ui.id().with("fclose"), Sense::click()).on_hover_text("Close").clicked() {
+                    open = false;
+                }
+                ui.painter().text(close.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(15.0), t.text_dim);
+                let dock_r = egui::Rect::from_min_size(egui::pos2(strip.max.x - 44.0, strip.min.y + 3.0), vec2(18.0, 18.0));
+                if ui.interact(dock_r, ui.id().with("fdock"), Sense::click()).on_hover_text("Dock panel").clicked() {
+                    dock = true;
+                }
+                dock_glyph(ui.painter(), dock_r, t.text_dim);
+                egui::Frame::NONE.inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                    egui::ScrollArea::vertical().max_height(ctx.content_rect().height() - 160.0).show(ui, |ui| panel_body(app, ui, &id));
+                });
+            });
+        // Remember where it was left.
+        if let Some(r) = r
+            && let Some(f) = app.ui.floating.iter_mut().find(|(p, _)| *p == id)
+        {
+            f.1 = [r.response.rect.min.x, r.response.rect.min.y];
+        }
+        if !open || dock {
+            dock_panel(app, &id);
+        }
+    }
+}
+
+/// Two overlapping boxes: "float this panel".
+fn float_glyph(p: &egui::Painter, r: egui::Rect, c: Color32) {
+    let s = Stroke::new(1.0, c);
+    p.rect_stroke(egui::Rect::from_min_size(r.min + vec2(3.5, 6.5), vec2(9.0, 8.0)), 0.0, s, egui::StrokeKind::Middle);
+    p.rect_stroke(egui::Rect::from_min_size(r.min + vec2(6.5, 3.5), vec2(9.0, 8.0)), 0.0, s, egui::StrokeKind::Middle);
+}
+
+/// A box with a bar on its right: "back into the dock".
+fn dock_glyph(p: &egui::Painter, r: egui::Rect, c: Color32) {
+    let b = egui::Rect::from_min_size(r.min + vec2(3.5, 4.5), vec2(11.0, 9.0));
+    p.rect_stroke(b, 0.0, Stroke::new(1.0, c), egui::StrokeKind::Middle);
+    p.rect_filled(egui::Rect::from_min_max(egui::pos2(b.max.x - 3.5, b.min.y), b.max), 0.0, c);
 }
