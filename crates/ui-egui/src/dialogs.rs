@@ -909,6 +909,14 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
 
 /// Paragraph Style Options: sections in a left list (like InDesign), fields on the right.
 /// Edited values are stored as `p.<attr>` / `c.<attr>` fields and applied on OK.
+/// Is `p` a pattern the GREP styles can use? (Checked as the user types.)
+fn regex_ok(p: &str) -> Result<(), ()> {
+    if p.is_empty() {
+        return Ok(());
+    }
+    regex::Regex::new(p).map(|_| ()).map_err(|_| ())
+}
+
 fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
     let name = d.s("name");
     let Some(st) = app.session.active() else { return };
@@ -924,6 +932,9 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
     let cur = |d: &Dialog, k: &str, base: &Value| d.fields.get(k).cloned().unwrap_or_else(|| base.clone());
     ui.set_min_width(560.0);
     ui.horizontal_top(|ui| {
+        // A fixed height: the separator would otherwise stretch the dialog to the window.
+        ui.set_min_height(380.0);
+        ui.set_max_height(380.0);
         ui.vertical(|ui| {
             ui.set_width(170.0);
             for (id, label) in [
@@ -932,6 +943,8 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
                 ("indents", "Indents and Spacing"),
                 ("hyph", "Hyphenation"),
                 ("justify", "Justification"),
+                ("nested", "Drop Caps and Nested Styles"),
+                ("grep", "GREP Style"),
                 ("color", "Character Color"),
             ] {
                 if ui.selectable_label(d.s("section") == id, label).clicked() {
@@ -940,7 +953,122 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
             }
         });
         ui.separator();
+        let cnames: Vec<String> = app.session.active().map(|s| s.doc.styles.character.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
         ui.vertical(|ui| match d.s("section").as_str() {
+            "nested" => {
+                ui.label(egui::RichText::new("Nested Styles").font(semibold(12.0)));
+                let mut list: Vec<Value> = cur(d, "p.nestedStyles", &pv["nestedStyles"]).as_array().cloned().unwrap_or_default();
+                let mut changed = false;
+                let mut remove = None;
+                for (i, ns) in list.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        let style = ns["style"].as_str().unwrap_or("[None]").to_string();
+                        egui::ComboBox::from_id_salt(("ns_style", i)).selected_text(&style).width(110.0).show_ui(ui, |ui| {
+                            for c in &cnames {
+                                if ui.selectable_label(*c == style, c).clicked() {
+                                    ns["style"] = json!(c);
+                                    changed = true;
+                                }
+                            }
+                        });
+                        let through = ns["through"].as_bool().unwrap_or(true);
+                        egui::ComboBox::from_id_salt(("ns_thr", i)).selected_text(if through { "through" } else { "up to" }).width(70.0).show_ui(
+                            ui,
+                            |ui| {
+                                for (v, l) in [(true, "through"), (false, "up to")] {
+                                    if ui.selectable_label(v == through, l).clicked() {
+                                        ns["through"] = json!(v);
+                                        changed = true;
+                                    }
+                                }
+                            },
+                        );
+                        let mut n = ns["count"].as_u64().unwrap_or(1) as u32;
+                        if ui.add(egui::DragValue::new(&mut n).range(1..=999)).changed() {
+                            ns["count"] = json!(n);
+                            changed = true;
+                        }
+                        let kind = ns["until"]["kind"].as_str().unwrap_or("words").to_string();
+                        egui::ComboBox::from_id_salt(("ns_until", i)).selected_text(&kind).width(100.0).show_ui(ui, |ui| {
+                            for k in
+                                ["sentences", "words", "characters", "letters", "digits", "tab", "forcedLineBreak", "emSpace", "enSpace", "chars"]
+                            {
+                                if ui.selectable_label(k == kind, k).clicked() {
+                                    ns["until"] = if k == "chars" { json!({"kind": "chars", "chars": ":"}) } else { json!({"kind": k}) };
+                                    changed = true;
+                                }
+                            }
+                        });
+                        if kind == "chars" {
+                            let mut c = ns["until"]["chars"].as_str().unwrap_or("").to_string();
+                            if ui.add(egui::TextEdit::singleline(&mut c).desired_width(40.0)).changed() {
+                                ns["until"]["chars"] = json!(c);
+                                changed = true;
+                            }
+                        }
+                        if ui.small_button("×").on_hover_text("Delete").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                }
+                if let Some(i) = remove {
+                    list.remove(i);
+                    changed = true;
+                }
+                if ui.button("New Nested Style").clicked() {
+                    list.push(json!({"style": cnames.get(1).cloned().unwrap_or_default(), "through": true, "count": 1, "until": {"kind": "words"}}));
+                    changed = true;
+                }
+                if changed {
+                    d.fields.insert("p.nestedStyles".into(), Value::Array(list));
+                }
+            }
+            "grep" => {
+                ui.label(egui::RichText::new("GREP Styles").font(semibold(12.0)));
+                let mut list: Vec<Value> = cur(d, "p.grepStyles", &pv["grepStyles"]).as_array().cloned().unwrap_or_default();
+                let mut changed = false;
+                let mut remove = None;
+                for (i, g) in list.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label("Apply Style:");
+                        let style = g["style"].as_str().unwrap_or("").to_string();
+                        egui::ComboBox::from_id_salt(("gs_style", i)).selected_text(&style).width(110.0).show_ui(ui, |ui| {
+                            for c in &cnames {
+                                if ui.selectable_label(*c == style, c).clicked() {
+                                    g["style"] = json!(c);
+                                    changed = true;
+                                }
+                            }
+                        });
+                        ui.label("To Text:");
+                        let mut pat = g["pattern"].as_str().unwrap_or("").to_string();
+                        let bad = regex_ok(&pat).is_err();
+                        let r = ui.add(
+                            egui::TextEdit::singleline(&mut pat)
+                                .desired_width(150.0)
+                                .text_color_opt(bad.then_some(egui::Color32::from_rgb(240, 90, 90))),
+                        );
+                        if r.changed() {
+                            g["pattern"] = json!(pat);
+                            changed = true;
+                        }
+                        if ui.small_button("×").on_hover_text("Delete").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                }
+                if let Some(i) = remove {
+                    list.remove(i);
+                    changed = true;
+                }
+                if ui.button("New GREP Style").clicked() {
+                    list.push(json!({"style": cnames.get(1).cloned().unwrap_or_default(), "pattern": "\\d+"}));
+                    changed = true;
+                }
+                if changed {
+                    d.fields.insert("p.grepStyles".into(), Value::Array(list));
+                }
+            }
             "chars" => {
                 egui::Grid::new("psc").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     ui.label("Font Family:");

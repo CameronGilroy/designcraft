@@ -280,6 +280,13 @@ pub fn handle(app: &mut DesignApp, ctx: &egui::Context, req: &ControlRequest) ->
             }
             None => err("no dialog open"),
         },
+        "ui.dialog.open" => {
+            let Some(id) = s("id") else { return err("missing `id`") };
+            let d = crate::dialogs::Dialog::new(id, p.get("fields").cloned().unwrap_or(Value::Null));
+            let v = serde_json::to_value(&d).unwrap_or_default();
+            app.ui.dialog = Some(d);
+            ok(v)
+        }
         "ui.dialog.confirm" => wrap(crate::dialogs::confirm(app)),
         "ui.dialog.cancel" => {
             app.ui.dialog = None;

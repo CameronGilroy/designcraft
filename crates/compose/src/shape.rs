@@ -145,15 +145,44 @@ pub(crate) fn shape_para(
     auto_leading: f64,
     sub: &SubstCtx,
     table: &mut StyleTable<'_>,
+    nested: &[designcraft_doc::NestedStyle],
+    grep: &[designcraft_doc::GrepStyle],
 ) -> ShapedPara {
     let _ = pi;
     let mut glyphs = Vec::with_capacity(range.len());
+    let overlays = if nested.is_empty() && grep.is_empty() { Vec::new() } else { crate::overlay::overlays(&story.text, range.clone(), nested, grep) };
+    // Each run, cut where nested / GREP styles start and end.
+    let mut segments: Vec<(usize, usize, Option<&str>, &designcraft_doc::CharFormat)> = Vec::new();
     for (rr, fmt) in story.runs() {
         let a = rr.start.max(range.start);
         let b = rr.end.min(range.end);
         if a >= b {
             continue;
         }
+        if overlays.is_empty() {
+            segments.push((a, b, None, fmt));
+            continue;
+        }
+        let mut cuts: Vec<usize> = overlays.iter().flat_map(|(r, _)| [r.start, r.end]).filter(|x| *x > a && *x < b).collect();
+        cuts.push(a);
+        cuts.push(b);
+        cuts.sort_unstable();
+        cuts.dedup();
+        for w in cuts.windows(2) {
+            let top = overlays.iter().rev().find(|(r, _)| r.start <= w[0] && w[0] < r.end).map(|(_, s)| s.as_str());
+            segments.push((w[0], w[1], top, fmt));
+        }
+    }
+    for (a, b, overlay, fmt) in segments {
+        // A nested / GREP character style sits under the run's own style and overrides.
+        let base;
+        let para_chars = match overlay {
+            Some(st) => {
+                base = styles.resolve_char(para_chars, &designcraft_doc::CharFormat { style: st.to_string(), over: Default::default() });
+                &base
+            }
+            None => para_chars,
+        };
         let props = styles.resolve_char(para_chars, fmt);
         let style = table.intern(&props);
         if !story.text[a..b].contains(designcraft_doc::FOOTNOTE_REF) {

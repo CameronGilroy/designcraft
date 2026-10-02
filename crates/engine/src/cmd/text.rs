@@ -796,3 +796,40 @@ mod open_type_tests {
         assert_ne!(gids(&s), lining);
     }
 }
+
+#[cfg(test)]
+mod nested_style_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn nested_and_grep_styles_colour_the_text() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("style.character.create", &json!({"name": "Lead", "chars": {"fill": "C=100 M=0 Y=0 K=0"}})).unwrap();
+        s.execute("style.character.create", &json!({"name": "Num", "chars": {"fill": "C=0 M=100 Y=0 K=0"}})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": "Opening words then 2026 here"})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 3})).unwrap();
+        s.execute(
+            "type.para",
+            &json!({"attrs": {
+                "nestedStyles": [{"style": "Lead", "through": true, "count": 2, "until": {"kind": "words"}}],
+                "grepStyles": [{"style": "Num", "pattern": "\\d+"}]
+            }}),
+        )
+        .unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let cs = designcraft_compose::compose_story(&d, designcraft_doc::StoryId(sid), &Default::default());
+        let text = &d.story(designcraft_doc::StoryId(sid)).unwrap().text;
+        let fill_at = |byte: usize| {
+            let g = cs.frames[0].lines.iter().flat_map(|l| &l.glyphs).find(|g| g.byte == byte).unwrap();
+            cs.styles[g.style as usize].fill.clone()
+        };
+        assert_eq!(fill_at(0), "C=100 M=0 Y=0 K=0", "nested: first two words");
+        assert_eq!(fill_at(text.find("words").unwrap()), "C=100 M=0 Y=0 K=0");
+        assert_eq!(fill_at(text.find("then").unwrap()), "[Black]");
+        assert_eq!(fill_at(text.find("2026").unwrap()), "C=0 M=100 Y=0 K=0", "GREP: digits");
+    }
+}

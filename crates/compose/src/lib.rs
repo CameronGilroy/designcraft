@@ -13,6 +13,7 @@ pub mod breaker;
 mod cache;
 pub mod hyphen;
 mod notes;
+mod overlay;
 pub mod shape;
 pub mod table;
 pub mod vars;
@@ -420,7 +421,19 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         }
         let sub_objects = sub.objects.clone();
         let mut table = StyleTable { styles: &mut styles_tab, missing: &mut missing_fonts };
-        let mut sp = shape::shape_para(db, &doc.styles, story, pi, prange.clone(), &base_chars, pp.auto_leading, &sub, &mut table);
+        let mut sp = shape::shape_para(
+            db,
+            &doc.styles,
+            story,
+            pi,
+            prange.clone(),
+            &base_chars,
+            pp.auto_leading,
+            &sub,
+            &mut table,
+            &pp.nested_styles,
+            &pp.grep_styles,
+        );
         match pp.list_type {
             designcraft_doc::ListType::Numbers => {
                 list_counter += 1;
@@ -1390,7 +1403,7 @@ fn prepend_label(
     let mut tmp = Story::new(StoryId(0));
     tmp.insert(0, label);
     let styles = designcraft_doc::Styles::default();
-    let shaped = shape::shape_para(db, &styles, &tmp, 0, 0..label.len(), base, pp.auto_leading, &SubstCtx::default(), table);
+    let shaped = shape::shape_para(db, &styles, &tmp, 0, 0..label.len(), base, pp.auto_leading, &SubstCtx::default(), table, &[], &[]);
     let mut pre: Vec<Glyph> = shaped
         .glyphs
         .into_iter()

@@ -205,6 +205,50 @@ pub enum Composer {
     SingleLine,
 }
 
+/// What a nested style runs to (Drop Caps and Nested Styles).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind", content = "chars")]
+pub enum NestedUntil {
+    Sentences,
+    #[default]
+    Words,
+    Characters,
+    Letters,
+    Digits,
+    Tab,
+    ForcedLineBreak,
+    EmSpace,
+    EnSpace,
+    /// Any of these characters.
+    Chars(String),
+}
+
+/// A character style applied from the start of the paragraph through (or up to) the `count`-th
+/// delimiter; nested styles follow each other.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NestedStyle {
+    pub style: String,
+    /// Through (include the delimiter) or up to (stop before it).
+    pub through: bool,
+    pub count: u32,
+    pub until: NestedUntil,
+}
+
+impl Default for NestedStyle {
+    fn default() -> Self {
+        NestedStyle { style: String::new(), through: true, count: 1, until: NestedUntil::Words }
+    }
+}
+
+/// A character style applied to every match of a regular expression in the paragraph.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GrepStyle {
+    pub style: String,
+    pub pattern: String,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GridAlign {
@@ -419,6 +463,10 @@ attr_set! {
         space_after: f64 = 0.0,
         drop_cap_lines: u32 = 0,
         drop_cap_chars: u32 = 0,
+        /// Nested styles, in order from the paragraph start.
+        nested_styles: Vec<NestedStyle> = Vec::new(),
+        /// GREP styles: a character style for every match of a pattern (applied after nested).
+        grep_styles: Vec<GrepStyle> = Vec::new(),
         grid_align: GridAlign = GridAlign::None,
         composer: Composer = Composer::Paragraph,
         // Hyphenation

@@ -17,6 +17,7 @@ designcraft-compose = { workspace = true }
 designcraft-render = { workspace = true }
 designcraft-tools = { workspace = true }
 designcraft-engine = { workspace = true }
+regex = { workspace = true }
 egui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
