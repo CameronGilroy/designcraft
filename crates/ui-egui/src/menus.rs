@@ -21,6 +21,9 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
     ("app.preferences", "Preferences…", Some("Cmd+K"), "{}"),
     ("window.uiScale", "UI Scaling", None, "{scale: 0.5–3 (1 = 100%)} — the size of the whole interface"),
+    ("app.keyboardShortcuts", "Keyboard Shortcuts…", None, "{} — view and change the shortcut of any command"),
+    ("window.setShortcut", "Set Shortcut", None, "{id, shortcut: \"Cmd+Alt+J\" | \"\" (none) | null (default)} → {shortcut, conflicts: [ids]}"),
+    ("window.resetShortcuts", "Reset Shortcuts", None, "{} — every command back to its default shortcut"),
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
     ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
     ("app.footnoteOptionsDialog", "Document Footnote Options…", None, "{} — numbering, formatting and layout of footnotes"),
@@ -135,6 +138,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "<",
             "-",
             "ui:app.palette",
+            "ui:app.keyboardShortcuts",
             "ui:app.preferences",
         ],
     ),
@@ -709,6 +713,39 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             }
             Ok(Value::Null)
         }
+        "app.keyboardShortcuts" => {
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("keyboardShortcuts", json!({"query": "", "recording": ""})));
+            Ok(Value::Null)
+        }
+        "window.setShortcut" => {
+            let Some(cmd) = p.get("id").and_then(Value::as_str) else { return Some(Err("missing id".into())) };
+            if designcraft_engine::find_command(cmd).is_none() && ui_label(cmd).is_none() {
+                return Some(Err(format!("unknown command `{cmd}`")));
+            }
+            match p.get("shortcut") {
+                None | Some(Value::Null) => {
+                    app.ui.shortcuts.remove(cmd);
+                }
+                Some(Value::String(sc)) if sc.is_empty() => {
+                    app.ui.shortcuts.insert(cmd.to_string(), String::new());
+                }
+                Some(Value::String(sc)) => {
+                    if parse_shortcut(sc).is_none() {
+                        return Some(Err(format!("can't read shortcut `{sc}`")));
+                    }
+                    app.ui.shortcuts.insert(cmd.to_string(), sc.clone());
+                }
+                Some(_) => return Some(Err("shortcut: a string or null".into())),
+            }
+            let sc = shortcut_of(app, cmd);
+            let conflicts: Vec<String> =
+                effective_shortcuts(app).into_iter().filter(|(i, s)| i != cmd && Some(s) == sc.as_ref()).map(|(i, _)| i).collect();
+            Ok(json!({"shortcut": sc, "conflicts": conflicts}))
+        }
+        "window.resetShortcuts" => {
+            app.ui.shortcuts.clear();
+            Ok(Value::Null)
+        }
         "window.uiScale" => {
             let v = p.get("scale").and_then(Value::as_f64).unwrap_or(1.0) as f32;
             app.ui.ui_scale = v.clamp(0.5, 3.0);
@@ -868,16 +905,63 @@ pub fn enabled(app: &DesignApp, id: &str) -> bool {
     }
 }
 
-fn shortcut_text(sc: &str) -> String {
-    let mac = cfg!(target_os = "macos");
-    sc.split('+')
-        .map(|k| match k {
-            "Cmd" => if mac { "⌘" } else { "Ctrl+" }.to_string(),
-            "Shift" => if mac { "⇧" } else { "Shift+" }.to_string(),
-            "Alt" => if mac { "⌥" } else { "Alt+" }.to_string(),
-            k => k.to_string(),
-        })
+/// The default shortcut of a command.
+pub fn default_shortcut(id: &str) -> Option<&'static str> {
+    designcraft_engine::find_command(id).and_then(|c| c.shortcut).or_else(|| ui_label(id).and_then(|(_, s)| s))
+}
+
+/// The shortcut in effect for a command (the user's, else the default).
+pub fn shortcut_of(app: &DesignApp, id: &str) -> Option<String> {
+    match app.ui.shortcuts.get(id) {
+        Some(s) if s.is_empty() => None,
+        Some(s) => Some(s.clone()),
+        None => default_shortcut(id).map(str::to_string),
+    }
+}
+
+/// Every command with a shortcut in effect: (id, shortcut).
+pub fn effective_shortcuts(app: &DesignApp) -> Vec<(String, String)> {
+    designcraft_engine::command_specs()
+        .iter()
+        .map(|c| c.id)
+        .chain(UI_COMMANDS.iter().map(|c| c.0))
+        .filter_map(|id| shortcut_of(app, id).map(|s| (id.to_string(), s)))
         .collect()
+}
+
+/// A shortcut as written in this app ("Cmd+Alt+Shift+K") from a key press.
+pub fn shortcut_string(m: egui::Modifiers, key: egui::Key) -> String {
+    let mut s = String::new();
+    if m.command {
+        s += "Cmd+";
+    }
+    if m.alt {
+        s += "Alt+";
+    }
+    if m.shift {
+        s += "Shift+";
+    }
+    s += key.name();
+    s
+}
+
+/// A shortcut for display: ⌃⌥⇧⌘ order on macOS, Ctrl+Alt+Shift+ elsewhere.
+pub fn shortcut_text(sc: &str) -> String {
+    let mac = cfg!(target_os = "macos");
+    // The key is the last part ("Cmd+-" ends in an empty part before "-").
+    let (mods, key) = match sc.rsplit_once('+') {
+        Some((m, "")) => (m.trim_end_matches('+'), "+"),
+        Some((m, k)) => (m, k),
+        None => ("", sc),
+    };
+    let has = |m: &str| mods.split('+').any(|x| x == m);
+    let mut out = String::new();
+    for (m, sym, word) in [("Ctrl", "⌃", "Ctrl+"), ("Alt", "⌥", "Alt+"), ("Shift", "⇧", "Shift+"), ("Cmd", "⌘", "Ctrl+")] {
+        if has(m) && !(m == "Cmd" && !mac && has("Ctrl")) {
+            out += if mac { sym } else { word };
+        }
+    }
+    out + key
 }
 
 /// A menu entry, shared by the in-window menu bar and the native macOS menu.
@@ -1036,15 +1120,15 @@ fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item]) {
             Item::Sub(name, children) => {
                 ui.menu_button(name, |ui| menu_items(app, ui, children));
             }
-            Item::Cmd { label, id, params, shortcut } => {
+            Item::Cmd { label, id, params, shortcut: _ } => {
                 let text = match checked(app, id, params) {
                     Some(true) => format!("✓ {label}"),
                     Some(false) => format!("   {label}"),
                     None => label.clone(),
                 };
                 let mut b = egui::Button::new(text);
-                if let Some(sc) = shortcut {
-                    b = b.shortcut_text(shortcut_text(sc));
+                if let Some(sc) = shortcut_of(app, id) {
+                    b = b.shortcut_text(shortcut_text(&sc));
                 }
                 if ui.add_enabled(menu_enabled(app, id), b).clicked() {
                     activate(app, id, params);
@@ -1093,12 +1177,10 @@ pub fn shortcuts(app: &mut DesignApp, ctx: &egui::Context) {
     for e in events {
         let egui::Event::Key { key, pressed: true, modifiers, repeat: false, .. } = e else { continue };
         // Command shortcuts.
-        let mut fired = None;
-        let all = designcraft_engine::command_specs()
-            .iter()
-            .filter_map(|c| c.shortcut.map(|s| (c.id, s)))
-            .chain(UI_COMMANDS.iter().filter_map(|c| c.2.map(|s| (c.0, s))));
-        for (id, sc) in all {
+        let mut fired: Option<String> = None;
+        let all = effective_shortcuts(app);
+        for (id, sc) in &all {
+            let id = id.as_str();
             if let Some((m, k)) = parse_shortcut(sc)
                 && k == key
                 && m.command == modifiers.command
@@ -1114,15 +1196,15 @@ pub fn shortcuts(app: &mut DesignApp, ctx: &egui::Context) {
                 if id == "edit.clear" || (typing && matches!(id, "edit.copy" | "edit.cut" | "edit.paste" | "edit.pasteInPlace")) {
                     continue; // Handled by the active tool / text clipboard events.
                 }
-                fired = Some(id);
+                fired = Some(id.to_string());
                 break;
             }
         }
         if let Some(id) = fired {
-            if app.native_shortcuts.contains(id) {
+            if app.native_shortcuts.contains(&id) && !app.ui.shortcuts.contains_key(&id) {
                 continue; // The native menu handles it.
             }
-            let _ = app.run(id, json!({}));
+            let _ = app.run(&id, json!({}));
             continue;
         }
         // Tool shortcuts (single keys, Shift+key).
@@ -1236,6 +1318,30 @@ mod tests {
                 Item::Cmd { label, id, params, .. } => out.push((label.clone(), id.clone(), params.clone())),
                 Item::Sep => {}
             }
+        }
+    }
+
+    #[test]
+    fn custom_shortcuts_override_defaults() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        assert_eq!(shortcut_of(&app, "app.preferences").as_deref(), Some("Cmd+K"));
+        let r = run_ui(&mut app, "window.setShortcut", &json!({"id": "app.preferences", "shortcut": "Cmd+Alt+Shift+9"})).unwrap().unwrap();
+        assert_eq!(r["shortcut"], "Cmd+Alt+Shift+9");
+        assert!(effective_shortcuts(&app).contains(&("app.preferences".into(), "Cmd+Alt+Shift+9".into())));
+        // Taking another command's keys reports the conflict.
+        let r = run_ui(&mut app, "window.setShortcut", &json!({"id": "app.palette", "shortcut": "Cmd+Alt+Shift+9"})).unwrap().unwrap();
+        assert_eq!(r["conflicts"], json!(["app.preferences"]));
+        run_ui(&mut app, "window.setShortcut", &json!({"id": "app.palette", "shortcut": ""})).unwrap().unwrap();
+        assert_eq!(shortcut_of(&app, "app.palette"), None);
+        assert!(run_ui(&mut app, "window.setShortcut", &json!({"id": "app.palette", "shortcut": "Cmd+Nope"})).unwrap().is_err());
+        run_ui(&mut app, "window.resetShortcuts", &json!({})).unwrap().unwrap();
+        assert_eq!(shortcut_of(&app, "app.palette").as_deref(), Some("Cmd+Return"));
+        assert_eq!(shortcut_string(egui::Modifiers { command: true, shift: true, ..Default::default() }, egui::Key::K), "Cmd+Shift+K");
+        if cfg!(target_os = "macos") {
+            assert_eq!(shortcut_text("Cmd+Alt+3"), "⌥⌘3");
+            assert_eq!(shortcut_text("Cmd+Shift+."), "⇧⌘.");
+        } else {
+            assert_eq!(shortcut_text("Cmd+Alt+3"), "Alt+Ctrl+3");
         }
     }
 
