@@ -220,6 +220,17 @@ fn page_menu(app: &mut DesignApp, ui: &mut egui::Ui, doc: &designcraft_doc::Docu
         let _ = app.run("layout.pages.duplicateSpread", json!({"spread": si}));
         ui.close();
     }
+    ui.separator();
+    for (id, label) in [
+        ("layout.overrideParentItems", "Override All Parent Page Items"),
+        ("layout.removeOverrides", "Remove All Local Overrides"),
+        ("layout.detachAll", "Detach All Objects from Parent"),
+    ] {
+        if ui.button(label).clicked() {
+            let _ = app.run(id, json!({"page": abs}));
+            ui.close();
+        }
+    }
     ui.menu_button("Apply Parent", |ui| {
         if ui.button("[None]").clicked() {
             let _ = app.run("layout.pages.applyParent", json!({"pages": [abs], "parent": null}));

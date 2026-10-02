@@ -16,6 +16,7 @@ mod layout;
 mod links;
 mod notes;
 mod object;
+mod overrides;
 mod place_text;
 pub mod preflight;
 pub mod spelling;
@@ -126,6 +127,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(style::specs());
         v.extend(table::specs());
         v.extend(layout::specs());
+        v.extend(overrides::specs());
         v.extend(inspect::specs());
         v.extend(find::specs());
         v.extend(variables::specs());

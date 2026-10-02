@@ -9,20 +9,20 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
-| P0 | 102 | 87 | 12 | 3 | 91% |
+| P0 | 102 | 88 | 12 | 2 | 92% |
 | P1 | 97 | 32 | 24 | 41 | 45% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
 |---|---|
 | Application shell & workspace | 65% |
-| Documents, pages, spreads | 66% |
+| Documents, pages, spreads | 69% |
 | Layers | 74% |
 | Frames, shapes & paths | 74% |
 | Transform | 56% |
 | Fill, stroke, colour | 62% |
 | Effects & transparency | 50% |
-| Placing & links | 53% |
+| Placing & links | 57% |
 | Type & text frames | 77% |
 | Typography | 76% |
 | Styles | 55% |
@@ -35,7 +35,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Undo, history, saving | 100% |
 | Accessibility | 20% |
 
-Open P0 items: Dockable panels, Preferences, Document Setup, Parent item overrides, Pen, add/delete anchor, convert direction, Scale strokes / content options, Dimensions Include Stroke Weight, Gradient panel & tool, Stroke panel, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, OpenType features, Export to PDF (print), Display performance.
+Open P0 items: Dockable panels, Preferences, Document Setup, Pen, add/delete anchor, convert direction, Scale strokes / content options, Dimensions Include Stroke Weight, Gradient panel & tool, Stroke panel, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, OpenType features, Export to PDF (print), Display performance.
 
 ## Rows
 
@@ -73,7 +73,7 @@ Open P0 items: Dockable panels, Preferences, Document Setup, Parent item overrid
 | Documents, pages, spreads | Smart Text Reflow | P1 | M |
 | Documents, pages, spreads | Primary text frame | P1 | P |
 | Documents, pages, spreads | Parent pages | P0 | D |
-| Documents, pages, spreads | Parent item overrides | P0 | P |
+| Documents, pages, spreads | Parent item overrides | P0 | D |
 | Documents, pages, spreads | Page transitions | P2 | M |
 | Documents, pages, spreads | Spread view rotation | P2 | M |
 | Documents, pages, spreads | Layout Adjustment | P2 | M |
@@ -169,7 +169,7 @@ Open P0 items: Dockable panels, Preferences, Document Setup, Parent item overrid
 | Placing & links | Place | P0 | D |
 | Placing & links | Place into frame / by click or drag | P0 | D |
 | Placing & links | Raster formats | P0 | P |
-| Placing & links | Vector/page formats (PDF/AI/SVG/EPS place) | P0 | M |
+| Placing & links | Vector/page formats (PDF/AI/SVG/EPS place) | P0 | P |
 | Placing & links | Placing INDD/IDML pages | P2 | M |
 | Placing & links | Text import (TXT/DOCX/RTF) | P0 | D |
 | Placing & links | Links panel | P0 | D |

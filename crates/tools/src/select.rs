@@ -199,6 +199,15 @@ impl Tool for SelectionTool {
                     self.drag = Drag::Resize { handle: h, start: p, from: b - off, spread: loc.spread };
                     return vec![Action::Begin("Resize".into())];
                 }
+                // Cmd+Shift-click a parent item on a page: override it there and select the copy.
+                if ev.mods.cmd
+                    && ev.mods.shift
+                    && cx.hit(p).is_none()
+                    && let Some((page, id)) = cx.hit_parent_on_page(p)
+                {
+                    self.drag = Drag::Pending { start: p, hit: true };
+                    return vec![Action::Exec("layout.overrideParentItems".into(), json!({"page": page, "ids": [id.0]}))];
+                }
                 match cx.hit(p) {
                     Some((sr, id)) => {
                         let id = if self.direct { id } else { cx.doc.top_level_of(id).unwrap_or(id) };

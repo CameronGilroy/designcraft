@@ -56,3 +56,26 @@ fn resize_rect_modifiers() {
     let c = select::resize_rect(r, 3, designcraft_geom::Point::new(150.0, 25.0), Mods { alt: true, ..Default::default() });
     assert_eq!(c, Rect::new(-50.0, 0.0, 150.0, 50.0));
 }
+
+#[test]
+fn cmd_shift_click_overrides_parent_item() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    // On the parent's right page, which shows behind document page 1 (a right page).
+    let px = d.parents[0].pages.last().unwrap().x;
+    let (pid, _) =
+        d.add_text_frame(SpreadRef::Parent(0), Rect::new(px + 100.0, 100.0, px + 200.0, 200.0), lid, "folio", ParaFormat::default()).unwrap();
+    let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
+    let cx = ctx(&d, &s, &c, &l);
+    let off = l.offset(SpreadRef::Doc(0));
+    let x = d.spreads[0].pages[0].x + 150.0 + off.x;
+    let mut t = create("selection");
+    // A plain click doesn't reach parent items.
+    let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Down, x, 150.0 + off.y));
+    assert_eq!(a, vec![Action::Exec("selection.set".into(), serde_json::json!({"ids": []}))]);
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Up, x, 150.0 + off.y));
+    let mut ev = PointerEvent::new(PointerKind::Down, x, 150.0 + off.y);
+    ev.mods = Mods { cmd: true, shift: true, ..Default::default() };
+    let a = t.pointer(&cx, &ev);
+    assert_eq!(a, vec![Action::Exec("layout.overrideParentItems".into(), serde_json::json!({"page": 0, "ids": [pid.0]}))]);
+}

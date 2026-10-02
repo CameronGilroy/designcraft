@@ -563,7 +563,7 @@ fn draw_frames(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
                 let parent = &doc.parents[ppi];
                 let dx = page.x - parent.pages[ppg].x;
                 for it in &parent.items {
-                    if parent.pages.len() > 1 && parent.page_at_x(it.bounds().center().x) != Some(ppg) {
+                    if (parent.pages.len() > 1 && parent.page_at_x(it.bounds().center().x) != Some(ppg)) || page.overridden.contains(&it.id) {
                         continue;
                     }
                     let col = doc.layer(it.layer).map(|l| c32(l.color)).unwrap_or(Color32::LIGHT_BLUE);
