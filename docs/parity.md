@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 44 | 23 | 30 | 57% |
+| P1 | 97 | 46 | 23 | 28 | 59% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
@@ -22,14 +22,14 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Transform | 93% |
 | Fill, stroke, colour | 74% |
 | Effects & transparency | 50% |
-| Placing & links | 66% |
+| Placing & links | 72% |
 | Type & text frames | 80% |
 | Typography | 79% |
 | Styles | 71% |
 | Tables | 73% |
 | Long documents | 58% |
 | Interactivity & digital | 30% |
-| Output & production | 48% |
+| Output & production | 58% |
 | XML & automation | 39% |
 | View & navigation | 68% |
 | Undo, history, saving | 100% |
@@ -175,7 +175,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Placing & links | Links panel | P0 | D |
 | Placing & links | Effective/actual PPI | P0 | D |
 | Placing & links | Relink to folder / extension | P1 | M |
-| Placing & links | Copy Links To / Package | P1 | M |
+| Placing & links | Copy Links To / Package | P1 | D |
 | Placing & links | Captions | P2 | M |
 | Placing & links | Image import options | P1 | M |
 | Placing & links | Linked text/stories | P2 | M |
@@ -280,7 +280,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Output & production | Interactive PDF | P2 | P |
 | Output & production | Print dialog | P1 | M |
 | Output & production | Print booklet | P2 | M |
-| Output & production | Package | P1 | M |
+| Output & production | Package | P1 | D |
 | Output & production | Preflight | P1 | D |
 | Output & production | Export JPEG/PNG | P1 | D |
 | Output & production | Export IDML | P0 | D |

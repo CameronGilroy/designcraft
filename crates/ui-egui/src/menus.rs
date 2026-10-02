@@ -13,6 +13,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.save", "Save", Some("Cmd+S"), "{}"),
     ("app.saveCopyDialog", "Save a Copy…", Some("Cmd+Alt+S"), "{} — choose where to write a copy (the document stays as it is)"),
     ("app.loadSwatches", "Load Swatches…", None, "{} — pick a swatch exchange (.ase) file"),
+    ("app.packageDialog", "Package…", Some("Cmd+Alt+Shift+P"), "{} — choose the package folder to create (file.package)"),
     ("app.saveSwatches", "Save Swatches for Exchange…", None, "{path?} — write the colour swatches as .ase"),
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
     ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
@@ -92,6 +93,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:app.placeDialog",
             "-",
             "ui:app.exportPdf",
+            "ui:app.packageDialog",
             "ui:app.exportPng",
             "ui:app.exportIdml",
             "cmd:file.exportEpub",
@@ -474,6 +476,23 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "app.exportPng" => export_png(app, p),
         "app.exportIdml" => export_idml(app, p),
+        "app.packageDialog" => {
+            let name = app.session.active().map(|d| format!("{} Folder", d.doc.title)).unwrap_or_default();
+            match app.services.pick_save.as_mut().and_then(|f| f(&name)) {
+                Some(dir) => {
+                    let r = app.run("file.package", json!({"dir": dir}));
+                    if let Ok(v) = &r {
+                        app.status(format!(
+                            "Packaged {} files into {}",
+                            v["files"].as_array().map_or(0, |f| f.len()),
+                            v["dir"].as_str().unwrap_or("")
+                        ));
+                    }
+                    r
+                }
+                None => Ok(Value::Null),
+            }
+        }
         "app.loadSwatches" => {
             if let Some(pick) = app.services.pick_open.as_mut() {
                 return Some(match pick("swatches") {
