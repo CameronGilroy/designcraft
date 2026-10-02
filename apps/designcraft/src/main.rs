@@ -128,7 +128,14 @@ fn main() -> eframe::Result {
         "DesignCraft",
         options,
         Box::new(move |cc| {
-            let mut app = DesignApp::new(Session::new(), services());
+            let mut session = Session::new();
+            // Crash recovery: reopen what a previous run left unsaved, then keep it current.
+            session.recovery_dir = designcraft_engine::recovery::default_dir();
+            let recovered = session.execute("file.recovery.open", &serde_json::json!({})).ok();
+            let mut app = DesignApp::new(session, services());
+            if let Some(n) = recovered.as_ref().and_then(|r| r["opened"].as_array()).map(Vec::len).filter(|n| *n > 0) {
+                app.status(format!("Recovered {n} unsaved document{} from the last session.", if n == 1 { "" } else { "s" }));
+            }
             load_prefs(&mut app);
             app.integrated_titlebar = cfg!(target_os = "macos");
             if let Some(port) = control_port {

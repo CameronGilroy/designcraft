@@ -11,6 +11,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.placeDialog", "Place…", Some("Cmd+D"), "{}"),
     ("app.saveDialog", "Save As…", Some("Cmd+Shift+S"), "{}"),
     ("app.save", "Save", Some("Cmd+S"), "{}"),
+    ("app.saveCopyDialog", "Save a Copy…", Some("Cmd+Alt+S"), "{} — choose where to write a copy (the document stays as it is)"),
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
     ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
@@ -77,6 +78,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:file.close",
             "ui:app.save",
             "ui:app.saveDialog",
+            "ui:app.saveCopyDialog",
+            "cmd:file.revert",
             "-",
             "ui:app.placeDialog",
             "-",
@@ -423,6 +426,13 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             let name = app.session.active().map(|d| format!("{}.designcraft", d.doc.title)).unwrap_or_default();
             if let Some(path) = app.services.pick_save.as_mut().and_then(|f| f(&name)) {
                 return Some(app.run("file.saveAs", json!({"path": path})));
+            }
+            Ok(Value::Null)
+        }
+        "app.saveCopyDialog" => {
+            let name = app.session.active().map(|d| format!("{} copy.designcraft", d.doc.title)).unwrap_or_default();
+            if let Some(path) = app.services.pick_save.as_mut().and_then(|f| f(&name)) {
+                return Some(app.run("file.saveACopy", json!({"path": path})));
             }
             Ok(Value::Null)
         }

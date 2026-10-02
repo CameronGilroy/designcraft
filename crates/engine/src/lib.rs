@@ -8,6 +8,7 @@
 
 pub mod cmd;
 pub mod links;
+pub mod recovery;
 pub mod sample;
 pub mod script;
 mod tooling;
@@ -140,6 +141,8 @@ pub struct Session {
     pub(crate) tool: Box<dyn designcraft_tools::Tool>,
     pub journal: Vec<(String, Value)>,
     pub clipboard: Option<Arc<Document>>,
+    /// Crash-recovery folder (the app sets it; saving or closing a document removes its entry).
+    pub recovery_dir: Option<std::path::PathBuf>,
     /// Copied text with its formatting (a frameless story slice) and its plain text.
     pub text_clipboard: Option<(Arc<designcraft_doc::Story>, String)>,
     /// Requests for the UI (dialogs, view changes) produced by tools/commands.
@@ -165,6 +168,7 @@ impl Session {
             tool: designcraft_tools::create("selection"),
             journal: vec![],
             clipboard: None,
+            recovery_dir: None,
             text_clipboard: None,
             ui_requests: vec![],
             loaded: None,
@@ -201,6 +205,10 @@ impl Session {
         self.docs.len() - 1
     }
     pub fn close_document(&mut self, i: usize) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(dir), Some(d)) = (&self.recovery_dir, self.docs.get(i)) {
+            recovery::discard(dir, d.uid);
+        }
         if i < self.docs.len() {
             self.docs.remove(i);
             self.active = if self.docs.is_empty() { None } else { Some(i.min(self.docs.len() - 1)) };

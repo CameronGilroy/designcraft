@@ -21,6 +21,26 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "file.openBytes", "Open Bytes", [], None, "{name, base64} — DesignCraft JSON or an IDML package", always, file_open_bytes),
         cmd!(noundo "file.save", "Save", ["File"], Some("Cmd+S"), "{path?}", has_doc, file_save),
         cmd!(noundo "file.saveAs", "Save As…", ["File"], Some("Cmd+Shift+S"), "{path}", has_doc, file_save),
+        cmd!(noundo "file.saveACopy", "Save a Copy…", ["File"], None, "{path} — writes the document without changing which file it is or its unsaved state", has_doc, |s, p| {
+            let path = str_param(p, "path").ok_or_else(|| bad("file.saveACopy", "missing `path`"))?.to_string();
+            let bytes = to_bytes(&s.doc()?.doc);
+            #[cfg(not(target_arch = "wasm32"))]
+            std::fs::write(&path, &bytes).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+            Ok(json!({"path": path, "bytes": bytes.len()}))
+        }),
+        cmd!(noundo "file.revert", "Revert", ["File"], None, "{} — back to the last saved version (not undoable)", can_revert, file_revert),
+        cmd!(query "file.recovery.list", "Recovery Data", [], None, "{dir?} → [{uid, path, title, saved}] unsaved documents left by a crash (default: the session's recovery folder)", always, |s, p| {
+            let dir = recovery_dir(s, p)?;
+            Ok(Value::Array(crate::recovery::list(&dir).into_iter().map(|(uid, mut m)| { m["uid"] = json!(uid); m }).collect()))
+        }),
+        cmd!(noundo "file.recovery.save", "Save Recovery Data", [], None, "{dir?} — write every unsaved document to the recovery folder (the app does this on a timer)", always, |s, p| {
+            let dir = recovery_dir(s, p)?;
+            Ok(json!({"saved": crate::recovery::save(s, &dir)?}))
+        }),
+        cmd!(noundo "file.recovery.open", "Recover Documents", [], None, "{dir?} — reopen documents left in the recovery folder (unsaved)", always, |s, p| {
+            let dir = recovery_dir(s, p)?;
+            Ok(json!({"opened": crate::recovery::open(s, &dir)?}))
+        }),
         cmd!(query "file.serialize", "Serialize", [], None, "{} → {json}", has_doc, |s, _| Ok(json!({"json": String::from_utf8_lossy(&to_bytes(&s.doc()?.doc)).to_string()}))),
         cmd!(noundo "file.close", "Close", ["File"], Some("Cmd+W"), "{index?}", has_doc, |s, p| {
             let i = p.get("index").and_then(Value::as_u64).map(|v| v as usize).or(s.active_index()).unwrap_or(0);
@@ -157,6 +177,11 @@ fn file_save(s: &mut Session, p: &Value) -> Result<Value> {
     st.path = Some(path.clone());
     st.saved_revision = st.revision;
     st.saved_doc = st.doc.clone();
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(dir) = &s.recovery_dir {
+        let uid = s.doc()?.uid;
+        crate::recovery::discard(dir, uid);
+    }
     Ok(json!({"path": path, "bytes": bytes.len()}))
 }
 
@@ -391,4 +416,54 @@ fn snippet_place(s: &mut Session, p: &Value) -> Result<Value> {
         *sel = Selection::items(new.clone());
         Ok(json!({"ids": new.iter().map(|i| i.0).collect::<Vec<_>>()}))
     })
+}
+
+fn recovery_dir(s: &Session, p: &Value) -> Result<std::path::PathBuf> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (s, p);
+        Err(EngineError::Other("no recovery folder on the web".into()))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    str_param(p, "dir")
+        .map(std::path::PathBuf::from)
+        .or_else(|| s.recovery_dir.clone())
+        .ok_or_else(|| bad("file.recovery", "no recovery folder (give `dir`)"))
+}
+
+fn can_revert(s: &Session) -> std::result::Result<(), String> {
+    match s.active() {
+        Some(d) if d.path.is_some() && d.is_dirty() => Ok(()),
+        Some(d) if d.path.is_none() => Err("the document has never been saved".into()),
+        Some(_) => Err("no changes since the last save".into()),
+        None => Err("no document open".into()),
+    }
+}
+
+fn file_revert(s: &mut Session, _: &Value) -> Result<Value> {
+    let path = s.doc()?.path.clone().ok_or_else(|| bad("file.revert", "the document has never been saved"))?;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let d = if path.to_ascii_lowercase().ends_with(".idml") {
+            let bytes = std::fs::read(&path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+            designcraft_idml::import_idml(&bytes).map_err(|e| EngineError::Other(e.to_string()))?
+        } else {
+            from_bytes(&std::fs::read(&path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?)?
+        };
+        let uid = s.doc()?.uid;
+        let st = s.doc_mut()?;
+        let mut fresh = DocState::new(d, Some(path.clone()));
+        fresh.uid = uid;
+        fresh.revision = st.revision + 1;
+        *st = fresh;
+        if let Some(dir) = &s.recovery_dir {
+            crate::recovery::discard(dir, uid);
+        }
+        Ok(json!({"path": path}))
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (s, path);
+        Err(EngineError::Other("revert isn't available on the web".into()))
+    }
 }

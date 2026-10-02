@@ -229,6 +229,8 @@ pub struct DesignApp {
     /// Shortcuts the native menu handles (skip them in the egui shortcut handler).
     pub native_shortcuts: std::collections::HashSet<String>,
     last_time: f64,
+    /// When recovery data was last written (seconds, egui time).
+    pub last_recovery: f64,
 }
 
 impl DesignApp {
@@ -270,6 +272,7 @@ impl DesignApp {
             native_menu: false,
             native_shortcuts: Default::default(),
             last_time: 0.0,
+            last_recovery: 0.0,
         }
     }
 
@@ -381,6 +384,16 @@ impl DesignApp {
             self.restyle = false;
         }
         let now = ctx.input(|i| i.time);
+        // Crash recovery: unsaved documents are written to the recovery folder every 30 s.
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.session.recovery_dir.is_some() && now - self.last_recovery > 30.0 {
+            self.last_recovery = now;
+            if self.session.documents().iter().any(|d| d.is_dirty())
+                && let Err(e) = self.session.execute("file.recovery.save", &json!({}))
+            {
+                self.status(format!("Couldn't write recovery data: {e}"));
+            }
+        }
         let dt = now - self.last_time;
         if dt > 0.0 {
             self.perf.fps = self.perf.fps * 0.9 + (1.0 / dt).min(240.0) * 0.1;

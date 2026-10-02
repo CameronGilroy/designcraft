@@ -54,7 +54,7 @@ Open P0 items: Dockable panels, Recovery / autosave, Preferences, Document Setup
 | Application shell & workspace | Keyboard shortcut editor | P1 | M |
 | Application shell & workspace | Menu customization | P2 | M |
 | Application shell & workspace | Show Full Menus | P2 | M |
-| Application shell & workspace | Recovery / autosave | P0 | M |
+| Application shell & workspace | Recovery / autosave | P0 | D |
 | Application shell & workspace | Preferences | P0 | P |
 | Application shell & workspace | Localization | P2 | M |
 | Application shell & workspace | Scripting (own API: commands, scripts, MCP) | P2 | D |
@@ -310,8 +310,8 @@ Open P0 items: Dockable panels, Recovery / autosave, Preferences, Document Setup
 | View & navigation | Rotate spread view | P2 | M |
 | View & navigation | Find/zoom to object | P1 | P |
 | Undo, history, saving | Unlimited undo/redo | P0 | D |
-| Undo, history, saving | Revert | P0 | P |
-| Undo, history, saving | Save / Save As / Save a Copy | P0 | P |
+| Undo, history, saving | Revert | P0 | D |
+| Undo, history, saving | Save / Save As / Save a Copy | P0 | D |
 | Accessibility | Tagged PDF export | P2 | M |
 | Accessibility | Alt text | P2 | M |
 | Accessibility | Keyboard navigation of UI | P1 | P |
