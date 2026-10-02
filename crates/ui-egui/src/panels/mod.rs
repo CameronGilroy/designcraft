@@ -40,6 +40,12 @@ pub struct SelInfo {
     pub locked: bool,
 }
 
+/// Fill (or stroke) tint of the first selected item (1 = 100%).
+pub fn sel_tint(app: &DesignApp, stroke: bool) -> f32 {
+    let Some(st) = app.session.active() else { return 1.0 };
+    st.selection.items.first().and_then(|id| st.doc.item(*id)).map_or(1.0, |it| if stroke { it.stroke.tint } else { it.fill.tint })
+}
+
 pub fn sel_info(app: &DesignApp) -> Option<SelInfo> {
     let st = app.session.active()?;
     if st.selection.items.is_empty() {

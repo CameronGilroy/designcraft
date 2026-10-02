@@ -120,6 +120,7 @@ pub fn magazine() -> Document {
         },
         locked: false,
         named: true,
+        hidden: false,
     });
     // Styles.
     let serif = |style: &str, size: f64| CharAttrs {

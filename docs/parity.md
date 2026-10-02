@@ -140,8 +140,8 @@ Open P0 items: Dockable panels, Recovery / autosave, Preferences, Document Setup
 | Transform | Dimensions Include Stroke Weight | P0 | M |
 | Transform | Rotate 90 / Flip buttons | P0 | D |
 | Fill, stroke, colour | Swatches panel | P0 | D |
-| Fill, stroke, colour | Color panel | P0 | P |
-| Fill, stroke, colour | Color Picker dialog | P0 | M |
+| Fill, stroke, colour | Color panel | P0 | D |
+| Fill, stroke, colour | Color Picker dialog | P0 | D |
 | Fill, stroke, colour | Gradient panel & tool | P0 | P |
 | Fill, stroke, colour | Gradient Feather tool | P1 | M |
 | Fill, stroke, colour | Tints | P0 | D |
@@ -150,7 +150,7 @@ Open P0 items: Dockable panels, Recovery / autosave, Preferences, Document Setup
 | Fill, stroke, colour | Ink Manager | P2 | M |
 | Fill, stroke, colour | Load/Save Swatches (.ase) | P1 | M |
 | Fill, stroke, colour | Color groups | P2 | M |
-| Fill, stroke, colour | Unnamed colour to swatch | P1 | M |
+| Fill, stroke, colour | Unnamed colour to swatch | P1 | D |
 | Fill, stroke, colour | Stroke panel | P0 | P |
 | Fill, stroke, colour | Stroke styles | P1 | P |
 | Fill, stroke, colour | Color management | P1 | P |

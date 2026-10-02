@@ -51,6 +51,36 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             create_swatch
         ),
+        cmd!(
+            "object.color",
+            "Apply Color",
+            [],
+            None,
+            "{color: \"#rrggbb\"|{c,m,y,k}(0..100)|[r,g,b](0..255), target?: fill|stroke, ids?} — an unnamed colour (not in the Swatches panel until Add to Swatches) on the selection",
+            super::has_selection,
+            apply_color
+        ),
+        cmd!(
+            "swatch.addToSwatches",
+            "Add to Swatches",
+            [],
+            None,
+            "{swatch?: name (default: the selection's fill), target?: fill|stroke, name?: new name} — makes an unnamed colour a swatch",
+            has_doc,
+            add_to_swatches
+        ),
+        cmd!("swatch.addUnnamed", "Add Unnamed Colors", [], None, "{} — every unnamed colour used becomes a swatch", has_doc, |s, _| {
+            s.edit(|d, _| {
+                let mut n = 0;
+                for w in &mut d.swatches {
+                    if w.hidden {
+                        w.hidden = false;
+                        n += 1;
+                    }
+                }
+                Ok(json!({"added": n}))
+            })
+        }),
         cmd!("swatch.delete", "Delete Swatch", [], None, "{name}", has_doc, |s, p| {
             let name = str_param(p, "name").unwrap_or("").to_string();
             s.edit(|d, _| {
@@ -259,6 +289,7 @@ fn create_swatch(s: &mut Session, p: &Value) -> Result<Value> {
             },
             locked: false,
             named: true,
+            hidden: false,
         });
         Ok(json!({"name": name}))
     })
@@ -336,4 +367,138 @@ fn create_object(s: &mut Session, p: &Value) -> Result<Value> {
         d.styles_mut().object.push(os.clone());
         Ok(json!({"name": name}))
     })
+}
+
+/// The swatch name of a colour value ("C=… M=… Y=… K=…" / "R=… G=… B=…").
+fn value_name(color: designcraft_color::Color) -> String {
+    match color {
+        designcraft_color::Color::Cmyk { c, m, y, k } => designcraft_color::swatch::cmyk_name(c, m, y, k),
+        other => {
+            let [r, g, b] = other.to_rgb();
+            format!("R={} G={} B={}", (r * 255.0).round(), (g * 255.0).round(), (b * 255.0).round())
+        }
+    }
+}
+
+fn apply_color(s: &mut Session, p: &Value) -> Result<Value> {
+    let color = p.get("color").and_then(parse_color).ok_or_else(|| bad("object.color", "missing or bad color"))?;
+    let stroke = str_param(p, "target") == Some("stroke");
+    let ids = super::targets(s, p)?;
+    s.edit(|d, _| {
+        // Reuse a swatch holding exactly this colour, else add an unnamed one.
+        let existing = d
+            .swatches
+            .iter()
+            .find(|w| matches!(&w.value, SwatchValue::Color { color: c, color_type: designcraft_color::ColorType::Process } if *c == color))
+            .map(|w| w.name.clone());
+        let name = match existing {
+            Some(n) => n,
+            None => {
+                let name = Styles::unique_name(|n| d.swatch(n).is_some(), &value_name(color));
+                d.swatches.push(Swatch {
+                    name: name.clone(),
+                    value: SwatchValue::Color { color, color_type: designcraft_color::ColorType::Process },
+                    locked: false,
+                    named: false,
+                    hidden: true,
+                });
+                name
+            }
+        };
+        for id in &ids {
+            if let Some(it) = d.item_mut(*id) {
+                if stroke {
+                    it.stroke.swatch = name.clone();
+                    it.stroke.tint = 1.0;
+                } else {
+                    it.fill.swatch = name.clone();
+                    it.fill.tint = 1.0;
+                }
+            }
+        }
+        Ok(json!({"swatch": name}))
+    })
+}
+
+fn add_to_swatches(s: &mut Session, p: &Value) -> Result<Value> {
+    let st = s.doc()?;
+    let name = match str_param(p, "swatch") {
+        Some(n) => n.to_string(),
+        None => {
+            let id = st.selection.items.first().copied().ok_or_else(|| bad("swatch.addToSwatches", "select an object or give `swatch`"))?;
+            let it = st.doc.item(id).ok_or_else(|| bad("swatch.addToSwatches", "no such item"))?;
+            if str_param(p, "target") == Some("stroke") { it.stroke.swatch.clone() } else { it.fill.swatch.clone() }
+        }
+    };
+    let rename = str_param(p, "name").map(str::to_string);
+    s.edit(|d, _| {
+        let w = d.swatches.iter_mut().find(|w| w.name == name).ok_or_else(|| bad("swatch.addToSwatches", format!("no swatch `{name}`")))?;
+        if w.locked {
+            return Err(bad("swatch.addToSwatches", "special swatches are already listed"));
+        }
+        w.hidden = false;
+        let Some(new) = rename.filter(|n| *n != name) else { return Ok(json!({"name": name})) };
+        if d.swatches.iter().any(|w| w.name == new) {
+            return Err(bad("swatch.addToSwatches", format!("a swatch named `{new}` exists")));
+        }
+        let w = d.swatches.iter_mut().find(|w| w.name == name).expect("found above");
+        w.name = new.clone();
+        w.named = true;
+        // Everything using the colour follows the rename.
+        for sp in d.spreads.iter_mut().chain(d.parents.iter_mut()) {
+            let sp = std::sync::Arc::make_mut(sp);
+            for top in &mut sp.items {
+                rename_in(std::sync::Arc::make_mut(top), &name, &new);
+            }
+        }
+        Ok(json!({"name": new}))
+    })
+}
+
+/// Point fills and strokes of an item (and its children) at a renamed swatch.
+fn rename_in(it: &mut designcraft_doc::Item, from: &str, to: &str) {
+    if it.fill.swatch == from {
+        it.fill.swatch = to.to_string();
+    }
+    if it.stroke.swatch == from {
+        it.stroke.swatch = to.to_string();
+    }
+    if let Some(kids) = it.children_mut() {
+        for k in kids {
+            rename_in(std::sync::Arc::make_mut(k), from, to);
+        }
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::*;
+
+    #[test]
+    fn unnamed_colors_then_add_to_swatches() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let id = s.execute("frame.create", &json!({"rect": [0, 0, 50, 50]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("selection.set", &json!({"ids": [id]})).unwrap();
+        let listed = |s: &Session| s.doc().unwrap().doc.swatches.iter().filter(|w| !w.hidden).count();
+        let before = listed(&s);
+        let r = s.execute("object.color", &json!({"color": {"c": 10, "m": 20, "y": 30, "k": 0}})).unwrap();
+        assert_eq!(r["swatch"], "C=10 M=20 Y=30 K=0");
+        assert_eq!(listed(&s), before, "unnamed: not in the Swatches panel");
+        // The same colour again reuses it; the stroke target works too.
+        let n = s.doc().unwrap().doc.swatches.len();
+        s.execute("object.color", &json!({"color": {"c": 10, "m": 20, "y": 30, "k": 0}, "target": "stroke"})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.swatches.len(), n);
+        let d = &s.doc().unwrap().doc;
+        let it = d.item(designcraft_doc::ItemId(id)).unwrap();
+        assert_eq!(it.fill.swatch, it.stroke.swatch);
+        // Add to Swatches with a name: listed, and the object follows the rename.
+        s.execute("swatch.addToSwatches", &json!({"name": "Sand"})).unwrap();
+        assert_eq!(listed(&s), before + 1);
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.item(designcraft_doc::ItemId(id)).unwrap().fill.swatch, "Sand");
+        // A colour equal to an existing swatch applies that swatch.
+        s.execute("object.color", &json!({"color": {"c": 10, "m": 20, "y": 30, "k": 0}})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(id)).unwrap().fill.swatch, "Sand");
+    }
 }

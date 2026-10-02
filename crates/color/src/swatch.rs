@@ -53,15 +53,31 @@ pub struct Swatch {
     /// User-named (false = the name is derived from the colour values and tracks edits).
     #[serde(default)]
     pub named: bool,
+    /// An unnamed colour (mixed in the Color panel or picker): applied to objects but not
+    /// listed in the Swatches panel until Add to Swatches.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 impl Swatch {
     pub fn color(name: &str, c: Color) -> Self {
-        Swatch { name: name.into(), value: SwatchValue::Color { color: c, color_type: ColorType::Process }, locked: false, named: true }
+        Swatch {
+            name: name.into(),
+            value: SwatchValue::Color { color: c, color_type: ColorType::Process },
+            locked: false,
+            named: true,
+            hidden: false,
+        }
     }
     pub fn cmyk(c: f32, m: f32, y: f32, k: f32) -> Self {
         let col = Color::cmyk(c, m, y, k);
-        Swatch { name: cmyk_name(c, m, y, k), value: SwatchValue::Color { color: col, color_type: ColorType::Process }, locked: false, named: false }
+        Swatch {
+            name: cmyk_name(c, m, y, k),
+            value: SwatchValue::Color { color: col, color_type: ColorType::Process },
+            locked: false,
+            named: false,
+            hidden: false,
+        }
     }
     pub fn is_special(&self) -> bool {
         matches!(self.value, SwatchValue::None | SwatchValue::Paper { .. } | SwatchValue::Registration) || self.name == BLACK
@@ -118,7 +134,7 @@ pub fn apply_tint(c: Color, tint: f32) -> Color {
 
 /// A new document's swatches, in panel order.
 pub fn default_swatches() -> Vec<Swatch> {
-    let special = |name: &str, value: SwatchValue| Swatch { name: name.into(), value, locked: true, named: true };
+    let special = |name: &str, value: SwatchValue| Swatch { name: name.into(), value, locked: true, named: true, hidden: false };
     let mut v = vec![
         special(NONE, SwatchValue::None),
         special(REGISTRATION, SwatchValue::Registration),
@@ -162,6 +178,7 @@ mod tests {
             value: SwatchValue::Tint { base: "C=100 M=0 Y=0 K=0".into(), tint: 0.5 },
             locked: false,
             named: true,
+            hidden: false,
         });
         assert_eq!(resolve(&s, NONE, 1.0), None);
         assert_eq!(resolve(&s, PAPER, 1.0), Some(Color::WHITE));
@@ -173,8 +190,8 @@ mod tests {
     #[test]
     fn tint_cycles_terminate() {
         let s = vec![
-            Swatch { name: "a".into(), value: SwatchValue::Tint { base: "b".into(), tint: 0.5 }, locked: false, named: true },
-            Swatch { name: "b".into(), value: SwatchValue::Tint { base: "a".into(), tint: 0.5 }, locked: false, named: true },
+            Swatch { name: "a".into(), value: SwatchValue::Tint { base: "b".into(), tint: 0.5 }, locked: false, named: true, hidden: false },
+            Swatch { name: "b".into(), value: SwatchValue::Tint { base: "a".into(), tint: 0.5 }, locked: false, named: true, hidden: false },
         ];
         assert_eq!(resolve(&s, "a", 1.0), None);
     }

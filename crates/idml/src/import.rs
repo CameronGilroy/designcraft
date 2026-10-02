@@ -469,7 +469,7 @@ impl<'r> Importer<'r> {
             self.swatch_names.insert(id.to_string(), name.to_string());
             order.push((
                 id.to_string(),
-                Swatch { name: name.to_string(), value: SwatchValue::Color { color: c, color_type: ty }, locked: false, named },
+                Swatch { name: name.to_string(), value: SwatchValue::Color { color: c, color_type: ty }, locked: false, named, hidden: false },
             ));
         }
         // Tints (after colours: they reference them).
@@ -482,7 +482,10 @@ impl<'r> Importer<'r> {
                 _ => format!("{base} {}%", names::num(t)),
             };
             self.swatch_names.insert(id.to_string(), name.clone());
-            order.push((id.to_string(), Swatch { name, value: SwatchValue::Tint { base, tint: (t / 100.0) as f32 }, locked: false, named: true }));
+            order.push((
+                id.to_string(),
+                Swatch { name, value: SwatchValue::Tint { base, tint: (t / 100.0) as f32 }, locked: false, named: true, hidden: false },
+            ));
         }
         for e in top.iter().filter(|e| e.local() == "Gradient") {
             let Some(id) = e.get("Self") else { continue };
@@ -498,7 +501,8 @@ impl<'r> Importer<'r> {
             let kind = if e.get("Type") == Some("Radial") { GradientKind::Radial } else { GradientKind::Linear };
             let unnamed = e.get("Visible") == Some("false") || e.get("Name").is_none_or(|n| n.is_empty() || n == "$ID/");
             let name = if unnamed { "Gradient".to_string() } else { e.get("Name").unwrap_or_default().to_string() };
-            let sw = Swatch { name, value: SwatchValue::Gradient { gradient: Gradient { kind, stops } }, locked: false, named: !unnamed };
+            let sw =
+                Swatch { name, value: SwatchValue::Gradient { gradient: Gradient { kind, stops } }, locked: false, named: !unnamed, hidden: false };
             if unnamed {
                 // Unnamed gradients become swatches only when something uses them.
                 self.hidden_swatches.insert(id.to_string(), sw);
@@ -579,6 +583,7 @@ impl<'r> Importer<'r> {
                     value: SwatchValue::Color { color: c, color_type: ColorType::Process },
                     locked: false,
                     named: false,
+                    hidden: false,
                 });
             }
             self.swatch_names.insert(r.to_string(), name.clone());

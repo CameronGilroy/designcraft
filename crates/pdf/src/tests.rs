@@ -102,6 +102,7 @@ fn colours_keep_their_space() {
         value: SwatchValue::Color { color: Color::cmyk(0.0, 0.5, 1.0, 0.0), color_type: ColorType::Spot },
         locked: false,
         named: true,
+        hidden: false,
     });
     add_box(&mut d, Rect::new(320.0, 400.0, 420.0, 500.0), "PANTONE Test");
     let s = uncompressed(&d, PdfOptions::default());

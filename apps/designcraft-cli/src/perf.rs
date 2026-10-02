@@ -172,6 +172,7 @@ pub fn synthetic(spec: &Spec) -> Document {
         },
         locked: false,
         named: true,
+        hidden: false,
     });
     let mut rng = Rng(0x5eed);
     let (aw, ah) = (800u32, 600u32);

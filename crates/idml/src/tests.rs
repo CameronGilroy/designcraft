@@ -279,7 +279,13 @@ fn rejects_non_idml() {
 fn small_doc() -> Document {
     let mut d = Document::new(&NewDocument { pages: 3, ..Default::default() });
     d.swatches.push(Swatch::color("Brand", Color::rgb(1.0, 0.0, 0.0)));
-    d.swatches.push(Swatch { name: "Brand 30".into(), value: SwatchValue::Tint { base: "Brand".into(), tint: 0.3 }, locked: false, named: true });
+    d.swatches.push(Swatch {
+        name: "Brand 30".into(),
+        value: SwatchValue::Tint { base: "Brand".into(), tint: 0.3 },
+        locked: false,
+        named: true,
+        hidden: false,
+    });
     let lid = d.default_layer();
     let (f1, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(40.0, 40.0, 300.0, 200.0), lid, "One\ttwo\nThree", ParaFormat::default()).unwrap();
     let (f2, _) = d.add_text_frame(SpreadRef::Doc(1), Rect::new(700.0, 40.0, 900.0, 200.0), lid, "", ParaFormat::default()).unwrap();
