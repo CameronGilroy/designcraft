@@ -52,10 +52,12 @@ pub fn sel_info(app: &DesignApp) -> Option<SelInfo> {
         return None;
     }
     let d = &st.doc;
+    let with_stroke = app.session.prefs.dimensions_include_stroke;
     let mut b: Option<Rect> = None;
     for id in &st.selection.items {
         let it = d.item(*id)?;
-        b = Some(b.map_or(it.bounds(), |r| r.union(it.bounds())));
+        let ib = if with_stroke { it.visible_bounds() } else { it.bounds() };
+        b = Some(b.map_or(ib, |r| r.union(ib)));
     }
     let b = b?;
     let first = d.item(st.selection.items[0])?;

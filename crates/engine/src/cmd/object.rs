@@ -34,7 +34,18 @@ pub fn specs() -> Vec<CommandSpec> {
             if sx.abs() < 1e-4 || sy.abs() < 1e-4 {
                 return Err(bad("transform.scale", "scale too small"));
             }
-            apply_about_center(s, p, Affine::scale_non_uniform(sx, sy))
+            let strokes = s.prefs.scale_strokes;
+            let ids = targets(s, p)?;
+            s.edit(|d, _| {
+                let c = union_bounds(d, &ids).center();
+                let m = Affine::translate(c.to_vec2()) * Affine::scale_non_uniform(sx, sy) * Affine::translate(-c.to_vec2());
+                for id in &ids {
+                    if let Some(it) = d.item_mut(*id) {
+                        scale_item(it, m, (sx * sy).abs().sqrt(), strokes);
+                    }
+                }
+                ok()
+            })
         }),
         cmd!("transform.shear", "Shear", ["Object", "Transform"], None, "{angle (degrees), ids?}", has_selection, |s, p| {
             let a = f64_or(p, "angle", 0.0).clamp(-85.0, 85.0).to_radians().tan();
@@ -576,13 +587,16 @@ fn transform_resize(s: &mut Session, p: &Value) -> Result<Value> {
     let sx = if sx.abs() < 1e-3 { 1e-3f64.copysign(sx) } else { sx };
     let sy = if sy.abs() < 1e-3 { 1e-3f64.copysign(sy) } else { sy };
     let m = Affine::translate((to.x0, to.y0)) * Affine::scale_non_uniform(sx, sy) * Affine::translate((-from.x0, -from.y0));
+    let strokes = s.prefs.scale_strokes;
     s.edit(|d, _| {
         for id in &ids {
             let it = d.item_mut(*id).ok_or(designcraft_doc::DocError::NoItem(*id))?;
             if it.locked {
                 continue;
             }
-            if scale_content || matches!(it.content, Content::Group { .. }) {
+            if scale_content {
+                scale_item(it, m, (sx * sy).abs().sqrt(), strokes);
+            } else if matches!(it.content, Content::Group { .. }) {
                 it.xf = m * it.xf;
             } else {
                 // Resize the frame's path (in inner space); content keeps its size (InDesign's default).
@@ -592,6 +606,50 @@ fn transform_resize(s: &mut Session, p: &Value) -> Result<Value> {
         }
         Ok(json!({"resized": ids.len()}))
     })
+}
+
+fn union_bounds(d: &Document, ids: &[ItemId]) -> Rect {
+    ids.iter().filter_map(|i| d.item(*i)).map(Item::bounds).reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO)
+}
+
+/// Multiply the stroke weights of an item and everything nested in it.
+fn scale_weights(it: &mut Item, k: f64) {
+    it.stroke.weight *= k;
+    if let Content::Group { items } = &mut it.content {
+        for c in items.iter_mut() {
+            scale_weights(Arc::make_mut(c), k);
+        }
+    }
+}
+
+/// Scale an item and its content by the spread-space transform `m` (InDesign's "Apply to
+/// Content"): paths and placed graphics take the scale into their geometry, so the stroke weight
+/// is scaled by `k` (the mean scale factor) only with Scale Strokes on; text frames and groups are
+/// transformed as a whole, so with Scale Strokes off their weights are divided by `k` to keep
+/// their look.
+pub(crate) fn scale_item(it: &mut Item, m: Affine, k: f64, strokes: bool) {
+    let inner = it.xf.inverse() * m * it.xf;
+    match &mut it.content {
+        Content::Unassigned => {
+            it.path.transform(inner);
+            if strokes {
+                it.stroke.weight *= k;
+            }
+        }
+        Content::Graphic(g) => {
+            g.xf = inner * g.xf;
+            it.path.transform(inner);
+            if strokes {
+                it.stroke.weight *= k;
+            }
+        }
+        Content::Text(_) | Content::Group { .. } => {
+            it.xf = m * it.xf;
+            if !strokes && k > 1e-9 {
+                scale_weights(it, 1.0 / k);
+            }
+        }
+    }
 }
 
 fn apply_about_center(s: &mut Session, p: &Value, a: Affine) -> Result<Value> {
@@ -622,14 +680,20 @@ fn transform_rotate(s: &mut Session, p: &Value) -> Result<Value> {
 fn transform_set(s: &mut Session, p: &Value) -> Result<Value> {
     let ids = targets(s, p)?;
     let rf = p.get("ref").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let with_stroke = s.prefs.dimensions_include_stroke;
     s.edit(|d, _| {
-        let mut b: Option<Rect> = None;
-        for id in &ids {
-            if let Some(it) = d.item(*id) {
-                b = Some(b.map_or(it.bounds(), |r| r.union(it.bounds())));
-            }
+        if !ids.iter().any(|i| d.item(*i).is_some()) {
+            return ok();
         }
-        let Some(from) = b else { return ok() };
+        // The measured box (with Dimensions Include Stroke Weight, the stroke's outer edge) and
+        // the geometry it pads.
+        let geom = union_bounds(d, &ids);
+        let from = if with_stroke {
+            ids.iter().filter_map(|i| d.item(*i)).map(Item::visible_bounds).reduce(|a, b| a.union(b)).unwrap_or(geom)
+        } else {
+            geom
+        };
+        let pad = (geom.x0 - from.x0, geom.y0 - from.y0, from.x1 - geom.x1, from.y1 - geom.y1);
         let w = f64_or(p, "width", from.width()).max(0.01);
         let h = f64_or(p, "height", from.height()).max(0.01);
         let anchor = designcraft_geom::reference_point(from, rf);
@@ -654,9 +718,10 @@ fn transform_set(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(y) = p.get("y").and_then(Value::as_f64) {
             to = to + Vec2::new(0.0, y - anchor.y);
         }
+        let to = Rect::new(to.x0 + pad.0, to.y0 + pad.1, (to.x1 - pad.2).max(to.x0 + pad.0 + 0.01), (to.y1 - pad.3).max(to.y0 + pad.1 + 0.01));
         let m = Affine::translate((to.x0, to.y0))
-            * Affine::scale_non_uniform(to.width() / from.width().max(1e-9), to.height() / from.height().max(1e-9))
-            * Affine::translate((-from.x0, -from.y0));
+            * Affine::scale_non_uniform(to.width() / geom.width().max(1e-9), to.height() / geom.height().max(1e-9))
+            * Affine::translate((-geom.x0, -geom.y0));
         for id in &ids {
             if let Some(it) = d.item_mut(*id) {
                 if matches!(it.content, Content::Group { .. }) {
@@ -1153,5 +1218,34 @@ mod polygon_tests {
             .as_u64()
             .unwrap();
         assert_eq!(s.doc().unwrap().doc.item(ItemId(id)).unwrap().path.subpaths[0].anchors.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use super::*;
+
+    #[test]
+    fn scale_strokes_and_dimensions_with_stroke() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [100, 100, 200, 150]})).unwrap();
+        let id = ItemId(r["id"].as_u64().unwrap());
+        s.execute("object.stroke", &json!({"weight": 4, "swatch": "Black"})).unwrap();
+        let weight = |s: &Session| s.doc().unwrap().doc.item(id).unwrap().stroke.weight;
+        let bounds = |s: &Session| s.doc().unwrap().doc.item(id).unwrap().bounds();
+        s.execute("transform.scale", &json!({"sx": 2.0})).unwrap();
+        assert_eq!(weight(&s), 8.0);
+        assert_eq!(bounds(&s), Rect::new(50.0, 75.0, 250.0, 175.0));
+        s.execute("prefs.set", &json!({"scaleStrokes": false})).unwrap();
+        s.execute("transform.scale", &json!({"sx": 0.5})).unwrap();
+        assert_eq!(weight(&s), 8.0);
+        assert!(s.execute("prefs.set", &json!({"nope": 1})).is_err());
+        // Width 108 with an 8 pt centred stroke: the path is 100 wide.
+        s.execute("transform.set", &json!({"width": 108})).unwrap();
+        assert!((bounds(&s).width() - 100.0).abs() < 1e-9, "{:?}", bounds(&s));
+        s.execute("prefs.set", &json!({"dimensionsIncludeStroke": false})).unwrap();
+        s.execute("transform.set", &json!({"width": 120})).unwrap();
+        assert!((bounds(&s).width() - 120.0).abs() < 1e-9);
     }
 }

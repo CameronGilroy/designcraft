@@ -122,17 +122,27 @@ impl DocState {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Prefs {
-    pub keyboard_increment: f64,
     pub show_hidden_characters: bool,
     pub typographers_quotes: bool,
     /// Polygon Settings (double-click the Polygon tool): number of sides, star inset (0–1).
     pub polygon_sides: u32,
     pub star_inset: f64,
+    /// Scaling objects scales their stroke weights (Preferences › General › When Scaling).
+    pub scale_strokes: bool,
+    /// X/Y/W/H in the Control and Properties panels measure the stroke's outer edge.
+    pub dimensions_include_stroke: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { keyboard_increment: 1.0, show_hidden_characters: false, typographers_quotes: true, polygon_sides: 6, star_inset: 0.0 }
+        Prefs {
+            show_hidden_characters: false,
+            typographers_quotes: true,
+            polygon_sides: 6,
+            star_inset: 0.0,
+            scale_strokes: true,
+            dimensions_include_stroke: true,
+        }
     }
 }
 

@@ -102,6 +102,71 @@ fn text_field(ui: &mut egui::Ui, d: &mut Dialog, key: &str, w: f32) {
     }
 }
 
+/// Preferences: a section list and the section's options. Application options always; units and
+/// increments when a document is open (InDesign keeps those with the document).
+fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
+    let has_doc = d.fields.contains_key("horizontalUnits");
+    let sections: &[(&str, &str)] = if has_doc {
+        &[("general", "General"), ("type", "Type"), ("units", "Units & Increments")]
+    } else {
+        &[("general", "General"), ("type", "Type")]
+    };
+    let cur = d.s("section");
+    ui.horizontal_top(|ui| {
+        // A fixed height: the separator would otherwise take the whole window.
+        ui.set_min_height(240.0);
+        ui.set_max_height(240.0);
+        ui.vertical(|ui| {
+            ui.set_width(150.0);
+            for (id, label) in sections {
+                if ui.selectable_label(cur == *id, *label).clicked() {
+                    d.fields.insert("section".into(), json!(id));
+                }
+            }
+        });
+        ui.separator();
+        ui.vertical(|ui| {
+            ui.set_min_width(300.0);
+            match cur.as_str() {
+                "type" => {
+                    ui.label(egui::RichText::new("Type Options").font(semibold(12.0)));
+                    check(ui, d, "typographersQuotes", "Use Typographer's Quotes");
+                }
+                "units" => {
+                    ui.label(egui::RichText::new("Ruler Units").font(semibold(12.0)));
+                    egui::Grid::new("pref_units").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                        for (key, label) in [("horizontalUnits", "Horizontal:"), ("verticalUnits", "Vertical:")] {
+                            ui.label(label);
+                            let cur: Unit = d.fields.get(key).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                            egui::ComboBox::from_id_salt(key).selected_text(cur.label()).width(140.0).show_ui(ui, |ui| {
+                                for u in Unit::ALL {
+                                    if ui.selectable_label(u == cur, u.label()).clicked() {
+                                        d.fields.insert(key.into(), json!(u));
+                                    }
+                                }
+                            });
+                            ui.end_row();
+                        }
+                    });
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Keyboard Increments").font(semibold(12.0)));
+                    ui.horizontal(|ui| {
+                        ui.label("Cursor Key:");
+                        text_field(ui, d, "keyboardIncrement", 80.0);
+                    });
+                }
+                _ => {
+                    ui.label(egui::RichText::new("When Scaling").font(semibold(12.0)));
+                    check(ui, d, "scaleStrokes", "Include Stroke Weight");
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Transform").font(semibold(12.0)));
+                    check(ui, d, "dimensionsIncludeStroke", "Dimensions Include Stroke Weight");
+                }
+            }
+        });
+    });
+}
+
 fn check(ui: &mut egui::Ui, d: &mut Dialog, key: &str, label: &str) {
     let mut b = d.b(key);
     if ui.checkbox(&mut b, label).changed() {
@@ -125,6 +190,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "insertXref" => "New Cross-Reference",
         "findFont" => "Find/Replace Font",
         "polygonSettings" => "Polygon Settings",
+        "preferences" => "Preferences",
         "colorPicker" => "Color Picker",
         id => match id.strip_prefix("cmd:").and_then(designcraft_engine::find_command) {
             Some(c) => c.label.trim_end_matches('…'),
@@ -261,6 +327,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             "insertXref" => insert_xref(app, ui, &mut d),
             "findFont" => find_font(app, ui, &mut d),
             "colorPicker" => color_picker(ui, &mut d),
+            "preferences" => preferences(ui, &mut d),
             "polygonSettings" => {
                 egui::Grid::new("poly").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     ui.label("Number of Sides:");
@@ -426,6 +493,20 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "colorPicker" => {
             let hex = d.s("hex");
             app.run("object.color", json!({"color": hex, "target": d.s("target")}))
+        }
+        "preferences" => {
+            app.run(
+                "prefs.set",
+                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "typographersQuotes": d.b("typographersQuotes")}),
+            )?;
+            if !d.fields.contains_key("horizontalUnits") {
+                return Ok(Value::Null);
+            }
+            let mut doc = json!({"horizontalUnits": d.fields["horizontalUnits"], "verticalUnits": d.fields["verticalUnits"]});
+            if let Some(v) = d.fields.get("keyboardIncrement").and_then(Value::as_str).and_then(|s| parse_measure(s, Unit::Points).ok()) {
+                doc["keyboardIncrement"] = json!(v.max(0.001));
+            }
+            app.run("document.preferences", doc)
         }
         "polygonSettings" => app.run("tool.polygonSettings", json!({"sides": d.n("sides").unwrap_or(6.0) as u64, "starInset": d.n("starInset").unwrap_or(0.0)})),
         "findFont" => {
