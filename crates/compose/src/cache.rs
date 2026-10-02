@@ -29,6 +29,9 @@ pub struct Cache {
     running: Mutex<Option<(u64, Arc<RunningIndex>)>>,
     /// Cross-reference anchor pages with the document signature they were built for.
     xrefs: Mutex<Option<(u64, Arc<crate::xref::XrefIndex>)>>,
+    /// The composition each story (page-independent key) had before its latest recomposition,
+    /// with the story revision it was composed from (repaint only the frames an edit changed).
+    previous: Mutex<HashMap<StoryId, (Vec<usize>, Arc<ComposedStory>)>>,
 }
 
 /// Identity of everything a running header can depend on (stories, spreads, styles, variables).
@@ -112,7 +115,70 @@ impl Cache {
         if g.0.len() > 4096 {
             g.0.retain(|_, e| stamp - e.stamp < 64);
         }
-        g.0.insert(key, Entry { sig, _keep: (story.clone(), doc.styles.clone(), keep_items), out: out.clone(), stamp });
+        let replaced = g.0.insert(key.clone(), Entry { sig, _keep: (story.clone(), doc.styles.clone(), keep_items), out: out.clone(), stamp });
+        drop(g);
+        if key.1.is_none()
+            && let Some(old) = replaced
+        {
+            self.previous.lock().unwrap_or_else(|e| e.into_inner()).insert(sid, (old.sig, old.out));
+        }
+        out
+    }
+
+    /// The cached composition of `sid` made from exactly this version of `doc` (the current
+    /// entry or the one it replaced), without composing anything.
+    pub fn composed_for(&self, doc: &Document, sid: StoryId) -> Option<Arc<ComposedStory>> {
+        let story = doc.stories.get(&sid)?;
+        let (sig, _) = signature(doc, story);
+        // Only the geometry/story part of the signature (variables etc. add to it).
+        let matches = |s: &[usize]| s.len() >= sig.len() && s[..sig.len()] == sig[..];
+        {
+            let g = self.map.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(e) = g.0.get(&(sid, None))
+                && matches(&e.sig)
+            {
+                return Some(e.out.clone());
+            }
+        }
+        let g = self.previous.lock().unwrap_or_else(|e| e.into_inner());
+        g.get(&sid).filter(|(s, _)| matches(s)).map(|(_, c)| c.clone())
+    }
+
+    /// Frames whose composed content differs between two compositions of a story.
+    pub fn changed_frames(a: &ComposedStory, b: &ComposedStory) -> Vec<designcraft_doc::ItemId> {
+        let same_line = |x: &crate::Line, y: &crate::Line| {
+            x.range == y.range
+                && (x.baseline - y.baseline).abs() < 1e-9
+                && (x.x0 - y.x0).abs() < 1e-9
+                && (x.end_x - y.end_x).abs() < 1e-9
+                && x.glyphs.len() == y.glyphs.len()
+                && x.glyphs
+                    .iter()
+                    .zip(&y.glyphs)
+                    .all(|(g, h)| g.gid == h.gid && g.style == h.style && (g.x - h.x).abs() < 1e-9 && (g.y - h.y).abs() < 1e-9)
+        };
+        let mut out = Vec::new();
+        for fb in &b.frames {
+            let same = a.frame(fb.frame).is_some_and(|fa| {
+                fa.lines.len() == fb.lines.len()
+                    && fa.lines.iter().zip(&fb.lines).all(|(x, y)| same_line(x, y))
+                    && fa.decos == fb.decos
+                    && fa.tables.is_empty()
+                    && fb.tables.is_empty()
+                    && fa.notes.is_empty()
+                    && fb.notes.is_empty()
+                    && fa.objects.is_empty()
+                    && fb.objects.is_empty()
+            }) && a.styles == b.styles;
+            if !same {
+                out.push(fb.frame);
+            }
+        }
+        for fa in &a.frames {
+            if b.frame(fa.frame).is_none() {
+                out.push(fa.frame);
+            }
+        }
         out
     }
 

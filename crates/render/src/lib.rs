@@ -22,6 +22,7 @@ use vello_cpu::{Pixmap, RenderContext, Resources};
 
 pub use vello_cpu;
 
+pub mod damage;
 mod fx;
 pub mod images;
 mod text;

@@ -291,6 +291,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
     {
         upload(app, ctx, done.image);
         app.canvas.shown = Some(shown);
+        app.canvas.shown_doc = app.canvas.pending_doc.take();
         app.canvas.pending = None;
         app.perf.render_ms = done.ms;
     }
@@ -324,12 +325,17 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
     let has_worker = app.canvas.worker.is_some();
     #[cfg(target_arch = "wasm32")]
     let has_worker = false;
+    // An edit with the view unchanged: repaint just the regions it changed.
+    if doc_changed && zoom_same && patch_texture(app, layout, ppp, doc_key, preview) {
+        return;
+    }
     if !has_worker || app.canvas.shown.is_none() || (doc_changed && zoom_same) {
         let t0 = crate::now_ms();
         let (doc, placed, w, h, view, opts) = job(app);
         let img = app.canvas.renderer.render(&doc, &app.session.cache, &placed, w, h, view, &opts);
         upload(app, ctx, img);
         app.canvas.shown = Some(target);
+        app.canvas.shown_doc = Some(doc);
         app.canvas.pending = None;
         app.perf.render_ms = crate::now_ms() - t0;
         return;
@@ -347,6 +353,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
             return;
         }
         let (doc, placed, w, h, view, opts) = job(app);
+        app.canvas.pending_doc = Some(doc.clone());
         app.canvas.token += 1;
         let token = app.canvas.token;
         if let Some(wk) = app.canvas.worker.as_ref() {
@@ -354,6 +361,69 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
         }
         app.canvas.pending = Some((token, target));
     }
+}
+
+/// Repaint only the damaged regions of the current texture after an edit (typing, nudging).
+/// Returns false when a full render is needed (view moved, too much changed, or damage unknown).
+fn patch_texture(app: &mut DesignApp, layout: &CanvasLayout, ppp: f64, doc_key: (u64, u64, u64, bool), preview: bool) -> bool {
+    let (Some(sh), Some(old), Some(st)) = (app.canvas.shown, app.canvas.shown_doc.clone(), app.session.active()) else { return false };
+    if sh.doc.0 != doc_key.0 || sh.doc.3 != doc_key.3 || app.canvas.texture.is_none() {
+        return false;
+    }
+    let new = st.doc.clone();
+    let Some(regions) = designcraft_render::damage::damage_with(&old, &new, Some(&app.session.cache)) else { return false };
+    let t0 = crate::now_ms();
+    let (tw, th) = ((sh.size.0 as f64 * ppp).round() as i64, (sh.size.1 as f64 * ppp).round() as i64);
+    let k = sh.zoom * ppp;
+    let mut px: Option<(i64, i64, i64, i64)> = None;
+    for (r, rect) in &regions {
+        let c = *rect + layout.offset(*r);
+        let x0 = ((c.x0 - sh.origin.x) * k).floor() as i64 - 1;
+        let y0 = ((c.y0 - sh.origin.y) * k).floor() as i64 - 1;
+        let x1 = ((c.x1 - sh.origin.x) * k).ceil() as i64 + 1;
+        let y1 = ((c.y1 - sh.origin.y) * k).ceil() as i64 + 1;
+        px = Some(px.map_or((x0, y0, x1, y1), |p| (p.0.min(x0), p.1.min(y0), p.2.max(x1), p.3.max(y1))));
+    }
+    let done = |app: &mut DesignApp| {
+        app.canvas.shown = Some(crate::Shown { doc: doc_key, ..sh });
+        app.canvas.shown_doc = Some(new.clone());
+        // A background render of the old document must not overwrite this.
+        app.canvas.pending = None;
+        app.canvas.pending_doc = None;
+    };
+    let Some((x0, y0, x1, y1)) = px.map(|p| (p.0.max(0), p.1.max(0), p.2.min(tw), p.3.min(th))) else {
+        done(app);
+        return true;
+    };
+    if x1 <= x0 || y1 <= y0 {
+        done(app);
+        return true;
+    }
+    // Big changes: a full render costs about the same.
+    if ((x1 - x0) * (y1 - y0)) as f64 > 0.5 * (tw * th) as f64 {
+        return false;
+    }
+    let placed: Vec<designcraft_render::Placed> =
+        layout.slots.iter().map(|s| designcraft_render::Placed { spread: s.spread, offset: s.offset }).collect();
+    let view = Affine::translate((-(x0 as f64), -(y0 as f64)))
+        * Affine::scale(ppp)
+        * Affine::scale(sh.zoom)
+        * Affine::translate((-sh.origin.x, -sh.origin.y));
+    let opts = designcraft_render::RenderOptions {
+        printing_only: preview,
+        greek_below_px: 3.0 * ppp,
+        highlight_missing_fonts: !preview,
+        ..Default::default()
+    };
+    let img = app.canvas.patcher.render(&new, &app.session.cache, &placed, (x1 - x0) as u32, (y1 - y0) as u32, view, &opts);
+    let ci = egui::ColorImage::from_rgba_premultiplied([img.width as usize, img.height as usize], &img.pixels);
+    if let Some(tex) = app.canvas.texture.as_mut() {
+        tex.set_partial([x0 as usize, y0 as usize], ci, egui::TextureOptions::LINEAR);
+    }
+    done(app);
+    app.canvas.patches += 1;
+    app.perf.render_ms = crate::now_ms() - t0;
+    true
 }
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -421,7 +421,37 @@ fn measure(doc: &Document, runs: usize) -> Vec<Row> {
             }
             drop(r.render(&d, &cache, &all, W, H, v, &greek(HIDPI)));
         });
-        row(&mut rows, "keystroke: recompose story + repaint at 100%", ms, Some(8.0));
+        row(&mut rows, "keystroke: recompose story + full repaint at 100%", ms, None);
+        // What the canvas does: repaint only the damaged region (designcraft_render::damage).
+        let ms = median_ms(runs, || {
+            let old = d.clone();
+            if let Some(st) = d.stories.get_mut(&sid) {
+                let st = Arc::make_mut(st);
+                let at = (st.text.len() / 2 + k).min(st.text.len());
+                let at = (0..=at).rev().find(|i| st.text.is_char_boundary(*i)).unwrap_or(0);
+                st.text.insert(at, 'x');
+                if let Some(run) = st.chars.iter_mut().find(|r| r.len > 0) {
+                    run.len += 1;
+                }
+                st.rev += 1;
+                k += 1;
+            }
+            let screen = designcraft_geom::Rect::new(0.0, 0.0, W as f64, H as f64);
+            let mut px: Option<designcraft_geom::Rect> = None;
+            for (sr, rect) in designcraft_render::damage::damage_with(&old, &d, Some(&cache)).unwrap_or_default() {
+                let off = all.iter().find(|p| p.spread == sr).map_or(Vec2::ZERO, |p| p.offset);
+                let r = v.transform_rect_bbox(rect + off).intersect(screen);
+                if r.width() > 0.0 && r.height() > 0.0 {
+                    px = Some(px.map_or(r, |p| p.union(r)));
+                }
+            }
+            if let Some(p) = px {
+                let (x0, y0) = (p.x0.floor(), p.y0.floor());
+                let (w, h) = ((p.x1.ceil() - x0) as u32, (p.y1.ceil() - y0) as u32);
+                drop(r.render(&d, &cache, &all, w.max(1), h.max(1), Affine::translate((-x0, -y0)) * v, &greek(HIDPI)));
+            }
+        });
+        row(&mut rows, "keystroke: recompose story + damage repaint at 100%", ms, Some(8.0));
     }
 
     let opts = RenderOptions { printing_only: true, ..Default::default() };
