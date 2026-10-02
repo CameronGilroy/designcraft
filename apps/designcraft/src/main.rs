@@ -99,6 +99,19 @@ fn services() -> Services {
     }
 }
 
+/// Desktop app ID: the Linux `.desktop` file name and hicolor icon name (Wayland matches windows by it).
+const APP_ID: &str = "ai.storyteller.designcraft";
+
+/// The window, Dock, taskbar and Alt-Tab icon. macOS gets Apple's icon grid (transparent margin);
+/// elsewhere the full tile. Regenerate with `packaging/icons.sh`.
+fn app_icon() -> Option<egui::IconData> {
+    #[cfg(target_os = "macos")]
+    let png: &[u8] = include_bytes!("../../../assets/app-icon/designcraft-macos-512.png");
+    #[cfg(not(target_os = "macos"))]
+    let png: &[u8] = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.designcraft.png");
+    eframe::icon_data::from_png_bytes(png).map_err(|e| log::warn!("app icon: {e}")).ok()
+}
+
 fn main() -> eframe::Result {
     let mut control_port: Option<u16> = std::env::var("DESIGNCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
     let mut files = Vec::new();
@@ -115,7 +128,7 @@ fn main() -> eframe::Result {
             _ => files.push(a),
         }
     }
-    let options = eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("DesignCraft")
             .with_inner_size([1440.0, 900.0])
@@ -126,6 +139,10 @@ fn main() -> eframe::Result {
             .with_title_shown(false),
         ..Default::default()
     };
+    options.viewport = options.viewport.with_app_id(APP_ID);
+    if let Some(icon) = app_icon() {
+        options.viewport = options.viewport.with_icon(icon);
+    }
     eframe::run_native(
         "DesignCraft",
         options,

@@ -7,6 +7,10 @@
   </a>
 </p>
 
+<p align="center">
+  <img alt="DesignCraft app icon: a calico cat wearing a polka-dot scarf" src="assets/app-icon/hicolor/256x256/apps/ai.storyteller.designcraft.png" width="128">
+</p>
+
 <h1 align="center">DesignCraft</h1>
 
 <p align="center">
@@ -139,6 +143,7 @@ egui frontend is a separate crate, so the UI can be swapped without touching the
 - **Status and milestones:** [ROADMAP.md](ROADMAP.md)
 - **Contributor and agent rules** (clean-room, asset policy, quality gates): [`AGENTS.md`](AGENTS.md)
 - **Bundled assets:** every one is listed with its licence in [`ASSETS.md`](ASSETS.md)
+- **App icon and colour:** a calico cat in a polka-dot scarf on DesignCraft green `#7bb51c`; see [`assets/app-icon/`](assets/app-icon/README.md)
 
 ## The Crafting Apps
 
