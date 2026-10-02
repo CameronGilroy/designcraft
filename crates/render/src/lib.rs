@@ -592,6 +592,9 @@ pub fn blend_mode(b: DcBlend) -> BlendMode {
 
 /// Decode encoded image bytes into a premultiplied pixmap.
 pub fn decode_pixmap(bytes: &[u8]) -> Option<Pixmap> {
+    if is_pdf(bytes) {
+        return render_pdf_page(bytes, 0, 3000);
+    }
     let img = image::load_from_memory(bytes).ok()?.to_rgba8();
     let (w, h) = img.dimensions();
     if w == 0 || h == 0 || w > u16::MAX as u32 || h > u16::MAX as u32 {
@@ -644,11 +647,52 @@ fn now() -> u64 {
 
 /// Pixel size of an encoded image without decoding it fully.
 pub fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    if is_pdf(bytes) {
+        // Placed PDFs are sized by their page (crop box) in points.
+        return pdf_page_size(bytes, 0).map(|(w, h)| (w.round().max(1.0) as u32, h.round().max(1.0) as u32));
+    }
     image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.into_dimensions().ok()
 }
 
 /// MIME type guess for encoded image bytes.
+/// Is this a PDF file (placed PDFs are graphics)?
+pub fn is_pdf(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"%PDF")
+}
+
+/// Page count of a PDF.
+pub fn pdf_page_count(bytes: &[u8]) -> Option<usize> {
+    let pdf = hayro::hayro_syntax::Pdf::new(std::sync::Arc::new(bytes.to_vec())).ok()?;
+    Some(pdf.pages().len())
+}
+
+/// Size of PDF page `page` (0-based), in points, as it shows (crop box, rotation applied).
+pub fn pdf_page_size(bytes: &[u8], page: usize) -> Option<(f64, f64)> {
+    let pdf = hayro::hayro_syntax::Pdf::new(std::sync::Arc::new(bytes.to_vec())).ok()?;
+    let p = pdf.pages().get(page)?;
+    let (w, h) = p.render_dimensions();
+    Some((w as f64, h as f64))
+}
+
+/// Rasterize PDF page `page` so its longer side is about `max_side` pixels (screen display; PDF
+/// export embeds the page as vectors).
+pub fn render_pdf_page(bytes: &[u8], page: usize, max_side: u32) -> Option<Pixmap> {
+    let pdf = hayro::hayro_syntax::Pdf::new(std::sync::Arc::new(bytes.to_vec())).ok()?;
+    let p = pdf.pages().get(page)?;
+    let (w, h) = p.render_dimensions();
+    let scale = (max_side as f32 / w.max(h).max(1.0)).min(8.0);
+    let rs = hayro::RenderSettings { x_scale: scale, y_scale: scale, ..Default::default() };
+    let pm = hayro::render(p, &hayro::RenderCache::new(), &hayro::hayro_interpret::InterpreterSettings::default(), &rs);
+    let (pw, ph) = (pm.width(), pm.height());
+    let data: Vec<vello_cpu::color::PremulRgba8> =
+        pm.data_as_u8_slice().chunks_exact(4).map(|c| vello_cpu::color::PremulRgba8 { r: c[0], g: c[1], b: c[2], a: c[3] }).collect();
+    Some(Pixmap::from_parts(data, pw, ph))
+}
+
 pub fn image_mime(bytes: &[u8]) -> &'static str {
+    if is_pdf(bytes) {
+        return "application/pdf";
+    }
     match image::guess_format(bytes) {
         Ok(image::ImageFormat::Png) => "image/png",
         Ok(image::ImageFormat::Jpeg) => "image/jpeg",

@@ -146,6 +146,7 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
         clip: Rect::ZERO,
         warnings,
         images: HashMap::new(),
+        pdfs: HashMap::new(),
         fonts: HashMap::new(),
         reverse_cmaps: HashMap::new(),
         rgb_only: archival.is_some(),
@@ -224,6 +225,8 @@ pub(crate) struct Exporter<'a> {
     pub clip: Rect,
     pub warnings: Vec<String>,
     images: HashMap<AssetId, Option<Image>>,
+    /// Placed PDFs (embedded as vector pages).
+    pdfs: HashMap<AssetId, Option<krilla::pdf::PdfDocument>>,
     pub fonts: HashMap<u32, Option<krilla::text::Font>>,
     pub reverse_cmaps: HashMap<u32, Arc<HashMap<u32, char>>>,
     /// Convert CMYK to RGB (PDF/A: krilla needs a CMYK output profile we don't ship yet).
@@ -683,6 +686,26 @@ impl Exporter<'_> {
     }
 
     fn graphic(&mut self, s: &mut Surface, g: &designcraft_doc::Graphic) {
+        // Placed PDFs go in as vectors (the page as a form XObject).
+        if let Some(asset) = self.doc.assets.get(&g.asset)
+            && asset.data.starts_with(b"%PDF")
+        {
+            let Some(size) = Size::from_wh(g.size.0.max(1e-3) as f32, g.size.1.max(1e-3) as f32) else { return };
+            let doc = self
+                .pdfs
+                .entry(g.asset)
+                .or_insert_with(|| krilla::pdf::Pdf::new(asset.data.clone()).ok().map(|p| krilla::pdf::PdfDocument::new(Arc::new(p))))
+                .clone();
+            match doc {
+                Some(doc) => {
+                    s.push_transform(&tf(g.xf));
+                    s.draw_pdf_page(&doc, size, 0);
+                    s.pop();
+                }
+                None => self.warn(format!("{}: can't read the placed PDF", asset.name)),
+            }
+            return;
+        }
         let Some(img) = self.load_image(g.asset) else { return };
         let Some(size) = Size::from_wh(g.size.0.max(1e-3) as f32, g.size.1.max(1e-3) as f32) else { return };
         s.push_transform(&tf(g.xf));

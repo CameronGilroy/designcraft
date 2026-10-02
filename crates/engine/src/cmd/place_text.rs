@@ -180,3 +180,47 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod place_pdf_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn place_pdf_renders_and_exports_as_vector() {
+        let dir = std::env::temp_dir().join(format!("dc-place-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("ad.pdf");
+        // A PDF made by our own exporter: a black square on a page.
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"width": 200, "height": 100})).unwrap();
+        let id = s.execute("frame.create", &json!({"rect": [0, 0, 100, 100]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.fill", &json!({"ids": [id], "swatch": "[Black]"})).unwrap();
+        s.execute("file.exportPdf", &json!({"path": src.to_string_lossy()})).unwrap();
+        // Place it in a new document.
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("file.place", &json!({"path": src.to_string_lossy(), "x": 100, "y": 100})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let it = d.spreads[0].items.last().unwrap();
+        let b = it.bounds();
+        assert!((b.width() - 200.0).abs() < 1.0 && (b.height() - 100.0).abs() < 1.0, "sized by the PDF page: {b:?} {r}");
+        let asset = d.assets.values().next().unwrap();
+        assert_eq!(asset.mime, "application/pdf");
+        // On screen: the square is black, the rest of the placed page white.
+        let mut rr = designcraft_render::Renderer::new();
+        let img = rr.render_page(&d, &s.cache, 0, 1.0, false, &Default::default()).unwrap();
+        assert!(img.pixel(150, 150)[0] < 90, "{:?}", img.pixel(150, 150));
+        assert!(img.pixel(250, 150)[0] > 200, "{:?}", img.pixel(250, 150));
+        // Exported: still a valid PDF, larger than a page without the placed PDF would be.
+        let out = dir.join("out.pdf");
+        s.execute("file.exportPdf", &json!({"path": out.to_string_lossy()})).unwrap();
+        let bytes = std::fs::read(&out).unwrap();
+        let pdf = hayro_syntax::Pdf::new(std::sync::Arc::new(bytes.clone())).expect("valid pdf");
+        assert_eq!(pdf.pages().len(), 1);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("/Subtype /Form") || text.contains("/Subtype/Form"), "embedded as a form XObject");
+        assert!(!text.contains("/Subtype /Image") && !text.contains("/Subtype/Image"), "not rasterized");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

@@ -114,6 +114,10 @@ fn list(d: &Document) -> Vec<Value> {
                         let loc = d.find(id)?;
                         let it = d.item_at(&loc)?;
                         let Content::Graphic(g) = &it.content else { return None };
+                        // Vector (placed PDF): no effective resolution.
+                        if a.mime == "application/pdf" {
+                            return None;
+                        }
                         let (pw, _) = a.pixels?;
                         let xf = d.parent_xf(&loc) * it.xf * g.xf;
                         let shown_w = xf.transform_rect_bbox(designcraft_geom::Rect::new(0.0, 0.0, g.size.0, g.size.1)).width();
