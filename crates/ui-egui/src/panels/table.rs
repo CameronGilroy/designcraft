@@ -28,6 +28,33 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let run = |app: &mut DesignApp, id: &str, p: Value| {
         let _ = app.run(id, p);
     };
+    // Table and cell styles: pick to apply, + to save the current look as a new style.
+    if let Some(st) = app.session.active() {
+        let styles = &st.doc.styles;
+        let tnames: Vec<String> = styles.table.iter().map(|s| s.name.clone()).collect();
+        let cnames: Vec<String> = styles.cell.iter().map(|s| s.name.clone()).collect();
+        let tcur = info["style"].as_str().filter(|s| !s.is_empty()).unwrap_or(designcraft_doc::BASIC_TABLE).to_string();
+        let ccur = cell["style"].as_str().filter(|s| !s.is_empty()).unwrap_or(designcraft_doc::NO_CELL_STYLE).to_string();
+        for (label, kind, names, cur) in [("Table Style", "table", tnames, tcur), ("Cell Style", "cell", cnames, ccur)] {
+            ui.horizontal(|ui| {
+                caption(ui, label);
+                egui::ComboBox::from_id_salt(("tp_style", kind)).selected_text(&cur).width(130.0).show_ui(ui, |ui| {
+                    for n in &names {
+                        if ui.selectable_label(*n == cur, n).clicked() {
+                            run(app, &format!("style.{kind}.apply"), json!({"name": n, "table": tid}));
+                        }
+                    }
+                });
+                if crate::icons::button(ui, "plus", 20.0, false, &format!("New {label}")).clicked() {
+                    if kind == "cell" {
+                        run(app, "style.cell.create", json!({"name": "Cell Style 1", "fromSelection": true}));
+                    } else {
+                        run(app, "style.table.create", json!({"name": "Table Style 1"}));
+                    }
+                }
+            });
+        }
+    }
     egui::Grid::new("table_panel").num_columns(4).spacing([6.0, 6.0]).show(ui, |ui| {
         caption(ui, "Rows");
         if let Some(v) = number(ui, "tp_rows", Some(rows.len() as f64), "", 52.0, 0) {

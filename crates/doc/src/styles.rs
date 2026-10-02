@@ -63,6 +63,11 @@ pub struct Styles {
     pub paragraph: Vec<ParagraphStyle>,
     pub character: Vec<CharacterStyle>,
     pub object: Vec<ObjectStyle>,
+    /// Cell and table styles (Table › Cell Styles / Table Styles).
+    #[serde(default)]
+    pub cell: Vec<CellStyle>,
+    #[serde(default)]
+    pub table: Vec<TableStyle>,
     /// Default styles for new text/frames (the style selected with nothing selected).
     pub default_paragraph: String,
     pub default_character: String,
@@ -103,11 +108,127 @@ impl Default for Styles {
                     ..Default::default()
                 },
             ],
+            cell: vec![CellStyle { name: NO_CELL_STYLE.into(), ..Default::default() }],
+            table: vec![TableStyle { name: BASIC_TABLE.into(), ..Default::default() }],
             default_paragraph: BASIC_PARAGRAPH.into(),
             default_character: NO_CHAR_STYLE.into(),
             default_text_frame: BASIC_TEXT_FRAME.into(),
             default_graphic_frame: BASIC_GRAPHICS_FRAME.into(),
         }
+    }
+}
+
+pub const NO_CELL_STYLE: &str = "[None]";
+pub const BASIC_TABLE: &str = "[Basic Table]";
+
+/// A cell style: the cell attributes it sets (unset = left as is) and a paragraph style for the
+/// cell's text.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CellStyle {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_tint: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insets: Option<[f64; 4]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vj: Option<crate::item::VerticalJustification>,
+    /// All four edges.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stroke: Option<crate::table::CellStroke>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraph_style: Option<String>,
+}
+
+/// A table style: cell styles per region, the border, alternating row fills and spacing.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TableStyle {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub footer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_column: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_column: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border: Option<crate::table::CellStroke>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt_rows: Option<crate::table::AltFills>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub space_before: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub space_after: Option<f64>,
+}
+
+impl CellStyle {
+    /// Write this style's attributes into `cell`.
+    pub fn apply_to(&self, cell: &mut crate::table::Cell) {
+        if let Some(v) = &self.fill {
+            cell.fill = v.clone();
+        }
+        if let Some(v) = self.fill_tint {
+            cell.fill_tint = v;
+        }
+        if let Some(v) = self.insets {
+            cell.insets = v;
+        }
+        if let Some(v) = self.vj {
+            cell.vj = v;
+        }
+        if let Some(v) = &self.stroke {
+            cell.strokes = [v.clone(), v.clone(), v.clone(), v.clone()];
+        }
+        if let Some(ps) = &self.paragraph_style {
+            for p in &mut cell.text.paras {
+                p.style = ps.clone();
+            }
+            cell.text.rev += 1;
+        }
+        cell.style = if self.name == NO_CELL_STYLE { String::new() } else { self.name.clone() };
+    }
+}
+
+impl TableStyle {
+    /// Write this style into `t`: options, then each cell's region style.
+    pub fn apply_to(&self, t: &mut crate::table::Table, cells: &[CellStyle]) {
+        if let Some(b) = &self.border {
+            t.options.border = b.clone();
+        }
+        if self.alt_rows.is_some() {
+            t.options.alt_rows = self.alt_rows.clone();
+        }
+        if let Some(v) = self.space_before {
+            t.options.space_before = v;
+        }
+        if let Some(v) = self.space_after {
+            t.options.space_after = v;
+        }
+        let (nr, nc) = (t.rows.len(), t.columns.len());
+        for r in 0..nr {
+            let kind = t.rows[r].kind;
+            for c in 0..nc {
+                let region = match kind {
+                    crate::table::RowKind::Header => self.header.as_ref(),
+                    crate::table::RowKind::Footer => self.footer.as_ref(),
+                    _ if c == 0 && self.left_column.is_some() => self.left_column.as_ref(),
+                    _ if c + 1 == nc && self.right_column.is_some() => self.right_column.as_ref(),
+                    _ => self.body.as_ref(),
+                };
+                if let (Some(name), Some(cell)) = (region, t.cells.get_mut(r * nc + c))
+                    && let Some(cs) = cells.iter().find(|s| s.name == *name)
+                {
+                    cs.apply_to(cell);
+                }
+            }
+        }
+        t.style = if self.name == BASIC_TABLE { String::new() } else { self.name.clone() };
     }
 }
 

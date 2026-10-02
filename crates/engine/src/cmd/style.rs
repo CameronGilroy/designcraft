@@ -38,6 +38,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 "paragraph": st.doc.styles.paragraph.iter().map(|p| &p.name).collect::<Vec<_>>(),
                 "character": st.doc.styles.character.iter().map(|p| &p.name).collect::<Vec<_>>(),
                 "object": st.doc.styles.object.iter().map(|p| &p.name).collect::<Vec<_>>(),
+                "cell": st.doc.styles.cell.iter().map(|p| &p.name).collect::<Vec<_>>(),
+                "table": st.doc.styles.table.iter().map(|p| &p.name).collect::<Vec<_>>(),
             }))
         }),
         cmd!("style.object.apply", "Apply Object Style", [], None, "{name, ids?}", super::has_selection, apply_object),

@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 55 | 24 | 18 | 69% |
+| P1 | 97 | 57 | 24 | 16 | 71% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
@@ -25,8 +25,8 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Placing & links | 78% |
 | Type & text frames | 82% |
 | Typography | 83% |
-| Styles | 82% |
-| Tables | 73% |
+| Styles | 92% |
+| Tables | 81% |
 | Long documents | 58% |
 | Interactivity & digital | 30% |
 | Output & production | 58% |
@@ -239,7 +239,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Styles | Paragraph styles | P0 | D |
 | Styles | Character styles | P0 | D |
 | Styles | Object styles | P1 | D |
-| Styles | Table & cell styles | P1 | M |
+| Styles | Table & cell styles | P1 | D |
 | Styles | Style groups | P1 | D |
 | Styles | Quick Apply | P1 | D |
 | Styles | Break link to style | P1 | D |
@@ -253,7 +253,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Tables | Table options | P1 | D |
 | Tables | Cell options | P1 | D |
 | Tables | Graphic cells | P2 | M |
-| Tables | Table styles & cell styles | P1 | M |
+| Tables | Table styles & cell styles | P1 | D |
 | Tables | Table panel | P1 | D |
 | Tables | Overset cells | P1 | D |
 | Tables | Tables spanning frames | P1 | D |

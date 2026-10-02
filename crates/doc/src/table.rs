@@ -116,6 +116,9 @@ pub struct Cell {
     /// Edge strokes: top, left, bottom, right.
     #[serde(default)]
     pub strokes: [CellStroke; 4],
+    /// Applied cell style ("" = [None]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub style: String,
 }
 
 impl Default for Cell {
@@ -130,6 +133,7 @@ impl Default for Cell {
             vj: VerticalJustification::Top,
             rotation: 0.0,
             strokes: Default::default(),
+            style: String::new(),
         }
     }
 }
@@ -236,6 +240,9 @@ pub struct Table {
     pub cells: Vec<Cell>,
     #[serde(default)]
     pub options: TableOptions,
+    /// Applied table style ("" = [Basic Table]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub style: String,
 }
 
 /// A rectangular range of cells (inclusive).
@@ -270,7 +277,14 @@ impl Table {
         rows.extend((0..footer).map(|_| Row { kind: RowKind::Footer, ..Default::default() }));
         let w = (width / cols as f64).max(3.0);
         let n = rows.len() * cols;
-        Table { id, rows, columns: vec![Column { width: w }; cols], cells: vec![Cell::default(); n], options: TableOptions::default() }
+        Table {
+            id,
+            rows,
+            columns: vec![Column { width: w }; cols],
+            cells: vec![Cell::default(); n],
+            options: TableOptions::default(),
+            style: String::new(),
+        }
     }
 
     /// A table from rows of cell strings (Convert Text to Table). Short rows are padded.
