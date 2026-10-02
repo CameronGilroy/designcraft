@@ -115,3 +115,19 @@ fn idml_commands() {
     assert_eq!(s.doc().unwrap().doc.title, "mag");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn gradient_vector_round_trips_through_idml() {
+    let mut s = Session::new();
+    s.execute("file.new", &json!({})).unwrap();
+    let id = s.execute("frame.create", &json!({"rect": [100, 100, 300, 200]})).unwrap()["id"].as_u64().unwrap();
+    s.execute("object.gradient", &json!({"from": [120, 180], "to": [280, 120]})).unwrap();
+    let d = s.doc().unwrap().doc.clone();
+    let v = d.item(ItemId(id)).unwrap().fill.gradient_vector.unwrap();
+    let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&d)).unwrap();
+    let it = back.spreads.iter().flat_map(|sp| sp.items.iter()).find(|i| i.fill.gradient_vector.is_some()).expect("a gradient item");
+    let w = it.fill.gradient_vector.unwrap();
+    for k in 0..4 {
+        assert!((v[k] - w[k]).abs() < 1e-3, "{v:?} vs {w:?}");
+    }
+}

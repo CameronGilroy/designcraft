@@ -10,6 +10,7 @@
 
 pub mod catalog;
 mod frame;
+mod gradient;
 pub mod layout;
 mod nav;
 mod pen;
@@ -257,6 +258,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "rectangleFrame" | "ellipseFrame" | "polygonFrame" | "rectangle" | "ellipse" | "polygon" | "line" => Box::new(frame::FrameTool::new(id)),
         "type" => Box::new(text::TypeTool::default()),
         "pen" => Box::new(pen::PenTool::default()),
+        "gradientSwatch" => Box::new(gradient::GradientTool::default()),
         "rotate" => Box::new(xform::XformTool::new("rotate")),
         "scale" => Box::new(xform::XformTool::new("scale")),
         "shear" => Box::new(xform::XformTool::new("shear")),

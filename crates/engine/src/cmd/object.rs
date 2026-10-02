@@ -610,7 +610,7 @@ fn transform_resize(s: &mut Session, p: &Value) -> Result<Value> {
             } else {
                 // Resize the frame's path (in inner space); content keeps its size (InDesign's default).
                 let inner = it.xf.inverse() * m * it.xf;
-                it.path.transform(inner);
+                bake(it, inner);
             }
         }
         Ok(json!({"resized": ids.len()}))
@@ -619,6 +619,15 @@ fn transform_resize(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn union_bounds(d: &Document, ids: &[ItemId]) -> Rect {
     ids.iter().filter_map(|i| d.item(*i)).map(Item::bounds).reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO)
+}
+
+/// Transform an item's geometry in its own space: the path and the gradient vector with it.
+fn bake(it: &mut Item, inner: Affine) {
+    it.path.transform(inner);
+    if let Some([x0, y0, x1, y1]) = it.fill.gradient_vector {
+        let (a, b) = (inner * Point::new(x0, y0), inner * Point::new(x1, y1));
+        it.fill.gradient_vector = Some([a.x, a.y, b.x, b.y]);
+    }
 }
 
 /// Multiply the stroke weights of an item and everything nested in it.
@@ -640,14 +649,14 @@ pub(crate) fn scale_item(it: &mut Item, m: Affine, k: f64, strokes: bool) {
     let inner = it.xf.inverse() * m * it.xf;
     match &mut it.content {
         Content::Unassigned => {
-            it.path.transform(inner);
+            bake(it, inner);
             if strokes {
                 it.stroke.weight *= k;
             }
         }
         Content::Graphic(g) => {
             g.xf = inner * g.xf;
-            it.path.transform(inner);
+            bake(it, inner);
             if strokes {
                 it.stroke.weight *= k;
             }
@@ -737,7 +746,7 @@ fn transform_set(s: &mut Session, p: &Value) -> Result<Value> {
                     it.xf = m * it.xf;
                 } else {
                     let inner = it.xf.inverse() * m * it.xf;
-                    it.path.transform(inner);
+                    bake(it, inner);
                 }
             }
         }
@@ -1256,5 +1265,49 @@ mod scale_tests {
         s.execute("prefs.set", &json!({"dimensionsIncludeStroke": false})).unwrap();
         s.execute("transform.set", &json!({"width": 120})).unwrap();
         assert!((bounds(&s).width() - 120.0).abs() < 1e-9);
+    }
+}
+
+#[cfg(test)]
+mod gradient_tests {
+    use super::*;
+
+    #[test]
+    fn gradient_tool_vector_and_unnamed_gradients() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [100, 100, 300, 200]})).unwrap();
+        let id = ItemId(r["id"].as_u64().unwrap());
+        let swatches = |s: &Session| s.doc().unwrap().doc.swatches.len();
+        let n = swatches(&s);
+        // The default White→Black gradient, dragged from the left edge to the middle.
+        let r = s.execute("object.gradient", &json!({"from": [100, 150], "to": [200, 150]})).unwrap();
+        assert_eq!(r["kind"], "linear");
+        assert_eq!(r["stops"][1]["color"], "#000000");
+        assert_eq!(swatches(&s), n + 1, "an unnamed gradient");
+        let fill = |s: &Session| s.doc().unwrap().doc.item(id).unwrap().fill.clone();
+        assert_eq!(fill(&s).gradient_vector, Some([100.0, 150.0, 200.0, 150.0]));
+        // Same gradient again: no new swatch. Reverse / radial: a new unnamed gradient.
+        s.execute("object.gradient", &json!({})).unwrap();
+        assert_eq!(swatches(&s), n + 1);
+        let r = s.execute("object.gradient", &json!({"kind": "radial", "reverse": true})).unwrap();
+        assert_eq!(r["kind"], "radial");
+        assert_eq!(r["stops"][0]["color"], "#000000");
+        let r = s
+            .execute(
+                "object.gradient",
+                &json!({"stops": [{"location": 0, "color": "#ff0000"}, {"location": 60, "color": "#0000ff", "midpoint": 30}]}),
+            )
+            .unwrap();
+        assert_eq!(r["stops"][1]["location"], 60.0);
+        assert_eq!(r["stops"][1]["midpoint"], 30.0);
+        assert!(s.execute("object.gradient", &json!({"stops": [{"location": 0, "color": "#ff0000"}]})).is_err());
+        // Scaling moves the vector with the shape.
+        s.execute("transform.scale", &json!({"sx": 2.0})).unwrap();
+        assert_eq!(fill(&s).gradient_vector, Some([0.0, 150.0, 200.0, 150.0]));
+        // An angle replaces the vector.
+        s.execute("object.gradient", &json!({"angle": 90})).unwrap();
+        assert_eq!(fill(&s).gradient_vector, None);
+        assert_eq!(fill(&s).gradient_angle, Some(90.0));
     }
 }

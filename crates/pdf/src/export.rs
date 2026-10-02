@@ -425,7 +425,7 @@ impl Exporter<'_> {
             s.push_transform(&tf(xf));
             if !it.fill.is_none()
                 && let Some(p) = &path
-                && let Some(paint) = self.fill_paint(&it.fill.swatch, it.fill.tint, bp.bounding_box(), it.fill.gradient_angle)
+                && let Some(paint) = self.fill_paint(&it.fill, bp.bounding_box())
             {
                 s.set_stroke(None);
                 s.set_fill(Some(Fill { paint, opacity: NormalizedF32::ONE, rule: FillRule::NonZero }));
@@ -491,7 +491,7 @@ impl Exporter<'_> {
         if !it.fill.is_none()
             && it.path.is_closed()
             && let Some(p) = &path
-            && let Some(paint) = self.fill_paint(&it.fill.swatch, it.fill.tint, bp.bounding_box(), it.fill.gradient_angle)
+            && let Some(paint) = self.fill_paint(&it.fill, bp.bounding_box())
         {
             if it.fill.overprint {
                 self.warn("overprint is not exported yet");
@@ -545,7 +545,8 @@ impl Exporter<'_> {
     }
 
     /// A swatch fill (solid or gradient) in the item's inner space. `None` for [None]/unknown.
-    fn fill_paint(&self, swatch: &str, tint: f32, bounds: Rect, angle: Option<f64>) -> Option<krilla::paint::Paint> {
+    fn fill_paint(&self, fill: &designcraft_doc::Fill, bounds: Rect) -> Option<krilla::paint::Paint> {
+        let (swatch, tint, angle) = (fill.swatch.as_str(), fill.tint, fill.gradient_angle);
         if let Some(g) = designcraft_color::swatch::resolve_gradient(&self.doc.swatches, swatch) {
             let mut stops: Vec<Stop> = Vec::new();
             let mut last = 0.0f32;
@@ -558,9 +559,14 @@ impl Exporter<'_> {
                 return None;
             }
             let c = bounds.center();
+            let v = fill.gradient_vector;
             return Some(match g.kind {
                 GradientKind::Radial => {
-                    let r = (bounds.width().max(bounds.height()) / 2.0).max(1e-3) as f32;
+                    let (c, r) = match v {
+                        Some([x0, y0, x1, y1]) => (designcraft_geom::Point::new(x0, y0), Vec2::new(x1 - x0, y1 - y0).hypot()),
+                        None => (c, bounds.width().max(bounds.height()) / 2.0),
+                    };
+                    let r = r.max(1e-3) as f32;
                     let (cx, cy) = (c.x as f32, c.y as f32);
                     RadialGradient {
                         fx: cx,
@@ -580,7 +586,10 @@ impl Exporter<'_> {
                     let a = angle.unwrap_or(0.0).to_radians();
                     let half = ((bounds.width() * a.cos().abs() + bounds.height() * a.sin().abs()) / 2.0).max(1e-3);
                     let d = Vec2::new(a.cos(), -a.sin()) * half;
-                    let (p0, p1) = (c - d, c + d);
+                    let (p0, p1) = match v {
+                        Some([x0, y0, x1, y1]) => (designcraft_geom::Point::new(x0, y0), designcraft_geom::Point::new(x1, y1)),
+                        None => (c - d, c + d),
+                    };
                     LinearGradient {
                         x1: p0.x as f32,
                         y1: p0.y as f32,

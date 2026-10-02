@@ -264,3 +264,175 @@ fn spectrum(app: &mut DesignApp, ui: &mut egui::Ui, target: &str) {
         let _ = app.run("object.color", json!({"color": [(c[0] * 255.0).round(), (c[1] * 255.0).round(), (c[2] * 255.0).round()], "target": target}));
     }
 }
+
+/// Stops in `object.gradient` form.
+fn stops_json(g: &designcraft_color::Gradient) -> Vec<serde_json::Value> {
+    g.stops
+        .iter()
+        .map(|s| json!({"location": s.offset as f64 * 100.0, "color": s.color.to_hex(), "opacity": s.opacity as f64 * 100.0, "midpoint": s.midpoint as f64 * 100.0}))
+        .collect()
+}
+
+/// Gradient panel: type, angle, reverse, and the ramp with its stops (drag to move, click below
+/// the ramp to add, drag off to remove; the selected stop's location and colour are editable).
+pub fn gradient_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let Some(st) = app.session.active() else { return };
+    let Some(it) = st.selection.items.first().and_then(|i| st.doc.item(*i)) else {
+        ui.label(egui::RichText::new("Select an object to give its fill a gradient.").color(t.text_dim));
+        return;
+    };
+    let fill = it.fill.clone();
+    let Some(g) = designcraft_color::swatch::resolve_gradient(&st.doc.swatches, &fill.swatch).cloned() else {
+        ui.label(egui::RichText::new("The fill isn't a gradient.").color(t.text_dim));
+        if ui.button("Apply Gradient").clicked() {
+            let _ = app.run("object.gradient", json!({}));
+        }
+        return;
+    };
+    let radial = g.kind == designcraft_color::GradientKind::Radial;
+    ui.horizontal(|ui| {
+        crate::widgets::caption(ui, "Type:");
+        egui::ComboBox::from_id_salt("grad_type").selected_text(g.kind.label()).width(100.0).show_ui(ui, |ui| {
+            for (k, v) in [("Linear", "linear"), ("Radial", "radial")] {
+                if ui.selectable_label(g.kind.label() == k, k).clicked() {
+                    let _ = app.run("object.gradient", json!({"kind": v}));
+                }
+            }
+        });
+        if ui.button("Reverse").on_hover_text("Reverse the gradient").clicked() {
+            let _ = app.run("object.gradient", json!({"reverse": true}));
+        }
+    });
+    let sel_id = egui::Id::new("grad_sel");
+    let drag_id = egui::Id::new("grad_drag");
+    let mut sel: usize = ui.data(|d| d.get_temp(sel_id)).unwrap_or(0).min(g.stops.len().saturating_sub(1));
+    ui.horizontal(|ui| {
+        crate::widgets::caption(ui, "Location:");
+        let loc = g.stops.get(sel).map(|s| s.offset as f64 * 100.0);
+        if let Some(v) = crate::widgets::number(ui, "grad_loc", loc, " %", 54.0, 1) {
+            let mut stops = stops_json(&g);
+            stops[sel]["location"] = json!(v.clamp(0.0, 100.0));
+            let _ = app.run("object.gradient", json!({"stops": stops}));
+        }
+        if !radial {
+            crate::widgets::caption(ui, "Angle:");
+            let angle = fill.gradient_vector.map(|[x0, y0, x1, y1]| (-(y1 - y0)).atan2(x1 - x0).to_degrees()).or(fill.gradient_angle).unwrap_or(0.0);
+            if let Some(v) = crate::widgets::number(ui, "grad_angle", Some(angle), "°", 54.0, 1) {
+                let _ = app.run("object.gradient", json!({"angle": v}));
+            }
+        }
+    });
+    ui.add_space(4.0);
+    // The ramp, with stop markers below it.
+    let w = ui.available_width().min(240.0);
+    let (area, resp) = ui.allocate_exact_size(vec2(w, 34.0), Sense::click_and_drag());
+    let ramp = egui::Rect::from_min_size(area.min + vec2(6.0, 0.0), vec2(w - 12.0, 18.0));
+    let painter = ui.painter();
+    let n = 64;
+    for i in 0..n {
+        let (a, b) = (i as f32 / n as f32, (i + 1) as f32 / n as f32);
+        let (c, alpha) = g.sample((a + b) / 2.0);
+        let [r, gg, bb] = c.to_rgb();
+        let col = egui::Color32::from_rgba_unmultiplied((r * 255.0) as u8, (gg * 255.0) as u8, (bb * 255.0) as u8, (alpha * 255.0) as u8);
+        let x0 = ramp.left() + ramp.width() * a;
+        let x1 = ramp.left() + ramp.width() * b + 0.5;
+        painter.rect_filled(egui::Rect::from_x_y_ranges(x0..=x1, ramp.y_range()), 0.0, col);
+    }
+    painter.rect_stroke(ramp, 0.0, egui::Stroke::new(1.0, t.field_border), egui::StrokeKind::Outside);
+    // A stop being dragged: (index, location 0–1, off the ramp).
+    let mut dragging: Option<(usize, f32, bool)> = ui.data(|d| d.get_temp(drag_id));
+    let x_of = |o: f32| ramp.left() + ramp.width() * o;
+    let o_of = |x: f32| ((x - ramp.left()) / ramp.width()).clamp(0.0, 1.0);
+    let near = |x: f32| {
+        g.stops.iter().enumerate().map(|(i, s)| (i, (x_of(s.offset) - x).abs())).filter(|(_, d)| *d < 7.0).min_by(|a, b| a.1.total_cmp(&b.1))
+    };
+    if resp.drag_started()
+        && let Some(p) = resp.interact_pointer_pos()
+        && let Some((i, _)) = near(p.x)
+    {
+        sel = i;
+        dragging = Some((i, g.stops[i].offset, false));
+    }
+    if resp.dragged()
+        && let (Some((i, _, _)), Some(p)) = (dragging, resp.interact_pointer_pos())
+    {
+        dragging = Some((i, o_of(p.x), p.y > area.bottom() + 16.0 && g.stops.len() > 2));
+    }
+    if resp.drag_stopped()
+        && let Some((i, o, off)) = dragging.take()
+    {
+        let mut stops = stops_json(&g);
+        if off {
+            stops.remove(i);
+            sel = 0;
+        } else {
+            stops[i]["location"] = json!(o as f64 * 100.0);
+        }
+        let _ = app.run("object.gradient", json!({"stops": stops}));
+    }
+    if resp.clicked()
+        && let Some(p) = resp.interact_pointer_pos()
+    {
+        match near(p.x) {
+            Some((i, _)) => sel = i,
+            // Below the ramp, away from the stops: a new stop with the colour there.
+            None if p.y > ramp.bottom() => {
+                let o = o_of(p.x);
+                let (c, a) = g.sample(o);
+                let mut stops = stops_json(&g);
+                stops.push(json!({"location": o as f64 * 100.0, "color": c.to_hex(), "opacity": a as f64 * 100.0, "midpoint": 50.0}));
+                let _ = app.run("object.gradient", json!({"stops": stops}));
+                sel = g.stops.iter().filter(|s| s.offset <= o).count();
+            }
+            None => {}
+        }
+    }
+    for (i, s) in g.stops.iter().enumerate() {
+        let (o, off) = match dragging {
+            Some((j, o, off)) if j == i => (o, off),
+            _ => (s.offset, false),
+        };
+        if off {
+            continue;
+        }
+        let x = x_of(o);
+        let top = ramp.bottom() + 2.0;
+        let [r, gg, bb] = s.color.to_rgb();
+        let col = egui::Color32::from_rgb((r * 255.0) as u8, (gg * 255.0) as u8, (bb * 255.0) as u8);
+        let edge = if i == sel { t.accent } else { t.text_dim };
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                egui::pos2(x, top),
+                egui::pos2(x + 6.0, top + 7.0),
+                egui::pos2(x + 6.0, top + 13.0),
+                egui::pos2(x - 6.0, top + 13.0),
+                egui::pos2(x - 6.0, top + 7.0),
+            ],
+            col,
+            egui::Stroke::new(if i == sel { 2.0 } else { 1.0 }, edge),
+        ));
+    }
+    ui.data_mut(|d| {
+        d.insert_temp(sel_id, sel);
+        match dragging {
+            Some(v) => {
+                d.insert_temp(drag_id, v);
+            }
+            None => d.remove::<(usize, f32, bool)>(drag_id),
+        }
+    });
+    // The selected stop's colour.
+    if let Some(s) = g.stops.get(sel) {
+        ui.horizontal(|ui| {
+            crate::widgets::caption(ui, "Stop Color:");
+            let [r, gg, bb] = s.color.to_rgb();
+            let mut rgb = [(r * 255.0) as u8, (gg * 255.0) as u8, (bb * 255.0) as u8];
+            if egui::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
+                let mut stops = stops_json(&g);
+                stops[sel]["color"] = json!(format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]));
+                let _ = app.run("object.gradient", json!({"stops": stops}));
+            }
+        });
+    }
+}

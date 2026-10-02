@@ -9,7 +9,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
-| P0 | 102 | 92 | 10 | 0 | 95% |
+| P0 | 102 | 93 | 9 | 0 | 96% |
 | P1 | 97 | 33 | 23 | 41 | 46% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
@@ -20,7 +20,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Layers | 74% |
 | Frames, shapes & paths | 74% |
 | Transform | 78% |
-| Fill, stroke, colour | 65% |
+| Fill, stroke, colour | 69% |
 | Effects & transparency | 50% |
 | Placing & links | 57% |
 | Type & text frames | 77% |
@@ -35,7 +35,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Undo, history, saving | 100% |
 | Accessibility | 20% |
 
-Open P0 items: Dockable panels, Preferences, Pen, add/delete anchor, convert direction, Gradient panel & tool, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, OpenType features, Export to PDF (print), Display performance.
+Open P0 items: Dockable panels, Preferences, Pen, add/delete anchor, convert direction, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, OpenType features, Export to PDF (print), Display performance.
 
 ## Rows
 
@@ -142,7 +142,7 @@ Open P0 items: Dockable panels, Preferences, Pen, add/delete anchor, convert dir
 | Fill, stroke, colour | Swatches panel | P0 | D |
 | Fill, stroke, colour | Color panel | P0 | D |
 | Fill, stroke, colour | Color Picker dialog | P0 | D |
-| Fill, stroke, colour | Gradient panel & tool | P0 | P |
+| Fill, stroke, colour | Gradient panel & tool | P0 | D |
 | Fill, stroke, colour | Gradient Feather tool | P1 | M |
 | Fill, stroke, colour | Tints | P0 | D |
 | Fill, stroke, colour | Special swatches | P0 | D |

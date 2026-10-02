@@ -18,6 +18,10 @@ pub struct Fill {
     /// Gradient angle (degrees) and length override for gradient swatches (`None` = fit to bounds).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gradient_angle: Option<f64>,
+    /// Gradient Swatch tool vector in the item's own space: start and end of a linear gradient,
+    /// centre and radius point of a radial one (`None` = fit to bounds at `gradient_angle`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gradient_vector: Option<[f64; 4]>,
     pub overprint: bool,
 }
 
@@ -29,7 +33,7 @@ impl Default for Fill {
 
 impl Fill {
     pub fn none() -> Self {
-        Fill { swatch: designcraft_color::swatch::NONE.into(), tint: 1.0, gradient_angle: None, overprint: false }
+        Fill { swatch: designcraft_color::swatch::NONE.into(), tint: 1.0, gradient_angle: None, gradient_vector: None, overprint: false }
     }
     pub fn swatch(name: &str) -> Self {
         Fill { swatch: name.into(), ..Fill::none() }

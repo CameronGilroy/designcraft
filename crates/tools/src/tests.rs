@@ -79,3 +79,28 @@ fn cmd_shift_click_overrides_parent_item() {
     let a = t.pointer(&cx, &ev);
     assert_eq!(a, vec![Action::Exec("layout.overrideParentItems".into(), serde_json::json!({"page": 0, "ids": [pid.0]}))]);
 }
+
+#[test]
+fn gradient_tool_drag_sets_the_vector() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (fid, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 300.0, 200.0), lid, "", ParaFormat::default()).unwrap();
+    let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
+    let cx = ctx(&d, &s, &c, &l);
+    let off = l.offset(SpreadRef::Doc(0));
+    let mut t = create("gradientSwatch");
+    assert_eq!(t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 120.0 + off.x, 150.0 + off.y)), vec![Action::Begin("Gradient".into())]);
+    // Shift snaps a slightly tilted drag to horizontal.
+    let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 220.0 + off.x, 153.0 + off.y).with_mods(Mods { shift: true, ..Default::default() }));
+    match &a[0] {
+        Action::Preview(cmd, p) => {
+            assert_eq!(cmd, "object.gradient");
+            assert_eq!(p["ids"], serde_json::json!([fid.0]));
+            assert_eq!(p["from"], serde_json::json!([120.0, 150.0]));
+            let to = p["to"].as_array().unwrap();
+            assert!((to[1].as_f64().unwrap() - 150.0).abs() < 1e-9, "{to:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 220.0 + off.x, 153.0 + off.y)), vec![Action::Commit]);
+}

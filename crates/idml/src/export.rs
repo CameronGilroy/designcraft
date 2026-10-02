@@ -1141,7 +1141,12 @@ impl<'a> Ex<'a> {
         el.set("FillColor", self.sw(&it.fill.swatch));
         el.set("FillTint", pct(it.fill.tint as f64));
         el.set("OverprintFill", bool_s(it.fill.overprint));
-        if let Some(a) = it.fill.gradient_angle {
+        if let Some([x0, y0, x1, y1]) = it.fill.gradient_vector {
+            // Gradient Swatch tool vector: start, length and angle in the item's space.
+            el.set("GradientFillStart", format!("{} {}", num(x0), num(y0)));
+            el.set("GradientFillLength", num((x1 - x0).hypot(y1 - y0)));
+            el.set("GradientFillAngle", num((-(y1 - y0)).atan2(x1 - x0).to_degrees()));
+        } else if let Some(a) = it.fill.gradient_angle {
             el.set("GradientFillAngle", num(a));
         }
         self.stroke_attrs(&mut el, &it.stroke);

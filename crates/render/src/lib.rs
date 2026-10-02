@@ -351,7 +351,7 @@ impl Renderer {
             }
             if !it.fill.is_none() {
                 ctx.set_transform(f.view * xf);
-                if set_fill_paint(ctx, f.doc, &it.fill.swatch, it.fill.tint, bp.bounding_box(), it.fill.gradient_angle) {
+                if set_fill_paint(ctx, f.doc, &it.fill, bp.bounding_box()) {
                     ctx.fill_path(&bp);
                 }
                 ctx.reset_paint_transform();
@@ -430,7 +430,7 @@ impl Renderer {
         // Fill.
         if !it.fill.is_none() {
             ctx.set_transform(f.view * xf);
-            if set_fill_paint(ctx, doc, &it.fill.swatch, it.fill.tint, bp.bounding_box(), it.fill.gradient_angle) && it.path.is_closed() {
+            if set_fill_paint(ctx, doc, &it.fill, bp.bounding_box()) && it.path.is_closed() {
                 ctx.fill_path(bp);
             }
             ctx.reset_paint_transform();
@@ -563,15 +563,21 @@ pub fn color_of(c: &designcraft_color::Color, alpha: f32) -> peniko::Color {
 }
 
 /// Set a swatch fill (solid or gradient) as the paint. Returns false for [None]/unknown.
-fn set_fill_paint(ctx: &mut RenderContext, doc: &Document, swatch: &str, tint: f32, bounds: Rect, angle: Option<f64>) -> bool {
+fn set_fill_paint(ctx: &mut RenderContext, doc: &Document, fill: &designcraft_doc::Fill, bounds: Rect) -> bool {
+    let (swatch, tint, angle) = (fill.swatch.as_str(), fill.tint, fill.gradient_angle);
     if let Some(g) = designcraft_color::swatch::resolve_gradient(&doc.swatches, swatch) {
         let stops: Vec<peniko::ColorStop> = g.expanded_stops().iter().map(|(o, c, a)| peniko::ColorStop::from((*o, color_of(c, *a)))).collect();
         if stops.is_empty() {
             return false;
         }
         let c = bounds.center();
-        let grad = match g.kind {
-            designcraft_color::GradientKind::Radial => {
+        let grad = match (g.kind, fill.gradient_vector) {
+            (designcraft_color::GradientKind::Radial, Some([x0, y0, x1, y1])) => {
+                let r = Vec2::new(x1 - x0, y1 - y0).hypot().max(1e-3);
+                peniko::Gradient::new_radial((x0, y0), r as f32).with_stops(stops.as_slice())
+            }
+            (_, Some([x0, y0, x1, y1])) => peniko::Gradient::new_linear((x0, y0), (x1, y1)).with_stops(stops.as_slice()),
+            (designcraft_color::GradientKind::Radial, None) => {
                 let r = bounds.width().max(bounds.height()) / 2.0;
                 peniko::Gradient::new_radial(c, r as f32).with_stops(stops.as_slice())
             }

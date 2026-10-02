@@ -1498,6 +1498,13 @@ impl<'r> Importer<'r> {
             {
                 it.fill.gradient_angle = Some(a);
             }
+            let start: Option<Vec<f64>> = e.prop("GradientFillStart").map(|s| s.split_whitespace().filter_map(|v| v.parse().ok()).collect());
+            if let (Some([x, y]), Some(len)) = (start.as_deref().and_then(|v| <[f64; 2]>::try_from(v).ok()), e.num("GradientFillLength"))
+                && len > 0.0
+            {
+                let a = e.num("GradientFillAngle").unwrap_or(0.0).to_radians();
+                it.fill.gradient_vector = Some([x, y, x + len * a.cos(), y - len * a.sin()]);
+            }
             it.stroke = self.stroke_from(e, Some(e));
             if it.stroke.weight <= 0.0 {
                 it.stroke.swatch = swatch::NONE.into();
