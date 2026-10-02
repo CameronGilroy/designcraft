@@ -139,6 +139,9 @@ pub struct DocSettings {
     pub bleed_color: [u8; 3],
     pub slug_color: [u8; 3],
     pub keyboard_increment: f64,
+    /// The story in the primary text frames (Smart Text Reflow adds and removes pages for it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_story: Option<StoryId>,
     /// Chapter number (Numbering & Section Options › Document Chapter Numbering).
     pub chapter_number: u32,
 }
@@ -163,6 +166,7 @@ impl Default for DocSettings {
             bleed_color: [255, 72, 103],
             slug_color: [100, 188, 221],
             keyboard_increment: 1.0,
+            primary_story: None,
             chapter_number: 1,
         }
     }

@@ -131,6 +131,9 @@ pub struct Prefs {
     pub scale_strokes: bool,
     /// X/Y/W/H in the Control and Properties panels measure the stroke's outer edge.
     pub dimensions_include_stroke: bool,
+    /// Preferences › Type › Smart Text Reflow: pages follow the primary text frame's story
+    /// (added while it oversets, empty ones at the end removed).
+    pub smart_text_reflow: bool,
 }
 
 impl Default for Prefs {
@@ -142,6 +145,7 @@ impl Default for Prefs {
             star_inset: 0.0,
             scale_strokes: true,
             dimensions_include_stroke: true,
+            smart_text_reflow: true,
         }
     }
 }
@@ -240,6 +244,9 @@ impl Session {
         let before = self.active().map(|d| (d.uid, d.doc.clone()));
         let r = (spec.run)(self, params)?;
         self.record_transform(id, params);
+        if self.prefs.smart_text_reflow && spec.undoable {
+            self.smart_reflow();
+        }
         // Record undo if the document changed (and we're not previewing an interaction).
         if let (Some((uid, old)), Some(st)) = (before, self.active_mut())
             && st.uid == uid
@@ -254,6 +261,51 @@ impl Session {
             self.journal.push((id.to_string(), params.clone()));
         }
         Ok(r)
+    }
+
+    /// Smart Text Reflow for the primary story: add threaded pages while it oversets; remove
+    /// trailing pages whose only object is an empty frame of it.
+    fn smart_reflow(&mut self) {
+        let Some(st) = self.active() else { return };
+        if st.interaction.is_some() {
+            return;
+        }
+        let Some(sid) = st.doc.settings.primary_story else { return };
+        let Some(story) = st.doc.story(sid) else { return };
+        let cs = self.cache.get(&st.doc, sid, None);
+        let overset = cs.overset_at.is_some();
+        let empty_tail = story.frames.len() > 1 && story.frames.last().is_some_and(|f| cs.frame(*f).is_none_or(|ft| ft.range.is_empty()));
+        if !overset && !empty_tail {
+            return;
+        }
+        let mut d = (*st.doc).clone();
+        if overset {
+            let _ = cmd::place_text_autoflow(&mut d, sid, 500);
+        } else {
+            // Drop empty trailing frames on the last pages (one frame, nothing else there).
+            while let Some(story) = d.story(sid) {
+                if story.frames.len() < 2 {
+                    break;
+                }
+                let last = *story.frames.last().expect("frames");
+                let cs = designcraft_compose::compose_story(&d, sid, &Default::default());
+                if cs.frame(last).is_some_and(|ft| !ft.range.is_empty()) {
+                    break;
+                }
+                let Some(page) = d.page_of_item(last) else { break };
+                let alone = d.spreads.iter().flat_map(|sp| sp.items.iter()).filter(|i| d.page_of_item(i.id) == Some(page)).count() == 1;
+                if page + 1 != d.page_count() || !alone || d.page_count() < 2 {
+                    break;
+                }
+                if d.remove_item(last).is_err() || d.delete_pages(&[page]).is_err() {
+                    break;
+                }
+            }
+        }
+        if let Some(st) = self.active_mut() {
+            st.doc = Arc::new(d);
+            st.revision += 1;
+        }
     }
 
     /// Remember a move/rotate/scale/shear/flip for Transform Again.

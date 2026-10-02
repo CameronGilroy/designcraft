@@ -234,6 +234,9 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                 "type" => {
                     ui.label(egui::RichText::new("Type Options").font(semibold(12.0)));
                     check(ui, d, "typographersQuotes", "Use Typographer's Quotes");
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Smart Text Reflow").font(semibold(12.0)));
+                    check(ui, d, "smartTextReflow", "Add and remove pages as the primary text frame's story grows and shrinks");
                 }
                 "interface" => {
                     ui.label(egui::RichText::new("UI Scaling").font(semibold(12.0)));
@@ -703,7 +706,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "preferences" => {
             app.run(
                 "prefs.set",
-                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "typographersQuotes": d.b("typographersQuotes")}),
+                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
             )?;
             let view = match d.s("displayQuality").as_str() {
                 "fast" => "view.fastDisplay",

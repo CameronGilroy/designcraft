@@ -11,7 +11,7 @@ use crate::ids::{ItemId, LayerId, PageId, SpreadId};
 use crate::item::Item;
 use crate::page::{Columns, Margins, Page, PageSide, ParentInfo, Section, Spread};
 use crate::styles::Styles;
-use crate::{DocError, DocSettings, Document, Intent, LAYER_COLORS, Layer, Result};
+use crate::{DocError, DocSettings, Document, Intent, LAYER_COLORS, Layer, ParaFormat, Result, SpreadRef};
 
 /// A New Document preset.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -164,7 +164,36 @@ impl Document {
         let pages: Vec<Page> = (0..nd.pages.max(1)).map(|_| d.make_page(Some(parent_id), nd.columns, nd.gutter, nd.margins)).collect();
         d.spreads = vec![Arc::new(Spread { id: SpreadId(d.alloc()), pages, items: vec![], parent: None, allow_shuffle: true })];
         d.repaginate();
+        if nd.primary_text_frame {
+            d.add_primary_frames(nd.columns, nd.gutter);
+        }
         d
+    }
+
+    /// Primary Text Frame: a margin-sized frame on every page, threaded into one story.
+    fn add_primary_frames(&mut self, columns: u32, gutter: f64) {
+        let layer = self.default_layer();
+        let mut prev: Option<ItemId> = None;
+        let mut story = None;
+        for page in 0..self.page_count() {
+            let Some((si, pi)) = self.page_loc(page) else { continue };
+            let r = self.spreads[si].pages[pi].margin_rect();
+            let Ok((fid, sid)) = self.add_text_frame(SpreadRef::Doc(si), r, layer, "", ParaFormat::default()) else { continue };
+            if let Some(it) = self.item_mut(fid)
+                && let Some(tf) = it.text_frame_mut()
+            {
+                tf.options.columns = columns.max(1);
+                tf.options.gutter = gutter;
+            }
+            match prev {
+                Some(p) => {
+                    let _ = self.thread(p, fid);
+                }
+                None => story = Some(sid),
+            }
+            prev = Some(fid);
+        }
+        self.settings.primary_story = story;
     }
 
     fn make_page(&mut self, parent: Option<SpreadId>, columns: u32, gutter: f64, margins: Margins) -> Page {

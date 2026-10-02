@@ -47,7 +47,7 @@ fn fit(d: &Document, sid: StoryId) -> (Option<usize>, usize) {
 }
 
 /// Thread new frames on new pages (margin rectangles) until the story fits. Returns pages added.
-fn autoflow(d: &mut Document, sid: StoryId, max_pages: usize) -> Result<usize> {
+pub(crate) fn autoflow(d: &mut Document, sid: StoryId, max_pages: usize) -> Result<usize> {
     let mut added = 0;
     loop {
         let (overset, shown) = fit(d, sid);
@@ -252,5 +252,41 @@ mod place_pdf_tests {
         let text = String::from_utf8_lossy(&bytes);
         assert!(!text.contains("/Subtype /Image") && !text.contains("/Subtype/Image"), "not rasterized");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod reflow_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn smart_text_reflow_adds_and_removes_pages() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 1, "primaryTextFrame": true})).unwrap();
+        let sid = s.doc().unwrap().doc.settings.primary_story.expect("primary story").0;
+        assert_eq!(s.doc().unwrap().doc.story(designcraft_doc::StoryId(sid)).unwrap().frames.len(), 1);
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 0})).unwrap();
+        let long = "Words keep coming and the page fills up quickly with them. ".repeat(250);
+        s.execute("text.insert", &json!({"text": long})).unwrap();
+        let pages = s.doc().unwrap().doc.page_count();
+        assert!(pages >= 3, "pages added: {pages}");
+        let d = s.doc().unwrap().doc.clone();
+        assert_eq!(d.story(designcraft_doc::StoryId(sid)).unwrap().frames.len(), pages);
+        // One undo takes the typing and its pages back.
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.page_count(), 1);
+        s.execute("edit.redo", &json!({})).unwrap();
+        // Delete the text: the empty pages at the end go.
+        let n = s.doc().unwrap().doc.story(designcraft_doc::StoryId(sid)).unwrap().len();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": n})).unwrap();
+        s.execute("text.delete", &json!({})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.page_count(), 1);
+        s.doc().unwrap().doc.check().unwrap();
+        // Off: no pages added.
+        s.execute("prefs.set", &json!({"smartTextReflow": false})).unwrap();
+        s.execute("text.insert", &json!({"text": long})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.page_count(), 1);
     }
 }
