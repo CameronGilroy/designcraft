@@ -11,7 +11,7 @@
 <h1 align="center">DesignCraft</h1>
 
 <p align="center">
-  <b>Page layout and publishing, rebuilt in pure Rust.</b>
+  <b>Page layout and publishing; an open-source, clean-room reimplementation of Adobe InDesign, rebuilt in pure Rust.</b>
 </p>
 
 <p align="center">
@@ -187,7 +187,7 @@ MIT OR Apache-2.0 ([`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APAC
 are OFL; all icons are drawn in code and are original. Per-asset attribution is in
 [`ASSETS.md`](ASSETS.md) (see also [`NOTICE`](NOTICE)).
 
-<sub>DesignCraft is an independent project and is not affiliated with or endorsed by Adobe. "Adobe", "InDesign", "Illustrator", "Photoshop", "Premiere Pro", "Lightroom" and "Acrobat" are trademarks of Adobe Inc., used here only to describe compatibility and workflow familiarity.</sub>
+<sub>Adobe, Photoshop, Illustrator, Premiere Pro, Lightroom, Acrobat, After Effects and InDesign are trademarks or registered trademarks of Adobe Inc. in the United States and/or other countries. DesignCraft is an independent, open-source project and is not affiliated with, sponsored by or endorsed by Adobe Inc.; these names are used only to describe the workflows it is compatible with.</sub>
 
 <br>
 
