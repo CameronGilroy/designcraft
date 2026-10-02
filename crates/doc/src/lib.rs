@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 pub mod anchored;
+pub mod arrow;
 pub mod attrs;
 pub mod build;
 mod edit;

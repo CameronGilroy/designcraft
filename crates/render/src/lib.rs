@@ -337,7 +337,7 @@ impl Renderer {
             return;
         }
         let xf = parent * it.xf;
-        let vb = xf.transform_rect_bbox(it.inner_bounds()).inflate(it.stroke.weight + 2.0, it.stroke.weight + 2.0);
+        let vb = xf.transform_rect_bbox(it.inner_bounds()).inflate(it.stroke.extent() + 2.0, it.stroke.extent() + 2.0);
         if it.has_nested_items() {
             // A frame with items pasted into it: fill, the items clipped to the frame, stroke.
             if !rect_overlaps(vb, f.visible) {
@@ -480,6 +480,24 @@ impl Renderer {
         ctx.set_transform(f.view * xf);
         ctx.set_paint(color_of(&c, 1.0));
         let closed = it.path.is_closed();
+        // Arrowheads: the path is shortened under them; they're drawn after it.
+        let arrows = designcraft_doc::arrow::apply(bp, st, closed);
+        let bp = arrows.as_ref().map_or(bp, |a| &a.0);
+        // Gap colour under dashes and dots: the whole path, undashed.
+        let gap = if matches!(st.kind, StrokeType::Solid) { None } else { f.doc.resolve_color(&st.gap_swatch, st.gap_tint) };
+        if let Some(g) = gap
+            && !matches!(st.align, StrokeAlign::Inside | StrokeAlign::Outside if closed)
+        {
+            ctx.set_paint(color_of(&g, 1.0));
+            ctx.set_stroke(kurbo::Stroke {
+                dash_pattern: Default::default(),
+                start_cap: kurbo::Cap::Butt,
+                end_cap: kurbo::Cap::Butt,
+                ..stroke.clone()
+            });
+            ctx.stroke_path(bp);
+            ctx.set_paint(color_of(&c, 1.0));
+        }
         match st.align {
             StrokeAlign::Inside if closed => {
                 // Clip a double-width stroke to the path.
@@ -503,6 +521,15 @@ impl Renderer {
             _ => {
                 ctx.set_stroke(stroke);
                 ctx.stroke_path(bp);
+            }
+        }
+        for h in arrows.iter().flat_map(|a| &a.1) {
+            match h.outline {
+                Some(w) => {
+                    ctx.set_stroke(kurbo::Stroke::new(w).with_join(kurbo::Join::Miter));
+                    ctx.stroke_path(&h.path);
+                }
+                None => ctx.fill_path(&h.path),
             }
         }
     }
@@ -733,6 +760,46 @@ mod tests {
         assert!(dark > 50, "text pixels: {dark}");
         let _ = fid;
         assert!(r.stats.glyphs >= 15);
+    }
+
+    #[test]
+    fn arrowheads_draw_at_line_ends() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        let id = designcraft_doc::ItemId(d.alloc());
+        let path = designcraft_geom::shapes::line(designcraft_geom::Point::new(100.0, 400.0), designcraft_geom::Point::new(400.0, 400.0));
+        let mut line = Item::new(id, lid, designcraft_doc::Shape::GraphicLine, path);
+        line.stroke = designcraft_doc::Stroke {
+            swatch: designcraft_color::swatch::BLACK.into(),
+            weight: 2.0,
+            end: designcraft_doc::Arrowhead::TriangleWide,
+            ..Default::default()
+        };
+        d.insert_item(SpreadRef::Doc(0), line, None).unwrap();
+        // A dashed line with a gap colour: the gaps are painted.
+        let id = designcraft_doc::ItemId(d.alloc());
+        let path = designcraft_geom::shapes::line(designcraft_geom::Point::new(100.0, 500.0), designcraft_geom::Point::new(400.0, 500.0));
+        let mut dashed = Item::new(id, lid, designcraft_doc::Shape::GraphicLine, path);
+        dashed.stroke = designcraft_doc::Stroke {
+            swatch: designcraft_color::swatch::BLACK.into(),
+            weight: 4.0,
+            kind: designcraft_doc::StrokeType::Dashed { pattern: vec![12.0, 4.0] },
+            gap_swatch: "C=100 M=0 Y=0 K=0".into(),
+            ..Default::default()
+        };
+        d.insert_item(SpreadRef::Doc(0), dashed, None).unwrap();
+        let cache = Cache::new();
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let img = r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions::default()).unwrap();
+        // The head is 6.4 × weight wide: ink 4 pt above the line near the tip, none at the start.
+        assert!(img.pixel(393, 396)[0] < 128, "{:?}", img.pixel(393, 396));
+        assert_eq!(img.pixel(105, 396), [255, 255, 255, 255]);
+        // Nothing past the tip.
+        assert_eq!(img.pixel(403, 400), [255, 255, 255, 255]);
+        let (dash, gap) = (img.pixel(106, 500), img.pixel(114, 500));
+        assert!(dash[0] < 80 && dash[2] < 80, "dash {dash:?}");
+        assert!(gap[0] < 80 && gap[2] > 150, "gap {gap:?}");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! sections per selection state — `plan/indesign/11-observed-ui.md` §4.1) and small
 //! single-purpose panels (Stroke, Character, Paragraph, Text Wrap, Align, Links, Info).
 
-use designcraft_doc::Align;
+use designcraft_doc::{Align, Arrowhead, Cap, Join, StrokeAlign, StrokeType};
 use designcraft_geom::Unit;
 use designcraft_geom::corners::CornerShape;
 use egui::{Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -1257,44 +1257,132 @@ pub fn paragraph_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     });
 }
 
+/// Stroke panel: weight, cap, miter limit, join, alignment, type, arrowheads, gap colour.
 pub fn stroke_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     let Some(i) = sel_info(app) else {
         ui.label("Select an object.");
         return;
     };
-    ui.horizontal(|ui| {
-        caption(ui, "Weight");
+    let Some(st) = app.session.active().and_then(|d| d.selection.items.first().and_then(|id| d.doc.item(*id)).map(|it| it.stroke.clone())) else {
+        return;
+    };
+    let t = Tokens::get(ui.ctx());
+    egui::Grid::new("stroke_panel").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
+        caption(ui, "Weight:");
         if let Some(v) = number(ui, "sw", Some(i.stroke_weight), " pt", 60.0, 3) {
             let _ = app.run("object.stroke", json!({"weight": v}));
         }
-    });
-    ui.horizontal(|ui| {
-        caption(ui, "Align Stroke");
-        for (label, a) in [("Center", "center"), ("Inside", "inside"), ("Outside", "outside")] {
-            let on = serde_json::to_value(i.stroke_align).ok().and_then(|v| v.as_str().map(|s| s == a)).unwrap_or(false);
-            if ui.selectable_label(on, label).clicked() {
-                let _ = app.run("object.stroke", json!({"align": a}));
+        ui.end_row();
+        caption(ui, "Cap:");
+        ui.horizontal(|ui| {
+            for (label, v, cur) in [("Butt", "butt", Cap::Butt), ("Round", "round", Cap::Round), ("Projecting", "projecting", Cap::Projecting)] {
+                if ui.selectable_label(st.cap == cur, label).clicked() {
+                    let _ = app.run("object.stroke", json!({"cap": v}));
+                }
             }
-        }
-    });
-    ui.horizontal(|ui| {
-        caption(ui, "Type");
-        for (label, ty) in [
-            ("Solid", json!({"kind": "solid"})),
-            ("Dashed", json!({"kind": "dashed", "pattern": [12.0, 4.0]})),
-            ("Dotted", json!({"kind": "dotted"})),
-        ] {
-            if ui.small_button(label).clicked() {
-                let _ = app.run("object.stroke", json!({"type": ty}));
+        });
+        ui.end_row();
+        caption(ui, "Join:");
+        ui.horizontal(|ui| {
+            for (label, v, cur) in [("Miter", "miter", Join::Miter), ("Round", "round", Join::Round), ("Bevel", "bevel", Join::Bevel)] {
+                if ui.selectable_label(st.join == cur, label).clicked() {
+                    let _ = app.run("object.stroke", json!({"join": v}));
+                }
             }
+        });
+        ui.end_row();
+        caption(ui, "Miter Limit:");
+        if let Some(v) = number(ui, "smiter", Some(st.miter_limit), " x", 60.0, 0) {
+            let _ = app.run("object.stroke", json!({"miterLimit": v}));
         }
-    });
-    ui.horizontal(|ui| {
-        caption(ui, "Color");
+        ui.end_row();
+        caption(ui, "Align Stroke:");
+        ui.horizontal(|ui| {
+            for (label, a, cur) in
+                [("Center", "center", StrokeAlign::Center), ("Inside", "inside", StrokeAlign::Inside), ("Outside", "outside", StrokeAlign::Outside)]
+            {
+                if ui.selectable_label(st.align == cur, label).clicked() {
+                    let _ = app.run("object.stroke", json!({"align": a}));
+                }
+            }
+        });
+        ui.end_row();
+        caption(ui, "Type:");
+        egui::ComboBox::from_id_salt("stype").selected_text(st.kind.label()).width(140.0).show_ui(ui, |ui| {
+            for ty in [json!({"kind": "solid"}), json!({"kind": "dashed", "pattern": [12.0, 4.0]}), json!({"kind": "dotted"})] {
+                let label = serde_json::from_value::<StrokeType>(ty.clone()).map(|k| k.label()).unwrap_or("");
+                if ui.selectable_label(st.kind.label() == label, label).clicked() {
+                    let _ = app.run("object.stroke", json!({"type": ty}));
+                }
+            }
+        });
+        ui.end_row();
+        for (key, label, cur, flip) in [("start", "Start/End:", st.start, true), ("end", "", st.end, false)] {
+            caption(ui, label);
+            egui::ComboBox::from_id_salt(key).selected_text(cur.label()).width(140.0).show_ui(ui, |ui| {
+                for a in Arrowhead::ALL {
+                    ui.horizontal(|ui| {
+                        arrow_preview(ui, a, flip, t.text_strong);
+                        if ui.selectable_label(a == cur, a.label()).clicked() {
+                            let _ = app.run("object.stroke", json!({key: a}));
+                        }
+                    });
+                }
+            });
+            ui.end_row();
+        }
+        caption(ui, "Gap Color:");
+        super::swatch_picker(app, ui, "sgap", Some(st.gap_swatch.clone()), |app, n| {
+            let _ = app.run("object.stroke", json!({"gapSwatch": n}));
+        });
+        ui.end_row();
+        caption(ui, "Color:");
         super::swatch_picker(app, ui, "spick", Some(i.stroke.clone()), |app, n| {
             let _ = app.run("object.stroke", json!({"swatch": n}));
         });
+        ui.end_row();
     });
+}
+
+/// A short line ending in arrowhead `a` (pointing left for Start, right for End).
+fn arrow_preview(ui: &mut egui::Ui, a: Arrowhead, start: bool, color: egui::Color32) {
+    use designcraft_geom::kurbo;
+    let (r, _) = ui.allocate_exact_size(vec2(56.0, 14.0), Sense::hover());
+    let mut line = kurbo::BezPath::new();
+    let (y, x0, x1) = (r.center().y as f64, r.left() as f64 + 6.0, r.right() as f64 - 6.0);
+    if start {
+        line.move_to((x1, y));
+        line.line_to((x0, y));
+    } else {
+        line.move_to((x0, y));
+        line.line_to((x1, y));
+    }
+    let st = designcraft_doc::Stroke { weight: 1.5, end: a, ..Default::default() };
+    let (line, heads) = designcraft_doc::arrow::apply(&line, &st, false).unwrap_or((line, vec![]));
+    let pts = |p: &kurbo::BezPath| {
+        let mut v = Vec::new();
+        kurbo::flatten(p.iter(), 0.1, |el| match el {
+            kurbo::PathEl::MoveTo(p) | kurbo::PathEl::LineTo(p) => v.push(pos2(p.x as f32, p.y as f32)),
+            _ => {}
+        });
+        v
+    };
+    let painter = ui.painter();
+    painter.add(egui::Shape::line(pts(&line), Stroke::new(1.5, color)));
+    for h in heads {
+        let p = pts(&h.path);
+        match h.outline {
+            Some(w) if matches!(h.path.elements().last(), Some(kurbo::PathEl::ClosePath)) => {
+                painter.add(egui::Shape::closed_line(p, Stroke::new(w as f32, color)));
+            }
+            Some(w) => {
+                painter.add(egui::Shape::line(p, Stroke::new(w as f32, color)));
+            }
+            None => {
+                painter.add(egui::Shape::convex_polygon(p, color, Stroke::NONE));
+            }
+        }
+    }
 }
 
 pub fn wrap_panel(app: &mut DesignApp, ui: &mut egui::Ui) {

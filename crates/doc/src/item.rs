@@ -122,6 +122,40 @@ pub enum Arrowhead {
     Bar,
 }
 
+impl Arrowhead {
+    pub const ALL: [Arrowhead; 12] = [
+        Arrowhead::None,
+        Arrowhead::Simple,
+        Arrowhead::SimpleWide,
+        Arrowhead::Triangle,
+        Arrowhead::TriangleWide,
+        Arrowhead::Barbed,
+        Arrowhead::Curved,
+        Arrowhead::Circle,
+        Arrowhead::CircleSolid,
+        Arrowhead::Square,
+        Arrowhead::SquareSolid,
+        Arrowhead::Bar,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Arrowhead::None => "None",
+            Arrowhead::Simple => "Simple",
+            Arrowhead::SimpleWide => "Simple - Wide",
+            Arrowhead::Triangle => "Triangle",
+            Arrowhead::TriangleWide => "Triangle - Wide",
+            Arrowhead::Barbed => "Barbed",
+            Arrowhead::Curved => "Curved",
+            Arrowhead::Circle => "Circle",
+            Arrowhead::CircleSolid => "Circle - Solid",
+            Arrowhead::Square => "Square",
+            Arrowhead::SquareSolid => "Square - Solid",
+            Arrowhead::Bar => "Bar",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Stroke {
@@ -164,6 +198,11 @@ impl Default for Stroke {
 }
 
 impl Stroke {
+    /// How far the painted stroke can reach beyond the path (arrowheads reach further).
+    pub fn extent(&self) -> f64 {
+        if self.start == Arrowhead::None && self.end == Arrowhead::None { self.weight } else { self.weight.max(0.5) * 5.5 }
+    }
+
     pub fn none() -> Self {
         Stroke { swatch: designcraft_color::swatch::NONE.into(), ..Stroke::default() }
     }
@@ -588,6 +627,8 @@ impl Item {
             StrokeAlign::Inside => 0.0,
             StrokeAlign::Outside => self.stroke.weight,
         };
+        // Arrowheads on open paths.
+        let w = if self.path.is_closed() { w } else { w.max(self.stroke.extent() - self.stroke.weight) };
         b.inflate(w, w)
     }
 

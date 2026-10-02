@@ -411,7 +411,7 @@ impl Exporter<'_> {
             return;
         }
         let ds = &it.effects.drop_shadow;
-        let grow = it.stroke.weight + 2.0 + if ds.on { ds.distance.abs() + ds.size.abs() } else { 0.0 };
+        let grow = it.stroke.extent() + 2.0 + if ds.on { ds.distance.abs() + ds.size.abs() } else { 0.0 };
         let vb = parent.transform_rect_bbox(it.bounds()).inflate(grow, grow);
         if !rects_overlap(vb, self.clip) {
             return;
@@ -625,6 +625,9 @@ impl Exporter<'_> {
                 None
             }
         };
+        let arrows = designcraft_doc::arrow::apply(bp, st, closed);
+        let trimmed = arrows.as_ref().and_then(|a| to_path(&a.0));
+        let path = trimmed.as_ref().unwrap_or(path);
         let aligned = closed && st.align != StrokeAlign::Center;
         let width = if aligned { st.weight * 2.0 } else { st.weight };
         let mut pushes = 0;
@@ -646,8 +649,16 @@ impl Exporter<'_> {
             _ => {}
         }
         s.set_fill(None);
+        if dash.is_some()
+            && pushes == 0
+            && let Some(g) = self.swatch_color(&st.gap_swatch, st.gap_tint)
+        {
+            // Gap colour under dashes and dots.
+            s.set_stroke(Some(Stroke { paint: g.into(), width: width as f32, opacity: NormalizedF32::ONE, ..Default::default() }));
+            s.draw_path(path);
+        }
         s.set_stroke(Some(Stroke {
-            paint: c.into(),
+            paint: c.clone().into(),
             width: width as f32,
             miter_limit: st.miter_limit.max(1.0) as f32,
             line_cap: cap,
@@ -663,6 +674,21 @@ impl Exporter<'_> {
         s.set_stroke(None);
         for _ in 0..pushes {
             s.pop();
+        }
+        for h in arrows.iter().flat_map(|a| &a.1) {
+            let Some(p) = to_path(&h.path) else { continue };
+            match h.outline {
+                Some(w) => {
+                    s.set_stroke(Some(Stroke { paint: c.clone().into(), width: w as f32, opacity: NormalizedF32::ONE, ..Default::default() }));
+                    s.draw_path(&p);
+                    s.set_stroke(None);
+                }
+                None => {
+                    s.set_fill(Some(krilla::paint::Fill { paint: c.clone().into(), opacity: NormalizedF32::ONE, rule: FillRule::NonZero }));
+                    s.draw_path(&p);
+                    s.set_fill(None);
+                }
+            }
         }
     }
 

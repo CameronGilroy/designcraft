@@ -142,7 +142,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Stroke",
             [],
             None,
-            "{swatch?, tint?, weight?, align?: center|inside|outside, type?: {kind:…}, cap?, join?, ids?}",
+            "{swatch?, tint?, weight?, align?: center|inside|outside, type?: {kind:…}, cap?: butt|round|projecting, join?: miter|round|bevel, miterLimit?, start?, end?: none|simple|simpleWide|triangle|triangleWide|barbed|curved|circle|circleSolid|square|squareSolid|bar, gapSwatch?, gapTint?, ids?}",
             has_selection,
             |s, p| {
                 let p2 = p.clone();
@@ -159,6 +159,15 @@ pub fn specs() -> Vec<CommandSpec> {
                         }
                         if let Some(v) = p2.get("weight").and_then(Value::as_f64) {
                             st.weight = v.max(0.0);
+                        }
+                        if let Some(v) = p2.get("miterLimit").and_then(Value::as_f64) {
+                            st.miter_limit = v.clamp(1.0, 500.0);
+                        }
+                        if let Some(v) = p2.get("gapSwatch").and_then(Value::as_str) {
+                            st.gap_swatch = v.into();
+                        }
+                        if let Some(v) = p2.get("gapTint").and_then(Value::as_f64) {
+                            st.gap_tint = v as f32;
                         }
                         for (k, apply) in [("align", 0), ("type", 1), ("cap", 2), ("join", 3), ("start", 4), ("end", 5)] {
                             if let Some(v) = p2.get(k).cloned() {

@@ -67,7 +67,7 @@ impl Renderer {
     pub(crate) fn draw_item_fx(&mut self, ctx: &mut RenderContext, f: &Frame, it: &Item, bp: &BezPath, xf: Affine, page_name: Option<&str>) {
         let doc = f.doc;
         let e = &it.effects;
-        let sw = if it.stroke.is_none() { 0.0 } else { it.stroke.weight };
+        let sw = if it.stroke.is_none() { 0.0 } else { it.stroke.extent() };
         // Spread-space reach of what the object paints.
         let reach = xf.transform_rect_bbox(bp.bounding_box()).inflate(sw + 1.0, sw + 1.0);
         // The silhouette is the shape when the object paints its area (fill / image); text frames

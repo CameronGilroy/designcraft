@@ -155,7 +155,7 @@ fn item_area(it: &Item) -> Option<Rect> {
     if !ok {
         return None;
     }
-    let pad = it.stroke.weight.max(0.0) + 2.0 + if it.is_text_frame() { 24.0 } else { 0.0 };
+    let pad = it.stroke.extent().max(0.0) + 2.0 + if it.is_text_frame() { 24.0 } else { 0.0 };
     Some(it.bounds().inflate(pad, pad))
 }
 
