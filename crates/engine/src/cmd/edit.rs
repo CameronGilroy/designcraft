@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use designcraft_doc::{ItemId, Selection, SpreadRef};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{CommandSpec, bool_or, cmd, has_doc, has_selection, ids_param, ok};
 use crate::{HistoryEntry, Result, Session};
@@ -16,7 +16,71 @@ fn can_redo(s: &Session) -> std::result::Result<(), String> {
 }
 fn has_clip(s: &Session) -> std::result::Result<(), String> {
     has_doc(s)?;
-    if s.clipboard.is_some() { Ok(()) } else { Err("clipboard is empty".into()) }
+    let text = s.text_clipboard.is_some() && s.active().is_some_and(|d| d.selection.text.is_some());
+    if s.clipboard.is_some() || text { Ok(()) } else { Err("clipboard is empty".into()) }
+}
+
+fn has_clip_or_text(s: &Session) -> std::result::Result<(), String> {
+    if s.active().is_some_and(|d| d.selection.text.is_some()) {
+        return Ok(());
+    }
+    has_clip(s)
+}
+
+fn has_selection_or_text(s: &Session) -> std::result::Result<(), String> {
+    if s.active().and_then(|d| d.selection.text).is_some_and(|t| !t.is_caret()) {
+        return Ok(());
+    }
+    has_selection(s)
+}
+
+/// Plain text of a story slice: markers and anchored objects dropped, footnote text omitted.
+fn plain(st: &designcraft_doc::Story) -> String {
+    st.text.chars().filter(|c| !('\u{E000}'..='\u{E1FF}').contains(c)).map(|c| if c == '\u{2028}' { '\n' } else { c }).collect()
+}
+
+/// Copy the selected text with its formatting. Returns its plain text (for the system clipboard).
+fn copy_text(s: &mut Session) -> Result<Option<String>> {
+    let st = s.doc()?;
+    let Some(t) = st.selection.text.filter(|t| !t.is_caret()) else { return Ok(None) };
+    let Some(story) = st.doc.text_story(t.story, t.cell) else { return Ok(None) };
+    let slice = story.extract(t.range());
+    let text = plain(&slice);
+    s.text_clipboard = Some((Arc::new(slice), text.clone()));
+    Ok(Some(text))
+}
+
+/// Paste text at the insertion point: the formatted copy when the system clipboard still holds
+/// what was copied here (or `formatted` is forced), else plain text in the insertion format.
+fn paste_text(s: &mut Session, text: Option<String>, formatted: bool) -> Result<Value> {
+    let t = s.doc()?.selection.text.ok_or_else(|| super::bad("edit.paste", "no insertion point"))?;
+    let clip = s.text_clipboard.clone();
+    let use_clip = formatted && clip.as_ref().is_some_and(|(_, p)| text.as_ref().is_none_or(|x| x.replace("\r\n", "\n") == *p));
+    // Footnotes, cross-references and tables only paste into story text, not cells or footnotes.
+    if use_clip && let Some((slice, _)) = clip {
+        let slice = if t.cell.is_some() { strip_objects(&slice) } else { (*slice).clone() };
+        return s.edit(|d, sel| {
+            let st = d.text_story_mut(t.story, t.cell).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
+            let r = t.range();
+            let r = r.start.min(st.len())..r.end.min(st.len());
+            st.delete(r.clone());
+            let end = st.insert_story(r.start, &slice);
+            sel.text = Some(designcraft_doc::TextSel { anchor: end, focus: end, ..t });
+            Ok(json!({"pos": end, "formatted": true}))
+        });
+    }
+    let text = text.or_else(|| clip.map(|(_, p)| p)).ok_or_else(|| super::bad("edit.paste", "clipboard is empty"))?;
+    s.execute("text.insert", &json!({"text": text.replace("\r\n", "\n").replace('\r', "\n"), "raw": true}))
+}
+
+fn strip_objects(st: &designcraft_doc::Story) -> designcraft_doc::Story {
+    let mut out = st.clone();
+    let marks = [designcraft_doc::FOOTNOTE_REF, designcraft_doc::XREF_MARK, designcraft_doc::TABLE_ANCHOR];
+    while let Some(i) = out.text.find(marks) {
+        let n = out.text[i..].chars().next().map_or(1, char::len_utf8);
+        out.delete(i..i + n);
+    }
+    out
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -115,24 +179,54 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"deleted": ids.len()}))
             })
         }),
-        cmd!(noundo "edit.copy", "Copy", ["Edit"], Some("Cmd+C"), "{}", has_selection, |s, _| {
+        cmd!(noundo "edit.copy", "Copy", ["Edit"], Some("Cmd+C"), "{} → {text} when text is selected (with formatting, footnotes, markers)", has_selection_or_text, |s, _| {
+            if let Some(text) = copy_text(s)? {
+                return Ok(json!({"text": text}));
+            }
             s.clipboard = Some(Arc::new(clip_doc(s)?));
             ok()
         }),
-        cmd!("edit.cut", "Cut", ["Edit"], Some("Cmd+X"), "{}", has_selection, |s, p| {
+        cmd!("edit.cut", "Cut", ["Edit"], Some("Cmd+X"), "{}", has_selection_or_text, |s, p| {
+            if let Some(text) = copy_text(s)? {
+                super::text::delete_selection(s)?;
+                return Ok(json!({"text": text}));
+            }
             s.clipboard = Some(Arc::new(clip_doc(s)?));
             s.execute("edit.clear", p)
         }),
-        cmd!("edit.paste", "Paste", ["Edit"], Some("Cmd+V"), "{inPlace?: bool}", has_clip, |s, p| {
-            let clip = s.clipboard.clone().expect("checked");
-            let off = if bool_or(p, "inPlace", false) { 0.0 } else { 12.0 };
-            let ids: Vec<ItemId> = clip.spreads.first().map(|sp| sp.items.iter().map(|i| i.id).collect()).unwrap_or_default();
-            s.edit(|d, sel| {
-                let new = super::object::duplicate_from(d, &clip, &ids, SpreadRef::Doc(0), designcraft_geom::Vec2::new(off, off))?;
-                *sel = Selection::items(new.clone());
-                Ok(json!({"ids": new.iter().map(|i| i.0).collect::<Vec<_>>()}))
-            })
-        }),
+        cmd!(
+            "edit.pasteWithoutFormatting",
+            "Paste without Formatting",
+            ["Edit"],
+            Some("Cmd+Shift+V"),
+            "{text?} — plain text at the insertion point, in the format there",
+            super::has_text,
+            |s, p| paste_text(s, super::str_param(p, "text").map(str::to_string), false)
+        ),
+        cmd!(
+            "edit.paste",
+            "Paste",
+            ["Edit"],
+            Some("Cmd+V"),
+            "{inPlace?: bool, text?: the system clipboard's text (pastes it unless it is what was copied here)}",
+            has_clip_or_text,
+            |s, p| {
+                if s.doc()?.selection.text.is_some() {
+                    return paste_text(s, super::str_param(p, "text").map(str::to_string), true);
+                }
+                if s.clipboard.is_none() {
+                    return Err(super::bad("edit.paste", "clipboard is empty"));
+                }
+                let clip = s.clipboard.clone().expect("checked");
+                let off = if bool_or(p, "inPlace", false) { 0.0 } else { 12.0 };
+                let ids: Vec<ItemId> = clip.spreads.first().map(|sp| sp.items.iter().map(|i| i.id).collect()).unwrap_or_default();
+                s.edit(|d, sel| {
+                    let new = super::object::duplicate_from(d, &clip, &ids, SpreadRef::Doc(0), designcraft_geom::Vec2::new(off, off))?;
+                    *sel = Selection::items(new.clone());
+                    Ok(json!({"ids": new.iter().map(|i| i.0).collect::<Vec<_>>()}))
+                })
+            }
+        ),
         cmd!("edit.pasteInPlace", "Paste in Place", ["Edit"], Some("Cmd+Alt+Shift+V"), "{}", has_clip, |s, _| s
             .execute("edit.paste", &json!({"inPlace": true}))),
         cmd!("edit.duplicate", "Duplicate", ["Edit"], Some("Cmd+Alt+Shift+D"), "{}", has_selection, |s, _| s
@@ -184,4 +278,74 @@ pub(crate) fn clip_doc(s: &Session) -> Result<designcraft_doc::Document> {
     d.hyperlinks.clear();
     d.bookmarks.clear();
     Ok(d)
+}
+
+#[cfg(test)]
+mod text_clipboard_tests {
+    use super::*;
+
+    fn frame(s: &mut Session, text: &str) -> designcraft_doc::StoryId {
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": text})).unwrap();
+        s.doc().unwrap().doc.item(ItemId(r["id"].as_u64().unwrap())).unwrap().text_frame().unwrap().story
+    }
+
+    #[test]
+    fn formatted_copy_paste_and_plain_paste() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = frame(&mut s, "Bold words here.");
+        let b = frame(&mut s, "Target: .");
+        s.execute("text.select", &json!({"story": a.0, "anchor": 0, "focus": 4})).unwrap();
+        s.execute("type.bold", &json!({})).unwrap();
+        // A footnote inside the copied range travels with it.
+        s.execute("text.select", &json!({"story": a.0, "anchor": 4, "focus": 4})).unwrap();
+        s.execute("footnote.insert", &json!({"text": "n"})).unwrap();
+        let fl = designcraft_doc::FOOTNOTE_REF.len_utf8();
+        s.execute("text.select", &json!({"story": a.0, "anchor": 0, "focus": 10 + fl})).unwrap();
+        let r = s.execute("edit.copy", &json!({})).unwrap();
+        assert_eq!(r["text"], "Bold words");
+        // Formatted paste when the system clipboard matches.
+        s.execute("text.select", &json!({"story": b.0, "anchor": 8, "focus": 8})).unwrap();
+        s.execute("edit.paste", &json!({"text": "Bold words"})).unwrap();
+        let st = s.doc().unwrap().doc.story(b).unwrap().clone();
+        assert_eq!(st.text, format!("Target: Bold{} words.", designcraft_doc::FOOTNOTE_REF));
+        assert_eq!(st.char_format_at(9).over.font_style.as_deref(), Some("Bold"));
+        assert_eq!(st.notes.len(), 1);
+        assert_eq!(st.notes[0].text.text, "n");
+        // Other text on the system clipboard pastes as plain text.
+        s.execute("edit.paste", &json!({"text": "\"x\""})).unwrap();
+        assert!(s.doc().unwrap().doc.story(b).unwrap().text.contains("\"x\""), "no smart quotes on paste");
+        // Paste without formatting takes the insertion format.
+        s.execute("text.select", &json!({"story": b.0, "anchor": 0, "focus": 0})).unwrap();
+        s.execute("edit.pasteWithoutFormatting", &json!({})).unwrap();
+        let st = s.doc().unwrap().doc.story(b).unwrap().clone();
+        assert!(st.text.starts_with("Bold wordsTarget"), "{:?}", st.text);
+        assert_eq!(st.char_format_at(1).over.font_style, None);
+        // Cut removes and copies.
+        s.execute("text.select", &json!({"story": b.0, "anchor": 0, "focus": 4})).unwrap();
+        assert_eq!(s.execute("edit.cut", &json!({})).unwrap()["text"], "Bold");
+        assert!(s.doc().unwrap().doc.story(b).unwrap().text.starts_with(" wordsTarget"));
+        s.doc().unwrap().doc.check().unwrap();
+    }
+
+    #[test]
+    fn change_case_keeps_runs() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = frame(&mut s, "the quick brown fox. jumps over straße");
+        s.execute("text.select", &json!({"story": a.0, "anchor": 4, "focus": 9})).unwrap();
+        s.execute("type.italic", &json!({})).unwrap();
+        let len = s.doc().unwrap().doc.story(a).unwrap().len();
+        s.execute("text.select", &json!({"story": a.0, "anchor": 0, "focus": len})).unwrap();
+        s.execute("type.changeCase", &json!({"case": "title"})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.story(a).unwrap().text, "The Quick Brown Fox. Jumps Over Straße");
+        s.execute("type.changeCase", &json!({"case": "sentence"})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.story(a).unwrap().text, "The quick brown fox. Jumps over straße");
+        s.execute("type.changeCase", &json!({"case": "upper"})).unwrap();
+        let st = s.doc().unwrap().doc.story(a).unwrap().clone();
+        assert_eq!(st.text, "THE QUICK BROWN FOX. JUMPS OVER STRASSE");
+        assert_eq!(st.char_format_at(5).over.font_style.as_deref(), Some("Italic"));
+        assert_eq!(s.doc().unwrap().selection.text.unwrap().range(), 0..st.len());
+        st.check().unwrap();
+    }
 }

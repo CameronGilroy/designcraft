@@ -139,6 +139,8 @@ pub struct Session {
     pub(crate) tool: Box<dyn designcraft_tools::Tool>,
     pub journal: Vec<(String, Value)>,
     pub clipboard: Option<Arc<Document>>,
+    /// Copied text with its formatting (a frameless story slice) and its plain text.
+    pub text_clipboard: Option<(Arc<designcraft_doc::Story>, String)>,
     /// Requests for the UI (dialogs, view changes) produced by tools/commands.
     pub ui_requests: Vec<UiRequest>,
     /// Graphic loaded in the place cursor: (asset, natural size in points).
@@ -162,6 +164,7 @@ impl Session {
             tool: designcraft_tools::create("selection"),
             journal: vec![],
             clipboard: None,
+            text_clipboard: None,
             ui_requests: vec![],
             loaded: None,
             untitled: 0,

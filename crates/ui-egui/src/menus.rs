@@ -149,6 +149,69 @@ pub const MENUS: &[(&str, &[&str])] = &[
         "Type",
         &[
             "cmd:type.fillWithPlaceholder",
+            ">Insert Special Character",
+            ">Symbols",
+            "cmd:text.insert|Bullet Character|{\"text\": \"\u{2022}\", \"raw\": true}",
+            "cmd:text.insert|Copyright Symbol|{\"text\": \"\u{a9}\", \"raw\": true}",
+            "cmd:text.insert|Ellipsis|{\"text\": \"\u{2026}\", \"raw\": true}",
+            "cmd:text.insert|Paragraph Symbol|{\"text\": \"\u{b6}\", \"raw\": true}",
+            "cmd:text.insert|Registered Trademark Symbol|{\"text\": \"\u{ae}\", \"raw\": true}",
+            "cmd:text.insert|Section Symbol|{\"text\": \"\u{a7}\", \"raw\": true}",
+            "cmd:text.insert|Trademark Symbol|{\"text\": \"\u{2122}\", \"raw\": true}",
+            "<",
+            ">Markers",
+            "cmd:text.insert|Current Page Number|{\"text\": \"\u{e000}\", \"raw\": true}",
+            "cmd:text.insert|Next Page Number|{\"text\": \"\u{e007}\", \"raw\": true}",
+            "cmd:text.insert|Previous Page Number|{\"text\": \"\u{e008}\", \"raw\": true}",
+            "cmd:text.insert|Section Marker|{\"text\": \"\u{e001}\", \"raw\": true}",
+            "<",
+            ">Hyphens and Dashes",
+            "cmd:text.insert|Em Dash|{\"text\": \"\u{2014}\", \"raw\": true}",
+            "cmd:text.insert|En Dash|{\"text\": \"\u{2013}\", \"raw\": true}",
+            "cmd:text.insert|Discretionary Hyphen|{\"text\": \"\u{ad}\", \"raw\": true}",
+            "cmd:text.insert|Nonbreaking Hyphen|{\"text\": \"\u{2011}\", \"raw\": true}",
+            "<",
+            ">Quotation Marks",
+            "cmd:text.insert|Double Left Quotation Marks|{\"text\": \"\u{201c}\", \"raw\": true}",
+            "cmd:text.insert|Double Right Quotation Marks|{\"text\": \"\u{201d}\", \"raw\": true}",
+            "cmd:text.insert|Single Left Quotation Mark|{\"text\": \"\u{2018}\", \"raw\": true}",
+            "cmd:text.insert|Single Right Quotation Mark|{\"text\": \"\u{2019}\", \"raw\": true}",
+            "cmd:text.insert|Straight Double Quotation Marks|{\"text\": \"\\\"\", \"raw\": true}",
+            "cmd:text.insert|Straight Single Quotation Mark (Apostrophe)|{\"text\": \"'\", \"raw\": true}",
+            "<",
+            ">Other",
+            "cmd:text.insert|Tab|{\"text\": \"\\t\", \"raw\": true}",
+            "cmd:text.insert|Right Indent Tab|{\"text\": \"\u{e006}\", \"raw\": true}",
+            "cmd:text.insert|Indent to Here|{\"text\": \"\u{e005}\", \"raw\": true}",
+            "<",
+            "<",
+            ">Insert White Space",
+            "cmd:text.insert|Em Space|{\"text\": \"\u{2003}\", \"raw\": true}",
+            "cmd:text.insert|En Space|{\"text\": \"\u{2002}\", \"raw\": true}",
+            "cmd:text.insert|Nonbreaking Space|{\"text\": \"\u{a0}\", \"raw\": true}",
+            "cmd:text.insert|Hair Space|{\"text\": \"\u{200a}\", \"raw\": true}",
+            "cmd:text.insert|Sixth Space|{\"text\": \"\u{2006}\", \"raw\": true}",
+            "cmd:text.insert|Thin Space|{\"text\": \"\u{2009}\", \"raw\": true}",
+            "cmd:text.insert|Quarter Space|{\"text\": \"\u{2005}\", \"raw\": true}",
+            "cmd:text.insert|Third Space|{\"text\": \"\u{2004}\", \"raw\": true}",
+            "cmd:text.insert|Punctuation Space|{\"text\": \"\u{2008}\", \"raw\": true}",
+            "cmd:text.insert|Figure Space|{\"text\": \"\u{2007}\", \"raw\": true}",
+            "cmd:text.insert|Flush Space|{\"text\": \"\u{2001}\", \"raw\": true}",
+            "<",
+            ">Insert Break Character",
+            "cmd:text.insert|Column Break|{\"text\": \"\u{e002}\", \"raw\": true}",
+            "cmd:text.insert|Frame Break|{\"text\": \"\u{e003}\", \"raw\": true}",
+            "cmd:text.insert|Page Break|{\"text\": \"\u{e004}\", \"raw\": true}",
+            "cmd:text.insert|Paragraph Return|{\"text\": \"\\n\", \"raw\": true}",
+            "cmd:text.insert|Forced Line Break|{\"text\": \"\u{2028}\", \"raw\": true}",
+            "<",
+            "-",
+            ">Change Case",
+            "cmd:type.changeCase|UPPERCASE|{\"case\": \"upper\"}",
+            "cmd:type.changeCase|lowercase|{\"case\": \"lower\"}",
+            "cmd:type.changeCase|Title Case|{\"case\": \"title\"}",
+            "cmd:type.changeCase|Sentence case|{\"case\": \"sentence\"}",
+            "<",
             "-",
             "cmd:type.alignLeft",
             "cmd:type.alignCenter",
@@ -655,8 +718,18 @@ fn parse_entries(entries: &[&str]) -> Vec<Item> {
         if e == "-" {
             out.push(Item::Sep);
         } else if let Some(name) = e.strip_prefix('>') {
+            // Find the matching `<` (submenus nest).
             let start = i;
-            while i < entries.len() && entries[i] != "<" {
+            let mut depth = 1;
+            while i < entries.len() {
+                if entries[i].starts_with('>') {
+                    depth += 1;
+                } else if entries[i] == "<" {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
                 i += 1;
             }
             let sub = parse_entries(&entries[start..i]);
@@ -939,6 +1012,13 @@ mod tests {
                 assert!(!o.is_empty(), "{id}: empty fixed params");
             }
         }
+        // Nested submenus parse (Type › Insert Special Character › Symbols › …).
+        let ty = menu_tree().into_iter().find(|(m, _)| *m == "Type").unwrap().1;
+        let special = ty.iter().find_map(|i| match i {
+            Item::Sub(n, c) if n == "Insert Special Character" => Some(c.clone()),
+            _ => None,
+        });
+        assert!(special.is_some_and(|c| c.iter().any(|i| matches!(i, Item::Sub(n, _) if n == "Symbols"))));
         // Fixed-parameter variants keep their own labels.
         assert!(all.iter().any(|(l, id, p)| l == "Fill Frame Proportionally" && id == "object.fit" && p["mode"] == "fillProportionally"));
     }

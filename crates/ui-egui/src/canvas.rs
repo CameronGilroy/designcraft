@@ -1142,14 +1142,18 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
                 let _ = app.run("text.insert", json!({"text": t}));
             }
             egui::Event::Paste(t) if wants_text => {
-                let _ = app.run("text.insert", json!({"text": t.replace("\r\n", "\n").replace('\r', "\n")}));
+                // Formatted when the system clipboard still holds what was copied here;
+                // Shift (⇧⌘V) pastes without formatting.
+                let plain = ui.input(|i| i.modifiers.shift);
+                let id = if plain { "edit.pasteWithoutFormatting" } else { "edit.paste" };
+                let _ = app.run(id, json!({"text": t}));
             }
             egui::Event::Copy | egui::Event::Cut if wants_text => {
-                if let Some(t) = selected_text(app) {
-                    ui.ctx().copy_text(t);
-                    if matches!(e, egui::Event::Cut) {
-                        let _ = app.run("text.delete", json!({}));
-                    }
+                let id = if matches!(e, egui::Event::Cut) { "edit.cut" } else { "edit.copy" };
+                if let Ok(r) = app.run(id, json!({}))
+                    && let Some(t) = r.get("text").and_then(serde_json::Value::as_str)
+                {
+                    ui.ctx().copy_text(t.to_string());
                 }
             }
             egui::Event::Key { key, pressed: true, modifiers, .. } => {

@@ -31,7 +31,7 @@ pub fn specs() -> Vec<CommandSpec> {
             st.revision += 1;
             ok()
         }),
-        cmd!("text.insert", "Type", [], None, "{text} — replaces the selected text", has_text, insert),
+        cmd!("text.insert", "Type", [], None, "{text, raw?: bool (no typographer's quotes)} — replaces the selected text", has_text, insert),
         cmd!("text.delete", "Delete Text", [], None, "{forward?: bool, word?: bool}", has_text, delete),
         cmd!(noundo "text.move", "Move Caret", [], None, "{dir: left|right|up|down|lineStart|lineEnd|storyStart|storyEnd, extend?, word?}", has_text, move_caret),
         cmd!(noundo "text.exitToFrame", "Select Frame", [], None, "{}", has_doc, |s, _| {
@@ -131,6 +131,15 @@ pub fn specs() -> Vec<CommandSpec> {
         )),
         cmd!("type.sizeUp", "Increase Point Size", [], Some("Cmd+Shift+."), "{}", has_text_or_frames, |s, _| step_size(s, 2.0)),
         cmd!("type.sizeDown", "Decrease Point Size", [], Some("Cmd+Shift+,"), "{}", has_text_or_frames, |s, _| step_size(s, -2.0)),
+        cmd!(
+            "type.changeCase",
+            "Change Case",
+            ["Type"],
+            None,
+            "{case: upper|lower|title|sentence} — the selected text, or the stories of selected frames (formatting kept)",
+            has_text_or_frames,
+            change_case
+        ),
         cmd!(query "type.selectionAttrs", "Selection Attributes", [], None, "{} → resolved character/paragraph attributes at the text selection", has_doc, selection_attrs),
     ]
 }
@@ -205,7 +214,8 @@ fn insert(s: &mut Session, p: &Value) -> Result<Value> {
     if text == "\t" && s.doc()?.selection.text.is_some_and(|t| t.cell.is_some()) {
         return super::table::step_cell(s, true);
     }
-    let text = if s.prefs.typographers_quotes { smart_quotes(s, &text) } else { text };
+    let raw = p.get("raw").and_then(Value::as_bool).unwrap_or(false);
+    let text = if s.prefs.typographers_quotes && !raw { smart_quotes(s, &text) } else { text };
     s.edit(|d, sel| {
         let t = sel.text.ok_or_else(|| bad("text.insert", "no insertion point"))?;
         let st = d.text_story_mut(t.story, t.cell).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
@@ -561,4 +571,79 @@ fn fill_placeholder(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub(crate) fn format_targets_pub(s: &Session) -> Vec<Target> {
     format_targets(s)
+}
+
+/// The case-changed text of `src`, char by char (a char may map to several, e.g. ß → SS).
+pub(crate) fn case_map(src: &str, case: &str) -> Vec<String> {
+    let mut out = Vec::with_capacity(src.len());
+    let mut prev = ' ';
+    let mut sentence_start = true;
+    for c in src.chars() {
+        let word_start = !(prev.is_alphanumeric() || matches!(prev, '\'' | '\u{2019}'));
+        let up = |c: char| c.to_uppercase().collect::<String>();
+        let low = |c: char| c.to_lowercase().collect::<String>();
+        let m = match case {
+            "upper" => up(c),
+            "lower" => low(c),
+            "title" => {
+                if word_start {
+                    up(c)
+                } else {
+                    low(c)
+                }
+            }
+            _ => {
+                if sentence_start && c.is_alphanumeric() {
+                    up(c)
+                } else {
+                    low(c)
+                }
+            }
+        };
+        if c.is_alphanumeric() {
+            sentence_start = false;
+        } else if matches!(c, '.' | '!' | '?' | '\n' | '\u{2028}') {
+            sentence_start = true;
+        }
+        out.push(m);
+        prev = c;
+    }
+    out
+}
+
+fn change_case(s: &mut Session, p: &Value) -> Result<Value> {
+    let case = str_param(p, "case").unwrap_or("upper").to_string();
+    if !matches!(case.as_str(), "upper" | "lower" | "title" | "sentence") {
+        return Err(bad("type.changeCase", format!("unknown case `{case}`")));
+    }
+    let targets = format_targets(s);
+    s.edit(|d, sel| {
+        for t in &targets {
+            let Some(st) = d.text_story_mut(t.story, t.cell) else { continue };
+            let r = t.range.start.min(st.len())..t.range.end.min(st.len());
+            let mapped = case_map(st.slice(r.clone()), &case);
+            // Replace run by run (from the end) so every run keeps its formatting.
+            let segs: Vec<std::ops::Range<usize>> =
+                st.runs().map(|(rr, _)| rr.start.max(r.start)..rr.end.min(r.end)).filter(|x| x.start < x.end).collect();
+            let starts: Vec<usize> = st.slice(r.clone()).char_indices().map(|(i, _)| r.start + i).collect();
+            let mut delta: isize = 0;
+            for seg in segs.iter().rev() {
+                let old = st.slice(seg.clone()).to_string();
+                let new: String = starts.iter().zip(&mapped).filter(|(b, _)| seg.contains(b)).map(|(_, m)| m.as_str()).collect();
+                if new != old {
+                    delta += new.len() as isize - old.len() as isize;
+                    st.replace(seg.clone(), &new);
+                }
+            }
+            if let Some(ts) = sel.text.as_mut().filter(|ts| ts.story == t.story && ts.cell == t.cell && !ts.is_caret()) {
+                let end = (r.end as isize + delta).max(r.start as isize) as usize;
+                if ts.anchor <= ts.focus {
+                    ts.focus = end;
+                } else {
+                    ts.anchor = end;
+                }
+            }
+        }
+        Ok(Value::Null)
+    })
 }

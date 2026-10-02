@@ -17,6 +17,7 @@ pub mod item;
 pub mod notes;
 pub mod page;
 pub mod selection;
+mod slice;
 pub mod story;
 pub mod styles;
 pub mod table;
