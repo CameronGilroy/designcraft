@@ -140,16 +140,65 @@ pub fn specs() -> Vec<CommandSpec> {
             "Document Setup…",
             ["File"],
             Some("Cmd+Alt+P"),
-            "{width?, height?, facingPages?, bleed?: number}",
+            "{width?, height?, pages?: count, startPage?: n, facingPages?, intent?: print|web|mobile, bleed?, slug?: n | [top, bottom, inside, outside]} → the document setup",
             has_doc,
             |s, p| {
                 let p = p.clone();
+                if p.as_object().is_none_or(|o| o.is_empty()) {
+                    return Ok(document_setup(&s.doc()?.doc));
+                }
+                let edges = |k: &str| -> Option<[f64; 4]> {
+                    match p.get(k)? {
+                        Value::Array(a) if a.len() == 4 => {
+                            let v: Vec<f64> = a.iter().filter_map(Value::as_f64).map(|v| v.max(0.0)).collect();
+                            (v.len() == 4).then(|| [v[0], v[1], v[2], v[3]])
+                        }
+                        v => v.as_f64().map(|b| [b.max(0.0); 4]),
+                    }
+                };
+                let (bleed, slug) = (edges("bleed"), edges("slug"));
+                let intent: Option<designcraft_doc::Intent> = p.get("intent").and_then(|v| serde_json::from_value(v.clone()).ok());
+                let pages = p.get("pages").and_then(Value::as_u64).map(|n| n.clamp(1, 9999) as usize);
                 s.edit(|d, _| {
                     if let Some(f) = p.get("facingPages").and_then(Value::as_bool) {
                         d.settings.facing_pages = f;
                     }
-                    if let Some(b) = p.get("bleed").and_then(Value::as_f64) {
-                        d.settings.bleed = [b; 4];
+                    if let Some(b) = bleed {
+                        d.settings.bleed = b;
+                    }
+                    if let Some(b) = slug {
+                        d.settings.slug = b;
+                    }
+                    if let Some(i) = intent {
+                        d.settings.intent = i;
+                    }
+                    if let Some(n) = p.get("startPage").and_then(Value::as_u64) {
+                        if !d.sections.iter().any(|x| x.start == 0) {
+                            d.sections.insert(
+                                0,
+                                designcraft_doc::Section {
+                                    start: 0,
+                                    start_number: None,
+                                    style: Default::default(),
+                                    prefix: String::new(),
+                                    marker: String::new(),
+                                    include_prefix: false,
+                                },
+                            );
+                        }
+                        if let Some(first) = d.sections.iter_mut().find(|x| x.start == 0) {
+                            first.start_number = Some(n.max(1) as u32);
+                        }
+                    }
+                    // Number of Pages: add at the end (with the last page's parent) or remove from the end.
+                    if let Some(n) = pages {
+                        let have = d.page_count();
+                        if n > have {
+                            let parent = d.page_loc(have - 1).and_then(|(si, pi)| d.spreads[si].pages[pi].parent);
+                            d.insert_pages(Some(have - 1), n - have, parent)?;
+                        } else if n < have {
+                            d.delete_pages(&(n..have).collect::<Vec<_>>())?;
+                        }
                     }
                     let w = p.get("width").and_then(Value::as_f64);
                     let h = p.get("height").and_then(Value::as_f64);
@@ -166,7 +215,7 @@ pub fn specs() -> Vec<CommandSpec> {
                         }
                     }
                     d.repaginate();
-                    ok()
+                    Ok(document_setup(d))
                 })
             }
         ),
@@ -329,3 +378,38 @@ fn parent_ref(d: &designcraft_doc::Document, v: Option<&Value>) -> Option<Option
 
 #[allow(dead_code)]
 fn _r(_: Result<()>) {}
+
+/// File › Document Setup values.
+fn document_setup(d: &designcraft_doc::Document) -> Value {
+    let st = &d.settings;
+    let start = d.sections.iter().find(|x| x.start == 0).and_then(|x| x.start_number).unwrap_or(1);
+    json!({"width": st.page_width, "height": st.page_height, "pages": d.page_count(), "startPage": start, "facingPages": st.facing_pages,
+        "intent": st.intent, "bleed": st.bleed, "slug": st.slug})
+}
+
+#[cfg(test)]
+mod setup_tests {
+    use serde_json::json;
+
+    #[test]
+    fn document_setup_pages_start_bleed_slug() {
+        let mut s = crate::Session::new();
+        s.execute("file.new", &json!({"pages": 2})).unwrap();
+        let r = s.execute("layout.documentSetup", &json!({})).unwrap();
+        assert_eq!(r["pages"], 2);
+        assert_eq!(r["startPage"], 1);
+        let r = s.execute("layout.documentSetup", &json!({"pages": 5, "startPage": 2, "bleed": 9, "slug": [0, 18, 0, 0], "intent": "web"})).unwrap();
+        assert_eq!(r["pages"], 5);
+        assert_eq!(r["startPage"], 2);
+        assert_eq!(r["bleed"], json!([9.0, 9.0, 9.0, 9.0]));
+        assert_eq!(r["slug"], json!([0.0, 18.0, 0.0, 0.0]));
+        assert_eq!(r["intent"], "web");
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.page_name(0), "2");
+        assert_eq!(d.page(0).unwrap().side, designcraft_doc::PageSide::Left);
+        assert_eq!(d.spreads[0].pages.len(), 2, "pages 2–3 form the first spread");
+        let r = s.execute("layout.documentSetup", &json!({"pages": 3})).unwrap();
+        assert_eq!(r["pages"], 3);
+        s.doc().unwrap().doc.check().unwrap();
+    }
+}

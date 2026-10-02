@@ -277,10 +277,12 @@ impl Document {
             }
             spreads.push(sp);
         };
+        // An even start page number (Document Setup › Start Page #) begins with a left page.
+        let shift = usize::from(self.sections.iter().find(|x| x.start == 0).and_then(|x| x.start_number).is_some_and(|n| n % 2 == 0));
         for (i, (mut p, items)) in pages.into_iter().enumerate() {
             if facing {
-                // Page i (0-based) is a right page when i is even (page 1, 3, 5 …).
-                p.side = if i % 2 == 0 { PageSide::Right } else { PageSide::Left };
+                // Page i (0-based) is a right page when its number is odd (1, 3, 5 …).
+                p.side = if (i + shift) % 2 == 0 { PageSide::Right } else { PageSide::Left };
                 if p.side == PageSide::Left && !cur.is_empty() {
                     let id = SpreadId(self.alloc());
                     flush(&mut cur, &mut spreads, id);

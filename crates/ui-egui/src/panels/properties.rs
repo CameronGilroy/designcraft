@@ -290,7 +290,7 @@ fn document_sections(app: &mut DesignApp, ui: &mut Ui) {
     ui.add_space(6.0);
     let fw = full_width(ui);
     if outline_button(ui, "Adjust Layout", fw).clicked() {
-        app.ui.dialog = Some(crate::dialogs::Dialog::new("documentSetup", json!({})));
+        crate::dialogs::open_document_setup(app);
     }
     divider(ui);
     // Page.
@@ -315,7 +315,7 @@ fn document_sections(app: &mut DesignApp, ui: &mut Ui) {
     }
     ui.add_space(3.0);
     if outline_button(ui, "Edit Page", fw).clicked() {
-        app.ui.dialog = Some(crate::dialogs::Dialog::new("documentSetup", json!({})));
+        crate::dialogs::open_document_setup(app);
     }
     divider(ui);
     // Rulers & Grids / Guides: icon toggle rows.

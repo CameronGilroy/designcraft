@@ -102,6 +102,101 @@ fn text_field(ui: &mut egui::Ui, d: &mut Dialog, key: &str, w: f32) {
     }
 }
 
+/// File › Document Setup, filled from the document.
+pub fn open_document_setup(app: &mut DesignApp) {
+    let Ok(cur) = app.session.execute("layout.documentSetup", &json!({})) else { return };
+    let units = app.session.active().map(|s| s.doc.settings.horizontal_units).unwrap_or(Unit::Picas);
+    let fm = |v: &Value| json!(format_measure(v.as_f64().unwrap_or(0.0), units));
+    let mut f = json!({"intent": cur["intent"], "pages": cur["pages"], "startPage": cur["startPage"], "facingPages": cur["facingPages"],
+        "width": fm(&cur["width"]), "height": fm(&cur["height"])});
+    for k in ["bleed", "slug"] {
+        for (i, e) in ["Top", "Bottom", "Inside", "Outside"].iter().enumerate() {
+            f[format!("{k}{e}")] = fm(&cur[k][i]);
+        }
+    }
+    app.ui.dialog = Some(Dialog::new("documentSetup", f));
+}
+
+fn document_setup(ui: &mut egui::Ui, d: &mut Dialog) {
+    egui::Grid::new("ds").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
+        ui.label("Intent:");
+        let cur = d.s("intent");
+        egui::ComboBox::from_id_salt("ds_intent")
+            .selected_text(match cur.as_str() {
+                "web" => "Web",
+                "mobile" => "Mobile",
+                _ => "Print",
+            })
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for (v, l) in [("print", "Print"), ("web", "Web"), ("mobile", "Mobile")] {
+                    if ui.selectable_label(cur == v, l).clicked() {
+                        d.fields.insert("intent".into(), json!(v));
+                    }
+                }
+            });
+        ui.label("");
+        ui.label("");
+        ui.end_row();
+        ui.label("Number of Pages:");
+        text_field(ui, d, "pages", 60.0);
+        check(ui, d, "facingPages", "Facing Pages");
+        ui.label("");
+        ui.end_row();
+        ui.label("Start Page #:");
+        text_field(ui, d, "startPage", 60.0);
+        ui.end_row();
+    });
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Page Size").font(semibold(12.0)));
+    let (w, h) = (d.m("width").unwrap_or(612.0), d.m("height").unwrap_or(792.0));
+    let preset =
+        designcraft_doc::build::PRESETS.iter().find(|p| (p.width - w).abs() < 0.5 && (p.height - h).abs() < 0.5).map_or("Custom", |p| p.name);
+    egui::Grid::new("ds_size").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
+        ui.label("Size:");
+        egui::ComboBox::from_id_salt("ds_preset").selected_text(preset).width(140.0).show_ui(ui, |ui| {
+            for p in designcraft_doc::build::PRESETS {
+                if ui.selectable_label(p.name == preset, p.name).clicked() {
+                    d.fields.insert("width".into(), json!(format_measure(p.width, p.units)));
+                    d.fields.insert("height".into(), json!(format_measure(p.height, p.units)));
+                }
+            }
+        });
+        ui.label("Orientation:");
+        ui.horizontal(|ui| {
+            for (portrait, l) in [(true, "Portrait"), (false, "Landscape")] {
+                if ui.selectable_label((h >= w) == portrait, l).clicked() && (h >= w) != portrait {
+                    let (fw, fh) = (d.s("width"), d.s("height"));
+                    d.fields.insert("width".into(), json!(fh));
+                    d.fields.insert("height".into(), json!(fw));
+                }
+            }
+        });
+        ui.end_row();
+        ui.label("Width:");
+        text_field(ui, d, "width", 80.0);
+        ui.label("Height:");
+        text_field(ui, d, "height", 80.0);
+        ui.end_row();
+    });
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Bleed and Slug").font(semibold(12.0)));
+    egui::Grid::new("ds_bleed").num_columns(5).spacing([8.0, 6.0]).show(ui, |ui| {
+        ui.label("");
+        for e in ["Top", "Bottom", "Inside", "Outside"] {
+            ui.label(e);
+        }
+        ui.end_row();
+        for (k, l) in [("bleed", "Bleed:"), ("slug", "Slug:")] {
+            ui.label(l);
+            for e in ["Top", "Bottom", "Inside", "Outside"] {
+                text_field(ui, d, &format!("{k}{e}"), 60.0);
+            }
+            ui.end_row();
+        }
+    });
+}
+
 /// Preferences: a section list and the section's options. Application options always; units and
 /// increments when a document is open (InDesign keeps those with the document).
 fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
@@ -386,20 +481,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     ui.end_row();
                 });
             }
-            "documentSetup" => {
-                let st = app.session.active();
-                let (w, h) = st.map(|s| (s.doc.settings.page_width, s.doc.settings.page_height)).unwrap_or((612.0, 792.0));
-                d.fields.entry("width".to_string()).or_insert(json!(format_measure(w, Unit::Picas)));
-                d.fields.entry("height".to_string()).or_insert(json!(format_measure(h, Unit::Picas)));
-                egui::Grid::new("ds").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                    ui.label("Width");
-                    text_field(ui, &mut d, "width", 90.0);
-                    ui.end_row();
-                    ui.label("Height");
-                    text_field(ui, &mut d, "height", 90.0);
-                    ui.end_row();
-                });
-            }
+            "documentSetup" => document_setup(ui, &mut d),
             _ => {}
         }
         ui.add_space(12.0);
@@ -467,7 +549,14 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             "object.textFrameOptions",
             json!({"columns": d.n("columns").unwrap_or(1.0) as u64, "gutter": d.m("gutter").unwrap_or(12.0), "inset": d.m("inset").unwrap_or(0.0), "verticalJustification": d.s("verticalJustification")}),
         ),
-        "documentSetup" => app.run("layout.documentSetup", json!({"width": d.m("width"), "height": d.m("height")})),
+        "documentSetup" => {
+            let edges = |k: &str| json!(["Top", "Bottom", "Inside", "Outside"].map(|e| d.m(&format!("{k}{e}")).unwrap_or(0.0)));
+            app.run(
+                "layout.documentSetup",
+                json!({"intent": d.s("intent"), "pages": d.n("pages").unwrap_or(1.0).max(1.0) as u64, "startPage": d.n("startPage").unwrap_or(1.0).max(1.0) as u64,
+                    "facingPages": d.b("facingPages"), "width": d.m("width"), "height": d.m("height"), "bleed": edges("bleed"), "slug": edges("slug")}),
+            )
+        }
         "paragraphStyleOptions" => {
             let name = d.s("name");
             let mut para = serde_json::Map::new();

@@ -9,14 +9,14 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
-| P0 | 102 | 91 | 11 | 0 | 95% |
+| P0 | 102 | 92 | 10 | 0 | 95% |
 | P1 | 97 | 33 | 23 | 41 | 46% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
 |---|---|
 | Application shell & workspace | 65% |
-| Documents, pages, spreads | 69% |
+| Documents, pages, spreads | 71% |
 | Layers | 74% |
 | Frames, shapes & paths | 74% |
 | Transform | 78% |
@@ -35,7 +35,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Undo, history, saving | 100% |
 | Accessibility | 20% |
 
-Open P0 items: Dockable panels, Preferences, Document Setup, Pen, add/delete anchor, convert direction, Gradient panel & tool, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, OpenType features, Export to PDF (print), Display performance.
+Open P0 items: Dockable panels, Preferences, Pen, add/delete anchor, convert direction, Gradient panel & tool, Raster formats, Vector/page formats (PDF/AI/SVG/EPS place), Display performance, OpenType features, Export to PDF (print), Display performance.
 
 ## Rows
 
@@ -59,7 +59,7 @@ Open P0 items: Dockable panels, Preferences, Document Setup, Pen, add/delete anc
 | Application shell & workspace | Localization | P2 | M |
 | Application shell & workspace | Scripting (own API: commands, scripts, MCP) | P2 | D |
 | Documents, pages, spreads | New Document dialog | P0 | D |
-| Documents, pages, spreads | Document Setup | P0 | P |
+| Documents, pages, spreads | Document Setup | P0 | D |
 | Documents, pages, spreads | Page sizes | P0 | D |
 | Documents, pages, spreads | Facing pages / spreads | P0 | D |
 | Documents, pages, spreads | Pages per spread up to 10 | P1 | M |
