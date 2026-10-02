@@ -338,6 +338,38 @@ impl Renderer {
         }
         let xf = parent * it.xf;
         let vb = xf.transform_rect_bbox(it.inner_bounds()).inflate(it.stroke.weight + 2.0, it.stroke.weight + 2.0);
+        if it.has_nested_items() {
+            // A frame with items pasted into it: fill, the items clipped to the frame, stroke.
+            if !rect_overlaps(vb, f.visible) {
+                return;
+            }
+            let bp = if it.corners.is_none() { it.path.to_bezpath() } else { corners::apply(&it.path, &it.corners) };
+            let layered = it.opacity < 0.999 || it.blend != DcBlend::Normal;
+            if layered {
+                ctx.set_transform(Affine::IDENTITY);
+                ctx.push_layer(None, Some(blend_mode(it.blend)), Some(it.opacity), None, None);
+            }
+            if !it.fill.is_none() {
+                ctx.set_transform(f.view * xf);
+                if set_fill_paint(ctx, f.doc, &it.fill.swatch, it.fill.tint, bp.bounding_box(), it.fill.gradient_angle) {
+                    ctx.fill_path(&bp);
+                }
+                ctx.reset_paint_transform();
+            }
+            ctx.set_transform(f.view * xf);
+            ctx.push_clip_layer(&bp);
+            for c in it.children() {
+                self.draw_item(ctx, f, c, xf, page_name);
+            }
+            ctx.pop_layer();
+            if !it.stroke.is_none() {
+                self.draw_stroke(ctx, f, it, &bp, xf);
+            }
+            if layered {
+                ctx.pop_layer();
+            }
+            return;
+        }
         if !it.children().is_empty() {
             // Groups: children carry their own transforms relative to the group.
             let layered = it.opacity < 0.999 || it.blend != DcBlend::Normal;

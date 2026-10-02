@@ -1107,7 +1107,7 @@ impl<'a> Ex<'a> {
         let d = self.d;
         let tag = match (&it.content, it.shape) {
             (Content::Text(_), _) => "TextFrame",
-            (Content::Group { .. }, _) => "Group",
+            (Content::Group { .. }, Shape::Group) => "Group",
             (_, Shape::Oval) => "Oval",
             (_, Shape::Polygon) | (_, Shape::Path) => "Polygon",
             (_, Shape::GraphicLine) => "GraphicLine",

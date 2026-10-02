@@ -125,11 +125,14 @@ pub struct Prefs {
     pub keyboard_increment: f64,
     pub show_hidden_characters: bool,
     pub typographers_quotes: bool,
+    /// Polygon Settings (double-click the Polygon tool): number of sides, star inset (0–1).
+    pub polygon_sides: u32,
+    pub star_inset: f64,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { keyboard_increment: 1.0, show_hidden_characters: false, typographers_quotes: true }
+        Prefs { keyboard_increment: 1.0, show_hidden_characters: false, typographers_quotes: true, polygon_sides: 6, star_inset: 0.0 }
     }
 }
 

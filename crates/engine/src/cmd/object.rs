@@ -367,6 +367,23 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection,
             distribute
         ),
+        cmd!(
+            noundo "tool.polygonSettings",
+            "Polygon Settings…",
+            [],
+            None,
+            "{sides?: 3–100, starInset?: 0–100 (%)} → the settings new polygons use",
+            super::always,
+            |s, p| {
+                if let Some(n) = p.get("sides").and_then(Value::as_u64) {
+                    s.prefs.polygon_sides = (n as u32).clamp(3, 100);
+                }
+                if let Some(v) = p.get("starInset").and_then(Value::as_f64) {
+                    s.prefs.star_inset = (v / 100.0).clamp(0.0, 1.0);
+                }
+                Ok(json!({"sides": s.prefs.polygon_sides, "starInset": (s.prefs.star_inset * 100.0).round()}))
+            }
+        ),
         cmd!("object.setLayer", "Move to Layer", [], None, "{layer, ids?}", has_selection, |s, p| {
             let l = designcraft_doc::LayerId(p.get("layer").and_then(Value::as_u64).unwrap_or(0));
             set_flag(s, p, move |i| i.layer = l, false)
@@ -382,7 +399,8 @@ fn frame_create(s: &mut Session, p: &Value) -> Result<Value> {
     let lid = s.doc()?.active_layer;
     let text = str_param(p, "text").unwrap_or("").to_string();
     let caret = bool_or(p, "caret", content == "text");
-    let sides = p.get("sides").and_then(Value::as_u64).unwrap_or(6).clamp(3, 100) as u32;
+    let sides = p.get("sides").and_then(Value::as_u64).map_or(s.prefs.polygon_sides, |v| v as u32).clamp(3, 100);
+    let inset = p.get("starInset").and_then(Value::as_f64).map_or(s.prefs.star_inset, |v| v / 100.0).clamp(0.0, 1.0);
     let rect = Rect::new(rect.x0, rect.y0, rect.x1.max(rect.x0 + 0.5), rect.y1.max(rect.y0 + 0.5));
     s.edit(|d, sel| {
         if d.spread(sr).is_none() {
@@ -390,7 +408,7 @@ fn frame_create(s: &mut Session, p: &Value) -> Result<Value> {
         }
         let (path, sh) = match shape {
             "ellipse" | "oval" => (shapes::ellipse(rect), Shape::Oval),
-            "polygon" => (polygon_in(rect, sides), Shape::Polygon),
+            "polygon" => (polygon_in(rect, sides, inset), Shape::Polygon),
             _ => (shapes::rectangle(rect), Shape::Rectangle),
         };
         if content == "text" {
@@ -420,9 +438,11 @@ fn frame_create(s: &mut Session, p: &Value) -> Result<Value> {
     })
 }
 
-fn polygon_in(r: Rect, sides: u32) -> designcraft_geom::PathData {
+/// A polygon (or, with a star inset, a star with `sides` points) fitted to `r`.
+pub(crate) fn polygon_in(r: Rect, sides: u32, inset: f64) -> designcraft_geom::PathData {
     let c = r.center();
-    let mut p = shapes::polygon(Point::ZERO, 1.0, sides, 0.0);
+    let mut p =
+        if inset > 0.0 { shapes::star(Point::ZERO, 1.0, (1.0 - inset).max(0.0), sides, 0.0) } else { shapes::polygon(Point::ZERO, 1.0, sides, 0.0) };
     // Fit the unit polygon's bounds to the rect.
     if let Some(b) = p.bounds() {
         let a = Affine::translate(c.to_vec2())
@@ -870,7 +890,7 @@ fn fit(s: &mut Session, p: &Value) -> Result<Value> {
     })
 }
 
-trait RemoveKeep {
+pub(crate) trait RemoveKeep {
     fn remove_item_keep_story(&mut self, id: ItemId) -> Result<Item>;
 }
 
@@ -1110,4 +1130,28 @@ fn step_and_repeat(s: &mut Session, p: &Value) -> Result<Value> {
         *sel = Selection::items(all.clone());
         Ok(json!({"created": all.len() - ids.len()}))
     })
+}
+
+#[cfg(test)]
+mod polygon_tests {
+    use super::*;
+
+    #[test]
+    fn polygon_settings_make_stars() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("tool.polygonSettings", &json!({"sides": 5, "starInset": 50})).unwrap();
+        let id = s.execute("frame.create", &json!({"rect": [100, 100, 200, 200], "shape": "polygon"})).unwrap()["id"].as_u64().unwrap();
+        let d = &s.doc().unwrap().doc;
+        let it = d.item(ItemId(id)).unwrap();
+        // A 5-point star has 10 vertices, fitted to the rect.
+        assert_eq!(it.path.subpaths[0].anchors.len(), 10);
+        let b = it.bounds();
+        assert!((b.x0 - 100.0).abs() < 1e-6 && (b.y1 - 200.0).abs() < 1e-6, "{b:?}");
+        // Explicit parameters win over the settings.
+        let id = s.execute("frame.create", &json!({"rect": [0, 0, 50, 50], "shape": "polygon", "sides": 3, "starInset": 0})).unwrap()["id"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(s.doc().unwrap().doc.item(ItemId(id)).unwrap().path.subpaths[0].anchors.len(), 3);
+    }
 }

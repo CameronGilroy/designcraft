@@ -521,3 +521,25 @@ fn round_trips_anchored_objects() {
     assert_eq!(s.objects[1].item.shape, Shape::Oval);
     assert_eq!(s.objects[1].position, AnchorPosition::AboveLine { align: AnchorAlign::Center, space_before: 3.0, space_after: 4.0 });
 }
+
+#[test]
+fn round_trips_frames_with_pasted_in_items() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let inner = designcraft_doc::Item::new(designcraft_doc::ItemId(d.alloc()), lid, Shape::Oval, shapes::ellipse(Rect::new(0.0, 0.0, 300.0, 300.0)));
+    let mut frame = designcraft_doc::Item::new(
+        designcraft_doc::ItemId(d.alloc()),
+        lid,
+        Shape::Rectangle,
+        shapes::rectangle(Rect::new(100.0, 100.0, 200.0, 200.0)),
+    );
+    frame.content = designcraft_doc::Content::Group { items: vec![std::sync::Arc::new(inner)] };
+    d.insert_item(SpreadRef::Doc(0), frame, None).unwrap();
+    let back = import_idml(&export_idml(&d)).unwrap();
+    let f = &back.spreads[0].items[0];
+    assert_eq!(f.shape, Shape::Rectangle);
+    assert!(f.has_nested_items(), "{:?}", f.content);
+    assert_eq!(f.children()[0].shape, Shape::Oval);
+    let b = f.bounds();
+    assert!((b.x0 - 100.0).abs() < 0.01 && (b.x1 - 200.0).abs() < 0.01, "{b:?}");
+}

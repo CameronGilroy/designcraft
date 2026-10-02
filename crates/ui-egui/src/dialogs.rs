@@ -124,6 +124,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "footnoteOptions" => "Footnote Options",
         "insertXref" => "New Cross-Reference",
         "findFont" => "Find/Replace Font",
+        "polygonSettings" => "Polygon Settings",
         id => match id.strip_prefix("cmd:").and_then(designcraft_engine::find_command) {
             Some(c) => c.label.trim_end_matches('…'),
             None => "Dialog",
@@ -258,6 +259,19 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             "footnoteOptions" => footnote_options(app, ui, &mut d),
             "insertXref" => insert_xref(app, ui, &mut d),
             "findFont" => find_font(app, ui, &mut d),
+            "polygonSettings" => {
+                egui::Grid::new("poly").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("Number of Sides:");
+                    text_field(ui, &mut d, "sides", 60.0);
+                    ui.end_row();
+                    ui.label("Star Inset:");
+                    ui.horizontal(|ui| {
+                        text_field(ui, &mut d, "starInset", 60.0);
+                        ui.label("%");
+                    });
+                    ui.end_row();
+                });
+            }
             id if id.starts_with("cmd:") => command_form(ui, &mut d),
             "goToPage" => {
                 ui.horizontal(|ui| {
@@ -407,6 +421,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             }
             app.run("style.paragraph.edit", params)
         }
+        "polygonSettings" => app.run("tool.polygonSettings", json!({"sides": d.n("sides").unwrap_or(6.0) as u64, "starInset": d.n("starInset").unwrap_or(0.0)})),
         "findFont" => {
             let (f, st) = (d.s("family"), d.s("style"));
             if f.is_empty() || d.s("toFamily").is_empty() {

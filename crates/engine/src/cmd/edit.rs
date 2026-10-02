@@ -246,6 +246,15 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
+        cmd!(
+            "edit.pasteInto",
+            "Paste Into",
+            ["Edit"],
+            Some("Cmd+Alt+V"),
+            "{id?} — the copied objects become the content of the selected frame (or `id`), clipped by it",
+            has_clip,
+            paste_into
+        ),
         cmd!("edit.pasteInPlace", "Paste in Place", ["Edit"], Some("Cmd+Alt+Shift+V"), "{}", has_clip, |s, _| s
             .execute("edit.paste", &json!({"inPlace": true}))),
         cmd!("edit.duplicate", "Duplicate", ["Edit"], Some("Cmd+Alt+Shift+D"), "{}", has_selection, |s, _| s
@@ -366,5 +375,84 @@ mod text_clipboard_tests {
         assert_eq!(st.char_format_at(5).over.font_style.as_deref(), Some("Italic"));
         assert_eq!(s.doc().unwrap().selection.text.unwrap().range(), 0..st.len());
         st.check().unwrap();
+    }
+}
+
+fn paste_into(s: &mut Session, p: &Value) -> Result<Value> {
+    use super::object::RemoveKeep;
+    let clip = s.clipboard.clone().ok_or_else(|| super::bad("edit.pasteInto", "the clipboard holds no objects"))?;
+    let target = match super::id_param(p, "id") {
+        Some(id) => id,
+        None => {
+            let st = s.doc()?;
+            match st.selection.items.as_slice() {
+                [one] => *one,
+                _ => return Err(super::bad("edit.pasteInto", "select one frame to paste into")),
+            }
+        }
+    };
+    let ids: Vec<ItemId> = clip.spreads.first().map(|sp| sp.items.iter().map(|i| i.id).collect()).unwrap_or_default();
+    if ids.is_empty() {
+        return Err(super::bad("edit.pasteInto", "the clipboard holds no objects"));
+    }
+    s.edit(|d, sel| {
+        let loc = d.find(target).ok_or(designcraft_doc::DocError::NoItem(target))?;
+        let frame = d.item_at(&loc).ok_or(designcraft_doc::DocError::NoItem(target))?.clone();
+        if frame.is_group() || frame.is_text_frame() {
+            return Err(super::bad("edit.pasteInto", "paste into a graphic or empty frame (not a group or text frame)"));
+        }
+        let world = d.parent_xf(&loc) * frame.xf;
+        // Copies on the frame's spread (stories and images come along), then nested in the frame.
+        let new = super::object::duplicate_from(d, &clip, &ids, loc.spread, designcraft_geom::Vec2::ZERO)?;
+        let mut kids = Vec::new();
+        for id in &new {
+            kids.push(d.remove_item_keep_story(*id)?);
+        }
+        // Centre the content on the frame when it doesn't overlap it (like InDesign).
+        let fb = frame.bounds();
+        let cb = kids.iter().map(|k| k.bounds()).reduce(|a, b| a.union(b)).unwrap_or(fb);
+        let shift = if cb.intersect(fb).area() > 0.0 { designcraft_geom::Vec2::ZERO } else { fb.center().to_vec2() - cb.center().to_vec2() };
+        let inv = world.inverse();
+        let kids: Vec<Arc<designcraft_doc::Item>> = kids
+            .into_iter()
+            .map(|mut k| {
+                k.xf = inv * designcraft_geom::Affine::translate(shift) * k.xf;
+                Arc::new(k)
+            })
+            .collect();
+        let it = d.item_mut(target).ok_or(designcraft_doc::DocError::NoItem(target))?;
+        it.content = designcraft_doc::Content::Group { items: kids };
+        *sel = Selection::items(vec![target]);
+        Ok(json!({"id": target.0, "items": new.len()}))
+    })
+}
+
+#[cfg(test)]
+mod paste_into_tests {
+    use super::*;
+
+    #[test]
+    fn paste_into_nests_and_clips() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [100, 100, 300, 300]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.fill", &json!({"ids": [a], "swatch": "[Black]"})).unwrap();
+        let frame = s.execute("frame.create", &json!({"rect": [150, 150, 250, 250]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("selection.set", &json!({"ids": [a]})).unwrap();
+        s.execute("edit.cut", &json!({})).unwrap();
+        s.execute("selection.set", &json!({"ids": [frame]})).unwrap();
+        s.execute("edit.pasteInto", &json!({})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        assert_eq!(d.spreads[0].items.len(), 1, "the black square is inside the frame now");
+        let f = d.item(ItemId(frame)).unwrap();
+        assert!(f.has_nested_items() && !f.is_group());
+        assert_eq!(f.bounds(), designcraft_geom::Rect::new(150.0, 150.0, 250.0, 250.0), "bounds stay the frame's");
+        // Rendered clipped: black inside the frame, nothing outside it.
+        let cache = designcraft_compose::Cache::new();
+        let mut r = designcraft_render::Renderer::new();
+        let img = r.render_page(&d, &cache, 0, 1.0, false, &Default::default()).unwrap();
+        assert!(img.pixel(200, 200)[0] < 90, "{:?}", img.pixel(200, 200));
+        assert!(img.pixel(120, 120)[0] > 200, "{:?}", img.pixel(120, 120));
+        s.doc().unwrap().doc.check().unwrap();
     }
 }

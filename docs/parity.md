@@ -96,7 +96,7 @@ Open P0 items: Dockable panels, Recovery / autosave, Preferences, Document Setup
 | Layers | Object Layer Options for placed files | P2 | M |
 | Frames, shapes & paths | Rectangle/Ellipse/Polygon frames | P0 | D |
 | Frames, shapes & paths | Rectangle/Ellipse/Polygon shapes | P0 | D |
-| Frames, shapes & paths | Polygon settings | P0 | P |
+| Frames, shapes & paths | Polygon settings | P0 | D |
 | Frames, shapes & paths | Line tool | P0 | D |
 | Frames, shapes & paths | Pen, add/delete anchor, convert direction | P0 | P |
 | Frames, shapes & paths | Pencil, Smooth, Erase | P1 | M |
@@ -125,7 +125,7 @@ Open P0 items: Dockable panels, Recovery / autosave, Preferences, Document Setup
 | Frames, shapes & paths | Select submenu | P1 | P |
 | Frames, shapes & paths | Select All / Deselect All | P0 | D |
 | Frames, shapes & paths | Duplicate | P0 | D |
-| Frames, shapes & paths | Paste Into / Paste in Place | P0 | P |
+| Frames, shapes & paths | Paste Into / Paste in Place | P0 | D |
 | Frames, shapes & paths | Paste Without Formatting | P0 | D |
 | Frames, shapes & paths | Non-printing attribute | P0 | D |
 | Frames, shapes & paths | Overprint fill/stroke/gap | P1 | P |

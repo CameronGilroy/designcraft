@@ -414,6 +414,47 @@ impl Exporter<'_> {
             return;
         }
         let xf = parent * it.xf;
+        if it.has_nested_items() {
+            // A frame with items pasted into it: fill, the items clipped to the frame, stroke.
+            let bp = if it.corners.is_none() { it.path.to_bezpath() } else { corners::apply(&it.path, &it.corners) };
+            let path = to_path(&bp);
+            let pushes = Self::push_group(s, it.opacity, it.blend);
+            s.push_transform(&tf(xf));
+            if !it.fill.is_none()
+                && let Some(p) = &path
+                && let Some(paint) = self.fill_paint(&it.fill.swatch, it.fill.tint, bp.bounding_box(), it.fill.gradient_angle)
+            {
+                s.set_stroke(None);
+                s.set_fill(Some(Fill { paint, opacity: NormalizedF32::ONE, rule: FillRule::NonZero }));
+                s.draw_path(p);
+                s.set_fill(None);
+            }
+            s.pop();
+            // The clip in page space, so the children keep their absolute transforms.
+            let mut page_bp = bp.clone();
+            page_bp.apply_affine(xf);
+            let clip = to_path(&page_bp);
+            if let Some(c) = &clip {
+                s.push_clip_path(c, &FillRule::NonZero);
+            }
+            for c in it.children() {
+                self.item(s, c, xf, page_name);
+            }
+            if clip.is_some() {
+                s.pop();
+            }
+            if !it.stroke.is_none()
+                && let Some(p) = &path
+            {
+                s.push_transform(&tf(xf));
+                self.stroke(s, it, &bp, p);
+                s.pop();
+            }
+            for _ in 0..pushes {
+                s.pop();
+            }
+            return;
+        }
         if !it.children().is_empty() {
             let pushes = Self::push_group(s, it.opacity, it.blend);
             for c in it.children() {

@@ -103,6 +103,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:edit.cut",
             "cmd:edit.copy",
             "cmd:edit.paste",
+            "cmd:edit.pasteWithoutFormatting",
+            "cmd:edit.pasteInto",
             "cmd:edit.pasteInPlace",
             "cmd:edit.clear",
             "-",

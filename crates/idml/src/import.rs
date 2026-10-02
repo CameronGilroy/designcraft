@@ -1601,6 +1601,17 @@ impl<'r> Importer<'r> {
             _ => {
                 if let Some(g) = e.elements().find(|c| matches!(c.local(), "Image" | "PDF" | "EPS" | "ImportedPage" | "WMF" | "PICT" | "SVG")) {
                     it.content = self.graphic(g);
+                } else {
+                    // Page items pasted into this frame (Paste Into).
+                    let kids: Vec<Arc<Item>> = e
+                        .elements()
+                        .filter(|c| matches!(c.local(), "Rectangle" | "Oval" | "Polygon" | "GraphicLine" | "Group" | "TextFrame"))
+                        .filter_map(|c| self.item(c, Affine::IDENTITY))
+                        .map(Arc::new)
+                        .collect();
+                    if !kids.is_empty() {
+                        it.content = Content::Group { items: kids };
+                    }
                 }
             }
         }

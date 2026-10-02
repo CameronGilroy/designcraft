@@ -80,6 +80,11 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
                                 if resp.clicked() {
                                     chosen = Some(shown.id);
                                 }
+                                // Double-click a polygon tool: Polygon Settings.
+                                if resp.double_clicked() && matches!(shown.id, "polygon" | "polygonFrame") {
+                                    let cur = app.session.execute("tool.polygonSettings", &json!({})).unwrap_or_default();
+                                    app.ui.dialog = Some(crate::dialogs::Dialog::new("polygonSettings", cur));
+                                }
                                 if g.len() > 1
                                     && (resp.secondary_clicked()
                                         || resp.long_touched()

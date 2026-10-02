@@ -553,8 +553,20 @@ impl Item {
     }
 
     /// Spread-space geometric bounds (axis-aligned box of the transformed path; groups: union).
+    /// A group (its bounds are its children's). A frame holding pasted-into items is not.
+    pub fn is_group(&self) -> bool {
+        self.shape == Shape::Group && matches!(self.content, Content::Group { .. })
+    }
+
+    /// A frame with items pasted into it (Edit › Paste Into): drawn clipped to its path.
+    pub fn has_nested_items(&self) -> bool {
+        self.shape != Shape::Group && matches!(&self.content, Content::Group { items } if !items.is_empty())
+    }
+
     pub fn bounds(&self) -> Rect {
-        if let Content::Group { items } = &self.content {
+        if self.shape == Shape::Group
+            && let Content::Group { items } = &self.content
+        {
             let mut r: Option<Rect> = None;
             for c in items {
                 let b = self.xf.transform_rect_bbox(c.bounds());
