@@ -859,6 +859,23 @@ impl<'r> Importer<'r> {
         a.underline = e.boolean("Underline");
         a.strikethrough = e.boolean("StrikeThru");
         a.ligatures = e.boolean("Ligatures");
+        // Underline / strikethrough options (-9999 = automatic).
+        for k in ["Underline", "StrikeThru"] {
+            let num = |n: &str| e.num(&format!("{k}{n}")).filter(|v| *v > -9000.0);
+            let color = e.prop(&format!("{k}Color")).map(|r| self.swatch_ref(r.trim())).filter(|r| r != "Text Color" && !r.is_empty());
+            let tint = e.num(&format!("{k}Tint")).filter(|v| *v >= 0.0).map(|v| (v / 100.0) as f32);
+            if k == "Underline" {
+                a.underline_weight = num("Weight").map(Some);
+                a.underline_offset = num("Offset").map(Some);
+                a.underline_color = color;
+                a.underline_tint = tint;
+            } else {
+                a.strikethrough_weight = num("Weight").map(Some);
+                a.strikethrough_offset = num("Offset").map(Some);
+                a.strikethrough_color = color;
+                a.strikethrough_tint = tint;
+            }
+        }
         // OpenType features (only when the element sets any).
         let mut otf_list: Vec<String> = Vec::new();
         let mut any = false;

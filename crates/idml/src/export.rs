@@ -875,6 +875,23 @@ impl<'a> Ex<'a> {
         if let Some(v) = a.ligatures {
             el.set("Ligatures", bool_s(v));
         }
+        for (k, w, o, c, t) in [
+            ("Underline", a.underline_weight, a.underline_offset, &a.underline_color, a.underline_tint),
+            ("StrikeThru", a.strikethrough_weight, a.strikethrough_offset, &a.strikethrough_color, a.strikethrough_tint),
+        ] {
+            if let Some(w) = w {
+                el.set(&format!("{k}Weight"), num(w.unwrap_or(-9999.0)));
+            }
+            if let Some(o) = o {
+                el.set(&format!("{k}Offset"), num(o.unwrap_or(-9999.0)));
+            }
+            if let Some(c) = c.as_ref().filter(|c| !c.is_empty()) {
+                el.set(&format!("{k}Color"), self.sw(c));
+            }
+            if let Some(t) = t {
+                el.set(&format!("{k}Tint"), num(t as f64 * 100.0));
+            }
+        }
         if let Some(list) = &a.otf_features {
             for (tag, _, attr) in designcraft_doc::otf::TOGGLES {
                 el.set(attr, bool_s(designcraft_doc::otf::is_on(list, tag)));

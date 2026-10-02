@@ -46,10 +46,33 @@ pub struct RunStyle {
     pub stroke_weight: f64,
     pub underline: bool,
     pub strikethrough: bool,
+    /// The underline and strikethrough bars (Underline / Strikethrough Options resolved).
+    pub underline_rule: Rule,
+    pub strike_rule: Rule,
     pub skew: f64,
     pub size: f64,
     /// The run's font isn't installed (shown in a substitute; highlighted on screen).
     pub missing_font: bool,
+}
+
+/// An underline or strikethrough bar: its top edge `offset` below the baseline (negative =
+/// above), thickness and colour.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rule {
+    pub offset: f64,
+    pub weight: f64,
+    pub color: String,
+    pub tint: f32,
+}
+
+impl RunStyle {
+    /// The bars this run draws between `x0` and `x1` on a line at `baseline`.
+    pub fn rules(&self, x0: f64, x1: f64, baseline: f64) -> impl Iterator<Item = (&Rule, Rect)> {
+        [(self.underline, &self.underline_rule), (self.strikethrough, &self.strike_rule)]
+            .into_iter()
+            .filter(|(on, _)| *on)
+            .map(move |(_, r)| (r, Rect::new(x0, baseline + r.offset, x1, baseline + r.offset + r.weight)))
+    }
 }
 
 /// A positioned glyph. `x` is absolute in frame inner space; `y` is relative to the line baseline.

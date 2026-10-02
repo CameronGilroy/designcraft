@@ -388,6 +388,17 @@ attr_set! {
         position: Position = Position::Normal,
         underline: bool = false,
         strikethrough: bool = false,
+        /// Underline Options: weight and offset below the baseline (`None` = from the size),
+        /// colour (empty = the text colour) and tint.
+        underline_weight: Option<f64> = None,
+        underline_offset: Option<f64> = None,
+        underline_color: String = String::new(),
+        underline_tint: f32 = 1.0,
+        /// Strikethrough Options: offset above the baseline.
+        strikethrough_weight: Option<f64> = None,
+        strikethrough_offset: Option<f64> = None,
+        strikethrough_color: String = String::new(),
+        strikethrough_tint: f32 = 1.0,
         ligatures: bool = true,
         no_break: bool = false,
         language: String = "English: USA".into(),

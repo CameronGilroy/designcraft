@@ -64,7 +64,7 @@ impl Exporter<'_> {
         if !ft.tables.is_empty() {
             self.tables(s, ft);
         }
-        let mut deco: Vec<(u32, Rect)> = Vec::new();
+        let mut deco: Vec<(designcraft_compose::Rule, Rect)> = Vec::new();
         for l in &ft.lines {
             let gs = &l.glyphs;
             let mut i = 0;
@@ -84,25 +84,18 @@ impl Exporter<'_> {
             // Underline / strikethrough, merged per style along the line.
             for g in gs.iter().filter(|g| g.visible) {
                 let st = &cs.styles[g.style as usize];
-                let w = st.size / 14.0;
-                let mut add = |y: f64| {
-                    let r = Rect::new(g.x, y, g.x + g.adv, y + w);
+                for (rule, r) in st.rules(g.x, g.x + g.adv, l.baseline) {
                     match deco.last_mut() {
-                        Some((si, last)) if *si == g.style && (last.y0 - r.y0).abs() < 1e-6 && (r.x0 - last.x1).abs() < 0.5 => last.x1 = r.x1,
-                        _ => deco.push((g.style, r)),
+                        Some((last_rule, last)) if *last_rule == *rule && (last.y0 - r.y0).abs() < 1e-6 && (r.x0 - last.x1).abs() < 0.5 => {
+                            last.x1 = r.x1
+                        }
+                        _ => deco.push((rule.clone(), r)),
                     }
-                };
-                if st.underline {
-                    add(l.baseline + st.size * 0.12);
-                }
-                if st.strikethrough {
-                    add(l.baseline - st.size * 0.3);
                 }
             }
         }
-        for (si, r) in deco {
-            let st = &cs.styles[si as usize];
-            if let Some(c) = self.swatch_color(&st.fill, st.fill_tint) {
+        for (rule, r) in deco {
+            if let Some(c) = self.swatch_color(&rule.color, rule.tint) {
                 self.fill_rect(s, r, c);
             }
         }

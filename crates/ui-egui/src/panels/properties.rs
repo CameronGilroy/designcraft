@@ -1188,6 +1188,37 @@ pub fn character_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
             c["otfFeatures"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
         ui.menu_button("OpenType", |ui| open_type_menu(app, ui, &features));
     });
+    // Underline / Strikethrough Options.
+    for (key, title) in [("underline", "Underline Options"), ("strikethrough", "Strikethrough Options")] {
+        if !c[key].as_bool().unwrap_or(false) {
+            continue;
+        }
+        egui::CollapsingHeader::new(title).id_salt(key).show(ui, |ui| {
+            let size = c["size"].as_f64().unwrap_or(12.0);
+            let auto_off = if key == "underline" { size * 0.12 } else { size * 0.3 };
+            egui::Grid::new((key, "opts")).num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
+                caption(ui, "Weight");
+                let w = c[format!("{key}Weight")].as_f64().unwrap_or(size / 14.0);
+                if let Some(v) = number(ui, &format!("{key}w"), Some(w), " pt", 60.0, 2) {
+                    let _ = app.run("type.char", json!({"attrs": {format!("{key}Weight"): v.max(0.0)}}));
+                }
+                caption(ui, "Offset");
+                let o = c[format!("{key}Offset")].as_f64().unwrap_or(auto_off);
+                if let Some(v) = number(ui, &format!("{key}o"), Some(o), " pt", 60.0, 2) {
+                    let _ = app.run("type.char", json!({"attrs": {format!("{key}Offset"): v}}));
+                }
+                ui.end_row();
+            });
+            ui.horizontal(|ui| {
+                caption(ui, "Color");
+                let cur = c[format!("{key}Color")].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+                super::swatch_picker(app, ui, &format!("{key}c"), cur.clone(), |app, n| {
+                    let _ = app.run("type.char", json!({"attrs": {format!("{key}Color"): n}}));
+                });
+                ui.label(cur.unwrap_or_else(|| "(Text Color)".into()));
+            });
+        });
+    }
 }
 
 /// The Character panel's OpenType menu: feature toggles, figure styles and stylistic sets.

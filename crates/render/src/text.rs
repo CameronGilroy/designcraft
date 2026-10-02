@@ -25,8 +25,8 @@ pub(crate) struct LineGlyphs {
     pub bounds: Option<Rect>,
     /// Glyph outlines batched per run style.
     pub runs: Vec<(u32, BezPath)>,
-    /// Underline / strikethrough bars.
-    pub decos: Vec<(u32, Rect)>,
+    /// Underline / strikethrough bars: colour swatch, tint, rectangle.
+    pub decos: Vec<(String, f32, Rect)>,
     pub glyphs: usize,
 }
 
@@ -123,14 +123,8 @@ fn build_line(db: &FontDb, cs: &ComposedStory, l: &Line) -> LineGlyphs {
             continue;
         }
         let style = &cs.styles[g.style as usize];
-        if style.underline || style.strikethrough {
-            let w = style.size / 14.0;
-            if style.underline {
-                decos.push((g.style, Rect::new(g.x, l.baseline + style.size * 0.12, g.x + g.adv, l.baseline + style.size * 0.12 + w)));
-            }
-            if style.strikethrough {
-                decos.push((g.style, Rect::new(g.x, l.baseline - style.size * 0.3, g.x + g.adv, l.baseline - style.size * 0.3 + w)));
-            }
+        for (rule, r) in style.rules(g.x, g.x + g.adv, l.baseline) {
+            decos.push((rule.color.clone(), rule.tint, r));
         }
         let outline = db.outline(&g.face, g.gid);
         if outline.elements().is_empty() {
@@ -156,7 +150,7 @@ fn build_line(db: &FontDb, cs: &ComposedStory, l: &Line) -> LineGlyphs {
         let sw = if st.stroke != designcraft_color::swatch::NONE { st.stroke_weight } else { 0.0 };
         bounds = union(bounds, bp.bounding_box().inflate(sw, sw));
     }
-    for (_, r) in &decos {
+    for (_, _, r) in &decos {
         bounds = union(bounds, *r);
     }
     LineGlyphs { bounds, runs, decos, glyphs }
@@ -263,9 +257,11 @@ impl Renderer {
                         ctx.stroke_path(bp);
                     }
                 }
-                for (si, r) in &lg.decos {
-                    ctx.set_paint(fill_of(*si).unwrap_or(peniko::Color::BLACK));
-                    ctx.fill_rect(r);
+                for (sw, tint, r) in &lg.decos {
+                    if let Some(c) = doc.resolve_color(sw, *tint) {
+                        ctx.set_paint(color_of(&c, 1.0));
+                        ctx.fill_rect(r);
+                    }
                 }
             }
         }

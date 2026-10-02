@@ -107,6 +107,18 @@ impl StyleTable<'_> {
             stroke_weight: p.stroke_weight,
             underline: p.underline,
             strikethrough: p.strikethrough,
+            underline_rule: crate::Rule {
+                offset: p.underline_offset.unwrap_or(p.size * 0.12),
+                weight: p.underline_weight.unwrap_or(p.size / 14.0),
+                color: if p.underline_color.is_empty() { p.fill.clone() } else { p.underline_color.clone() },
+                tint: if p.underline_color.is_empty() { p.fill_tint } else { p.underline_tint },
+            },
+            strike_rule: crate::Rule {
+                offset: -p.strikethrough_offset.unwrap_or(p.size * 0.3),
+                weight: p.strikethrough_weight.unwrap_or(p.size / 14.0),
+                color: if p.strikethrough_color.is_empty() { p.fill.clone() } else { p.strikethrough_color.clone() },
+                tint: if p.strikethrough_color.is_empty() { p.fill_tint } else { p.strikethrough_tint },
+            },
             skew: p.skew,
             size: p.size,
             missing_font: *self

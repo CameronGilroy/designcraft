@@ -152,3 +152,33 @@ fn open_type_features_round_trip_through_idml() {
     let after = st.format_after(5).over.otf_features.clone().unwrap_or_default();
     assert!(!designcraft_doc::otf::is_on(&after, "frac") && designcraft_doc::otf::stylistic_sets(&after) == 0, "{after:?}");
 }
+
+#[test]
+fn underline_options_render_and_round_trip() {
+    let mut s = Session::new();
+    s.execute("file.new", &json!({})).unwrap();
+    let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": "Underlined words"})).unwrap();
+    let sid = r["story"].as_u64().unwrap();
+    s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 10})).unwrap();
+    s.execute("type.char", &json!({"attrs": {"underline": true, "underlineWeight": 3, "underlineOffset": 4, "underlineColor": "C=100 M=0 Y=0 K=0"}}))
+        .unwrap();
+    let d = s.doc().unwrap().doc.clone();
+    let cs = designcraft_compose::compose_story(&d, designcraft_doc::StoryId(sid), &Default::default());
+    let st = cs.styles.iter().find(|st| st.underline).unwrap();
+    assert_eq!((st.underline_rule.weight, st.underline_rule.offset), (3.0, 4.0));
+    assert_eq!(st.underline_rule.color, "C=100 M=0 Y=0 K=0");
+    // Drawn in cyan, 4–7 pt under the baseline.
+    let l = &cs.frames[0].lines[0];
+    let mut rr = designcraft_render::Renderer::new();
+    rr.threads = 0;
+    let img = rr.render_page(&d, &s.cache, 0, 1.0, false, &Default::default()).unwrap();
+    let x = l.glyphs[2].x as u32;
+    let p = img.pixel(x, (l.baseline + 5.5) as u32);
+    assert!(p[0] < 80 && p[2] > 150, "cyan underline: {p:?}");
+    let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&d)).unwrap();
+    let story = back.stories.values().find(|x| x.text.starts_with("Underlined")).unwrap();
+    let f = story.format_after(0);
+    assert_eq!(f.over.underline_weight, Some(Some(3.0)));
+    assert_eq!(f.over.underline_offset, Some(Some(4.0)));
+    assert_eq!(f.over.underline_color.as_deref(), Some("C=100 M=0 Y=0 K=0"));
+}
