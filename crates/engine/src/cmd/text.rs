@@ -140,6 +140,15 @@ pub fn specs() -> Vec<CommandSpec> {
             has_text_or_frames,
             change_case
         ),
+        cmd!(
+            "type.openType",
+            "OpenType",
+            [],
+            None,
+            "{feature?: dlig|frac|ordn|swsh|titl|calt|zero|ssNN|any tag, on?: bool (default: toggle), figures?: tabularLining|proportionalOldstyle|proportionalLining|tabularOldstyle|default, stylisticSets?: [1–20]} → {features, figures}",
+            has_text_or_frames,
+            open_type
+        ),
         cmd!(query "type.selectionAttrs", "Selection Attributes", [], None, "{} → resolved character/paragraph attributes at the text selection", has_doc, selection_attrs),
     ]
 }
@@ -511,6 +520,31 @@ fn step_size(s: &mut Session, delta: f64) -> Result<Value> {
     format_chars(s, &json!({"size": (size + delta).clamp(0.1, 1296.0)}))
 }
 
+fn open_type(s: &mut Session, p: &Value) -> Result<Value> {
+    use designcraft_doc::otf;
+    let cur = selection_attrs(s, &json!({}))?;
+    let mut list: Vec<String> =
+        cur["chars"]["otfFeatures"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    if let Some(tag) = p.get("feature").and_then(Value::as_str) {
+        if tag.is_empty() || tag.len() > 4 || !tag.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Err(bad("type.openType", format!("bad feature tag `{tag}`")));
+        }
+        let on = p.get("on").and_then(Value::as_bool).unwrap_or(!otf::is_on(&list, tag));
+        otf::set(&mut list, tag, on);
+    }
+    if let Some(f) = p.get("figures").and_then(Value::as_str)
+        && !otf::set_figures(&mut list, f)
+    {
+        return Err(bad("type.openType", format!("unknown figure style `{f}`")));
+    }
+    if let Some(sets) = p.get("stylisticSets").and_then(Value::as_array) {
+        let mask = sets.iter().filter_map(Value::as_u64).filter(|n| (1..=20).contains(n)).fold(0u32, |m, n| m | 1 << (n - 1));
+        otf::set_stylistic_sets(&mut list, mask);
+    }
+    format_chars(s, &json!({"otfFeatures": list}))?;
+    Ok(json!({"features": list, "figures": otf::figures(&list)}))
+}
+
 fn selection_attrs(s: &mut Session, _p: &Value) -> Result<Value> {
     let st = s.doc()?;
     let targets = format_targets(s);
@@ -646,4 +680,47 @@ fn change_case(s: &mut Session, p: &Value) -> Result<Value> {
         }
         Ok(Value::Null)
     })
+}
+
+#[cfg(test)]
+mod open_type_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn open_type_toggles_reach_the_text() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 300, 200], "content": "text", "text": "Office 1/2 0"})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 12})).unwrap();
+        let r = s.execute("type.openType", &json!({"feature": "dlig"})).unwrap();
+        assert_eq!(r["features"], json!(["dlig"]));
+        let r = s.execute("type.openType", &json!({"feature": "dlig"})).unwrap();
+        assert_eq!(r["features"], json!([]), "toggles off");
+        let r = s.execute("type.openType", &json!({"figures": "proportionalOldstyle", "stylisticSets": [1, 2]})).unwrap();
+        assert_eq!(r["figures"], "proportionalOldstyle");
+        let a = s.execute("type.selectionAttrs", &json!({})).unwrap();
+        let f: Vec<&str> = a["chars"]["otfFeatures"].as_array().unwrap().iter().filter_map(|v| v.as_str()).collect();
+        assert!(f.contains(&"onum") && f.contains(&"ss02"), "{f:?}");
+        assert!(s.execute("type.openType", &json!({"feature": "bad tag!"})).is_err());
+    }
+
+    /// Old-style figures shape to other glyphs than the default lining ones (Source Serif 4).
+    #[test]
+    fn oldstyle_figures_change_the_glyphs() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 300, 200], "content": "text", "text": "2024"})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        let gids = |s: &Session| {
+            let d = &s.doc().unwrap().doc;
+            let cs = designcraft_compose::compose_story(d, sid, &Default::default());
+            cs.frames[0].lines[0].glyphs.iter().map(|g| g.gid).collect::<Vec<_>>()
+        };
+        let lining = gids(&s);
+        s.execute("text.select", &json!({"story": sid.0, "anchor": 0, "focus": 4})).unwrap();
+        s.execute("type.openType", &json!({"figures": "proportionalOldstyle"})).unwrap();
+        assert_ne!(gids(&s), lining);
+    }
 }

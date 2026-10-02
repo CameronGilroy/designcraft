@@ -875,6 +875,16 @@ impl<'a> Ex<'a> {
         if let Some(v) = a.ligatures {
             el.set("Ligatures", bool_s(v));
         }
+        if let Some(list) = &a.otf_features {
+            for (tag, _, attr) in designcraft_doc::otf::TOGGLES {
+                el.set(attr, bool_s(designcraft_doc::otf::is_on(list, tag)));
+            }
+            let fig = designcraft_doc::otf::figures(list);
+            if let Some(f) = designcraft_doc::otf::FIGURES.iter().find(|f| f.0 == fig) {
+                el.set("OTFFigureStyle", f.3);
+            }
+            el.set("OTFStylisticSets", designcraft_doc::otf::stylistic_sets(list).to_string());
+        }
         if let Some(v) = a.no_break {
             el.set("NoBreak", bool_s(v));
         }

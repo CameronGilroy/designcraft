@@ -1184,6 +1184,41 @@ pub fn character_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
         if ui.selectable_label(sup, "T¹").on_hover_text("Superscript").clicked() {
             let _ = app.run("type.char", json!({"attrs": {"position": if sup { "normal" } else { "superscript" }}}));
         }
+        let features: Vec<String> =
+            c["otfFeatures"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+        ui.menu_button("OpenType", |ui| open_type_menu(app, ui, &features));
+    });
+}
+
+/// The Character panel's OpenType menu: feature toggles, figure styles and stylistic sets.
+pub fn open_type_menu(app: &mut DesignApp, ui: &mut egui::Ui, features: &[String]) {
+    use designcraft_doc::otf;
+    ui.set_min_width(220.0);
+    for (tag, label, _) in otf::TOGGLES {
+        let mut on = otf::is_on(features, tag);
+        if ui.checkbox(&mut on, *label).clicked() {
+            let _ = app.run("type.openType", json!({"feature": tag, "on": on}));
+            ui.close();
+        }
+    }
+    ui.separator();
+    let fig = otf::figures(features);
+    for (id, label, ..) in otf::FIGURES {
+        if ui.radio(fig == *id, *label).clicked() {
+            let _ = app.run("type.openType", json!({"figures": id}));
+            ui.close();
+        }
+    }
+    ui.separator();
+    ui.menu_button("Stylistic Sets", |ui| {
+        let mask = otf::stylistic_sets(features);
+        for n in 1..=20u32 {
+            let mut on = mask & (1 << (n - 1)) != 0;
+            if ui.checkbox(&mut on, format!("Set {n}")).clicked() {
+                let sets: Vec<u32> = (1..=20).filter(|k| if *k == n { on } else { mask & (1 << (k - 1)) != 0 }).collect();
+                let _ = app.run("type.openType", json!({"stylisticSets": sets}));
+            }
+        }
     });
 }
 

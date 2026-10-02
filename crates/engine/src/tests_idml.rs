@@ -131,3 +131,24 @@ fn gradient_vector_round_trips_through_idml() {
         assert!((v[k] - w[k]).abs() < 1e-3, "{v:?} vs {w:?}");
     }
 }
+
+#[test]
+fn open_type_features_round_trip_through_idml() {
+    let mut s = Session::new();
+    s.execute("file.new", &json!({})).unwrap();
+    let r = s.execute("frame.create", &json!({"rect": [72, 72, 300, 200], "content": "text", "text": "1/2 Office"})).unwrap();
+    let sid = r["story"].as_u64().unwrap();
+    s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 3})).unwrap();
+    s.execute("type.openType", &json!({"feature": "frac"})).unwrap();
+    s.execute("type.openType", &json!({"figures": "tabularOldstyle", "stylisticSets": [3]})).unwrap();
+    let d = s.doc().unwrap().doc.clone();
+    let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&d)).unwrap();
+    let st = back.stories.values().find(|st| st.text.starts_with("1/2")).unwrap();
+    let f = st.format_after(0).over.otf_features.clone().unwrap_or_default();
+    assert!(designcraft_doc::otf::is_on(&f, "frac"), "{f:?}");
+    assert_eq!(designcraft_doc::otf::figures(&f), "tabularOldstyle");
+    assert_eq!(designcraft_doc::otf::stylistic_sets(&f), 0b100);
+    // Text after the selection has no features of its own.
+    let after = st.format_after(5).over.otf_features.clone().unwrap_or_default();
+    assert!(!designcraft_doc::otf::is_on(&after, "frac") && designcraft_doc::otf::stylistic_sets(&after) == 0, "{after:?}");
+}

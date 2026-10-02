@@ -859,6 +859,28 @@ impl<'r> Importer<'r> {
         a.underline = e.boolean("Underline");
         a.strikethrough = e.boolean("StrikeThru");
         a.ligatures = e.boolean("Ligatures");
+        // OpenType features (only when the element sets any).
+        let mut otf_list: Vec<String> = Vec::new();
+        let mut any = false;
+        for (tag, _, attr) in designcraft_doc::otf::TOGGLES {
+            if let Some(on) = e.boolean(attr) {
+                designcraft_doc::otf::set(&mut otf_list, tag, on);
+                any = true;
+            }
+        }
+        if let Some(fig) = e.prop("OTFFigureStyle")
+            && let Some((id, ..)) = designcraft_doc::otf::FIGURES.iter().find(|f| f.3 == fig.trim())
+        {
+            designcraft_doc::otf::set_figures(&mut otf_list, id);
+            any = true;
+        }
+        if let Some(m) = e.num("OTFStylisticSets") {
+            designcraft_doc::otf::set_stylistic_sets(&mut otf_list, m.max(0.0) as u32);
+            any = true;
+        }
+        if any {
+            a.otf_features = Some(otf_list);
+        }
         a.no_break = e.boolean("NoBreak");
         a.language = e.prop("AppliedLanguage").map(|l| l.trim().trim_start_matches("$ID/").to_string());
         a
