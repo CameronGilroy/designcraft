@@ -155,3 +155,28 @@ fn scissors_tool_cuts_where_clicked() {
     let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 150.0 + off.x, 100.0 + off.y));
     assert_eq!(a, vec![Action::Exec("path.split".into(), serde_json::json!({"id": fid.0, "at": [150.0, 100.0]}))]);
 }
+
+#[test]
+fn pencil_draws_a_smooth_path() {
+    let d = Document::new(&NewDocument::default());
+    let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
+    let cx = ctx(&d, &s, &c, &l);
+    let off = l.offset(SpreadRef::Doc(0));
+    let mut t = create("pencil");
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 100.0 + off.x, 100.0 + off.y));
+    for i in 1..=90 {
+        let a = (i as f64 * 2.0).to_radians();
+        t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 100.0 + 50.0 * a.sin() + off.x, 100.0 + 50.0 * (1.0 - a.cos()) + off.y));
+    }
+    assert!(t.busy());
+    let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 150.0 + off.x, 150.0 + off.y));
+    match &a[..] {
+        [Action::Exec(cmd, p)] => {
+            assert_eq!(cmd, "path.create");
+            let n = p["anchors"].as_array().unwrap().len();
+            assert!((3..30).contains(&n), "{n} anchors");
+            assert_eq!(p["anchors"][0]["p"], serde_json::json!([100.0, 100.0]));
+        }
+        other => panic!("{other:?}"),
+    }
+}

@@ -15,6 +15,7 @@ mod gradient;
 pub mod layout;
 mod nav;
 mod pen;
+mod pencil;
 pub mod select;
 pub mod snap;
 mod text;
@@ -260,6 +261,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "type" => Box::new(text::TypeTool::default()),
         "pen" => Box::new(pen::PenTool::default()),
         "gradientSwatch" => Box::new(gradient::GradientTool::default()),
+        "pencil" => Box::new(pencil::PencilTool::default()),
         "addAnchor" => Box::new(anchors::AnchorTool::new(anchors::Kind::Add)),
         "deleteAnchor" => Box::new(anchors::AnchorTool::new(anchors::Kind::Delete)),
         "convertDirection" => Box::new(anchors::AnchorTool::new(anchors::Kind::Convert)),
