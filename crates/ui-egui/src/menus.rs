@@ -528,7 +528,30 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 f["verticalUnits"] = doc["verticalUnits"].clone();
                 let inc = doc["keyboardIncrement"].as_f64().unwrap_or(1.0);
                 f["keyboardIncrement"] = json!(designcraft_geom::format_measure(inc, designcraft_geom::Unit::Points));
+                let units = app.session.active().map(|d| d.doc.settings.horizontal_units).unwrap_or_default();
+                let m = |v: &Value| json!(designcraft_geom::format_measure(v.as_f64().unwrap_or(0.0), units));
+                let (bg, g) = (&doc["baselineGrid"], &doc["grid"]);
+                f["bg.start"] = m(&bg["start"]);
+                f["bg.increment"] = m(&bg["increment"]);
+                f["bg.relativeTo"] = bg["relativeTo"].clone();
+                f["bg.viewThreshold"] = json!((bg["viewThreshold"].as_f64().unwrap_or(0.75) * 100.0).round());
+                f["bg.color"] = bg["color"].clone();
+                f["grid.horizontal"] = m(&g["horizontal"]);
+                f["grid.vertical"] = m(&g["vertical"]);
+                f["grid.subdivisions"] = g["subdivisions"].clone();
+                f["grid.inBack"] = g["inBack"].clone();
+                f["grid.color"] = g["color"].clone();
+                for k in ["marginColor", "columnColor", "bleedColor", "slugColor"] {
+                    f[k] = doc[k].clone();
+                }
+                f["pasteboard.h"] = m(&doc["pasteboard"][0]);
+                f["pasteboard.v"] = m(&doc["pasteboard"][1]);
             }
+            f["displayQuality"] = json!(match app.ui.display_quality {
+                designcraft_render::DisplayQuality::Fast => "fast",
+                designcraft_render::DisplayQuality::Typical => "typical",
+                designcraft_render::DisplayQuality::High => "high",
+            });
             f["section"] = json!("general");
             app.ui.dialog = Some(crate::dialogs::Dialog::new("preferences", f));
             Ok(Value::Null)

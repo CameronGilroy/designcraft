@@ -202,9 +202,16 @@ fn document_setup(ui: &mut egui::Ui, d: &mut Dialog) {
 fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
     let has_doc = d.fields.contains_key("horizontalUnits");
     let sections: &[(&str, &str)] = if has_doc {
-        &[("general", "General"), ("type", "Type"), ("units", "Units & Increments")]
+        &[
+            ("general", "General"),
+            ("type", "Type"),
+            ("units", "Units & Increments"),
+            ("grids", "Grids"),
+            ("guides", "Guides & Pasteboard"),
+            ("display", "Display Performance"),
+        ]
     } else {
-        &[("general", "General"), ("type", "Type")]
+        &[("general", "General"), ("type", "Type"), ("display", "Display Performance")]
     };
     let cur = d.s("section");
     ui.horizontal_top(|ui| {
@@ -226,6 +233,96 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                 "type" => {
                     ui.label(egui::RichText::new("Type Options").font(semibold(12.0)));
                     check(ui, d, "typographersQuotes", "Use Typographer's Quotes");
+                }
+                "grids" => {
+                    ui.label(egui::RichText::new("Baseline Grid").font(semibold(12.0)));
+                    egui::Grid::new("pref_bg").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                        ui.label("Color:");
+                        color_field(ui, d, "bg.color");
+                        ui.end_row();
+                        ui.label("Start:");
+                        text_field(ui, d, "bg.start", 80.0);
+                        ui.end_row();
+                        ui.label("Relative To:");
+                        let cur = d.s("bg.relativeTo");
+                        egui::ComboBox::from_id_salt("bg_rel").selected_text(if cur == "topMargin" { "Top Margin" } else { "Top of Page" }).show_ui(
+                            ui,
+                            |ui| {
+                                for (v, l) in [("topOfPage", "Top of Page"), ("topMargin", "Top Margin")] {
+                                    if ui.selectable_label(cur == v, l).clicked() {
+                                        d.fields.insert("bg.relativeTo".into(), json!(v));
+                                    }
+                                }
+                            },
+                        );
+                        ui.end_row();
+                        ui.label("Increment Every:");
+                        text_field(ui, d, "bg.increment", 80.0);
+                        ui.end_row();
+                        ui.label("View Threshold:");
+                        ui.horizontal(|ui| {
+                            text_field(ui, d, "bg.viewThreshold", 50.0);
+                            ui.label("%");
+                        });
+                        ui.end_row();
+                    });
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Document Grid").font(semibold(12.0)));
+                    egui::Grid::new("pref_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                        ui.label("Color:");
+                        color_field(ui, d, "grid.color");
+                        ui.end_row();
+                        ui.label("Horizontal Gridline Every:");
+                        text_field(ui, d, "grid.horizontal", 80.0);
+                        ui.end_row();
+                        ui.label("Vertical Gridline Every:");
+                        text_field(ui, d, "grid.vertical", 80.0);
+                        ui.end_row();
+                        ui.label("Subdivisions:");
+                        text_field(ui, d, "grid.subdivisions", 50.0);
+                        ui.end_row();
+                    });
+                    check(ui, d, "grid.inBack", "Grids in Back");
+                }
+                "guides" => {
+                    ui.label(egui::RichText::new("Color").font(semibold(12.0)));
+                    egui::Grid::new("pref_guides").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                        for (k, l) in [("marginColor", "Margins:"), ("columnColor", "Columns:"), ("bleedColor", "Bleed:"), ("slugColor", "Slug:")] {
+                            ui.label(l);
+                            color_field(ui, d, k);
+                            ui.end_row();
+                        }
+                    });
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Pasteboard Options").font(semibold(12.0)));
+                    egui::Grid::new("pref_pb").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                        ui.label("Horizontal Margins:");
+                        text_field(ui, d, "pasteboard.h", 80.0);
+                        ui.end_row();
+                        ui.label("Vertical Margins:");
+                        text_field(ui, d, "pasteboard.v", 80.0);
+                        ui.end_row();
+                    });
+                }
+                "display" => {
+                    ui.label(egui::RichText::new("Options").font(semibold(12.0)));
+                    let cur = d.s("displayQuality");
+                    ui.horizontal(|ui| {
+                        ui.label("Default View:");
+                        egui::ComboBox::from_id_salt("pref_dq")
+                            .selected_text(match cur.as_str() {
+                                "fast" => "Fast",
+                                "typical" => "Typical",
+                                _ => "High Quality",
+                            })
+                            .show_ui(ui, |ui| {
+                                for (v, l) in [("fast", "Fast"), ("typical", "Typical"), ("high", "High Quality")] {
+                                    if ui.selectable_label(cur == v, l).clicked() {
+                                        d.fields.insert("displayQuality".into(), json!(v));
+                                    }
+                                }
+                            });
+                    });
                 }
                 "units" => {
                     ui.label(egui::RichText::new("Ruler Units").font(semibold(12.0)));
@@ -260,6 +357,15 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
             }
         });
     });
+}
+
+/// An `[r, g, b]` field edited with a colour button.
+fn color_field(ui: &mut egui::Ui, d: &mut Dialog, key: &str) {
+    let v: [u8; 3] = d.fields.get(key).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or([128, 128, 128]);
+    let mut c = v;
+    if egui::color_picker::color_edit_button_srgb(ui, &mut c).changed() {
+        d.fields.insert(key.into(), json!(c));
+    }
 }
 
 fn check(ui: &mut egui::Ui, d: &mut Dialog, key: &str, label: &str) {
@@ -588,10 +694,45 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
                 "prefs.set",
                 json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "typographersQuotes": d.b("typographersQuotes")}),
             )?;
+            let view = match d.s("displayQuality").as_str() {
+                "fast" => "view.fastDisplay",
+                "typical" => "view.typicalDisplay",
+                _ => "view.highQualityDisplay",
+            };
+            app.run(view, json!({}))?;
             if !d.fields.contains_key("horizontalUnits") {
                 return Ok(Value::Null);
             }
             let mut doc = json!({"horizontalUnits": d.fields["horizontalUnits"], "verticalUnits": d.fields["verticalUnits"]});
+            let mut bg = json!({"relativeTo": d.s("bg.relativeTo"), "color": d.fields.get("bg.color").cloned().unwrap_or(json!([140, 205, 230]))});
+            if let Some(v) = d.m("bg.start") {
+                bg["start"] = json!(v.max(0.0));
+            }
+            if let Some(v) = d.m("bg.increment").filter(|v| *v > 0.0) {
+                bg["increment"] = json!(v);
+            }
+            if let Some(v) = d.n("bg.viewThreshold") {
+                bg["viewThreshold"] = json!((v / 100.0).clamp(0.05, 40.0));
+            }
+            doc["baselineGrid"] = bg;
+            let mut grid = json!({"inBack": d.b("grid.inBack"), "color": d.fields.get("grid.color").cloned().unwrap_or(json!([200, 200, 200]))});
+            for k in ["horizontal", "vertical"] {
+                if let Some(v) = d.m(&format!("grid.{k}")).filter(|v| *v > 0.0) {
+                    grid[k] = json!(v);
+                }
+            }
+            if let Some(v) = d.n("grid.subdivisions") {
+                grid["subdivisions"] = json!(v.clamp(1.0, 100.0) as u32);
+            }
+            doc["grid"] = grid;
+            for k in ["marginColor", "columnColor", "bleedColor", "slugColor"] {
+                if let Some(v) = d.fields.get(k) {
+                    doc[k] = v.clone();
+                }
+            }
+            if let (Some(h), Some(v)) = (d.m("pasteboard.h"), d.m("pasteboard.v")) {
+                doc["pasteboard"] = json!([h.max(0.0), v.max(0.0)]);
+            }
             if let Some(v) = d.fields.get("keyboardIncrement").and_then(Value::as_str).and_then(|s| parse_measure(s, Unit::Points).ok()) {
                 doc["keyboardIncrement"] = json!(v.max(0.001));
             }
