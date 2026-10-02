@@ -35,6 +35,7 @@ impl Story {
         out.anchors = self.anchors[span(ANCHOR_MARK)].to_vec();
         out.xrefs = self.xrefs[span(XREF_MARK)].to_vec();
         out.index_refs = self.index_refs[span(INDEX_MARK)].to_vec();
+        out.objects = self.objects[span(crate::anchored::OBJECT_MARK)].to_vec();
         for p in &out.paras {
             if let Some(id) = p.table
                 && let Some(t) = self.tables.get(&id)
@@ -75,6 +76,12 @@ impl Story {
         // Payloads of footnotes, cross-references and index markers, in order.
         let first = |m: char| self.text[..pos].matches(m).count();
         let (nf, nx, ni, na) = (first(FOOTNOTE_REF), first(XREF_MARK), first(INDEX_MARK), first(ANCHOR_MARK));
+        let no = first(crate::anchored::OBJECT_MARK);
+        for (k, o) in src.objects.iter().enumerate() {
+            if let Some(slot) = self.objects.get_mut(no + k) {
+                *slot = o.clone();
+            }
+        }
         for (k, n) in src.notes.iter().enumerate() {
             if let Some(slot) = self.notes.get_mut(nf + k) {
                 let id = slot.id;

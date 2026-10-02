@@ -75,6 +75,20 @@ pub struct SubstCtx {
     pub note_style: Option<String>,
     /// Cross-reference texts by story byte of the cross-reference mark.
     pub xrefs: HashMap<usize, String>,
+    /// Anchored objects by story byte of their mark.
+    pub objects: HashMap<usize, ObjectSpec>,
+}
+
+/// Size and placement of an anchored object for line layout.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ObjectSpec {
+    pub index: usize,
+    pub w: f64,
+    pub h: f64,
+    /// Inline: raise above the baseline. Above line: None.
+    pub y_offset: Option<f64>,
+    /// Above line: space before + after.
+    pub space: f64,
 }
 
 pub(crate) struct StyleTable<'a> {
@@ -227,6 +241,7 @@ fn shape_run(
                 | designcraft_doc::XREF_MARK
                 | designcraft_doc::ANCHOR_MARK
                 | designcraft_doc::INDEX_MARK
+                | designcraft_doc::OBJECT_MARK
         ) || designcraft_doc::vars::var_index(c).is_some();
         if special {
             flush(seg_start, i, &seg_face, out);
@@ -250,6 +265,26 @@ fn shape_run(
                         sub.page_name.clone().unwrap_or_else(|| "#".into())
                     };
                     shape_segment(db, text, i..i + c.len_utf8(), Some(&s), p, &primary, auto_leading, style, out);
+                }
+                designcraft_doc::OBJECT_MARK => {
+                    let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
+                    if let Some(o) = sub.objects.get(&i) {
+                        let auto = matches!(p.leading, Leading::Auto);
+                        match o.y_offset {
+                            // Sits on the baseline like a (big) character.
+                            Some(y) => {
+                                g.adv = o.w;
+                                g.ascent = g.ascent.max(o.h + y);
+                                g.descent = g.descent.max(-y);
+                            }
+                            // Pushes its line down by its height and spacing.
+                            None => g.ascent += o.h + o.space,
+                        }
+                        if auto || o.y_offset.is_none() {
+                            g.leading = g.leading.max(g.ascent + g.descent);
+                        }
+                    }
+                    out.push(g);
                 }
                 designcraft_doc::XREF_MARK => match sub.xrefs.get(&i).filter(|t| !t.is_empty()) {
                     Some(t) => shape_segment(db, text, i..i + c.len_utf8(), Some(t), p, &primary, auto_leading, style, out),

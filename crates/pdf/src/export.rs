@@ -485,6 +485,19 @@ impl Exporter<'_> {
         for _ in 0..pushes {
             s.pop();
         }
+        // Anchored objects in the frame's text.
+        if let Content::Text(tfr) = &it.content
+            && let Some(st) = doc.story(tfr.story).filter(|st| !st.objects.is_empty())
+        {
+            let cs = self.cache.get(doc, tfr.story, page_name);
+            if let Some(ft) = cs.frame(it.id) {
+                for o in &ft.objects {
+                    if let Some(obj) = st.objects.get(o.index) {
+                        self.item(s, &obj.item, xf * Affine::translate(o.origin.to_vec2()), page_name);
+                    }
+                }
+            }
+        }
     }
 
     /// A swatch fill (solid or gradient) in the item's inner space. `None` for [None]/unknown.

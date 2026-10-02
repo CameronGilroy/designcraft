@@ -8,6 +8,7 @@
 //! x = 0 with their tops at y = 0. Items live in spread space via `Item::xf`.
 #![forbid(unsafe_code)]
 
+pub mod anchored;
 pub mod attrs;
 pub mod build;
 mod edit;
@@ -27,6 +28,7 @@ pub mod xref;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+pub use anchored::{AnchorPosition, AnchoredObject, OBJECT_MARK};
 pub use attrs::*;
 pub use designcraft_color as color;
 pub use designcraft_geom as geom;

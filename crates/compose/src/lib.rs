@@ -114,6 +114,22 @@ pub struct FrameText {
     pub tables: Vec<TableFrag>,
     /// Footnotes placed at the bottom of this frame's columns.
     pub notes: Vec<PlacedNote>,
+    /// Anchored objects placed in this frame's lines.
+    pub objects: Vec<PlacedObject>,
+}
+
+/// An anchored object placed in the text.
+#[derive(Clone, Debug)]
+pub struct PlacedObject {
+    /// Index in the story's [`Story::objects`].
+    pub index: usize,
+    /// Top-left of the object in frame inner space.
+    pub origin: Point,
+    pub size: (f64, f64),
+    /// The line it sits on (or above).
+    pub line: usize,
+    x: f64,
+    text_ascent: f64,
 }
 
 /// A footnote composed at the bottom of a column.
@@ -358,12 +374,25 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             vars: var_values,
             ..Default::default()
         };
+        if !story.objects.is_empty() {
+            let before = story.text[..prange.start].matches(designcraft_doc::OBJECT_MARK).count();
+            for (k, (i, _)) in story.text[prange.clone()].match_indices(designcraft_doc::OBJECT_MARK).enumerate() {
+                let Some(o) = story.objects.get(before + k) else { continue };
+                let (w, h) = o.size();
+                let (y_offset, space) = match &o.position {
+                    designcraft_doc::AnchorPosition::Inline { y_offset } => (Some(*y_offset), 0.0),
+                    designcraft_doc::AnchorPosition::AboveLine { space_before, space_after, .. } => (None, space_before + space_after),
+                };
+                sub.objects.insert(prange.start + i, shape::ObjectSpec { index: before + k, w, h, y_offset, space });
+            }
+        }
         if !story.xrefs.is_empty() {
             sub.xrefs = xref::texts_in(doc, story, prange.clone(), opts.xrefs.as_deref());
         }
         if notes.active() {
             notes.number_refs(doc, prange.clone(), cur_frame.and_then(|f| f.page), &mut sub);
         }
+        let sub_objects = sub.objects.clone();
         let mut table = StyleTable { styles: &mut styles_tab };
         let mut sp = shape::shape_para(db, &doc.styles, story, pi, prange.clone(), &base_chars, pp.auto_leading, &sub, &mut table);
         match pp.list_type {
@@ -564,6 +593,17 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 for k in line_notes {
                     notes.place(doc, k, cur.fi, cur.col, col_w, f, opts);
                 }
+                if !sub_objects.is_empty() {
+                    let ft = &mut out.frames[cur.fi];
+                    let li = ft.lines.len() - 1;
+                    let text_ascent = line_glyphs.iter().filter(|g| g.ch != designcraft_doc::OBJECT_MARK).map(|g| g.ascent).fold(0.0, f64::max);
+                    let text_ascent = if text_ascent > 0.0 { text_ascent } else { base_chars.size * 0.75 };
+                    for g in ft.lines[li].glyphs.iter().filter(|g| g.len > 0) {
+                        if let Some(o) = sub_objects.get(&g.byte) {
+                            ft.objects.push(PlacedObject { index: o.index, origin: Point::ZERO, size: (o.w, o.h), line: li, x: g.x, text_ascent });
+                        }
+                    }
+                }
                 cur.last_baseline = Some(baseline);
                 cur.last_descent = desc;
                 cur.pending = 0.0;
@@ -665,6 +705,25 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             let now = ft.lines.get(t.line).map_or(b, |l| l.baseline);
             t.shift(now - b);
         }
+        // Anchored objects follow their (finally placed) lines.
+        if !ft.objects.is_empty() {
+            for o in &mut ft.objects {
+                let Some(l) = ft.lines.get(o.line) else { continue };
+                let Some(obj) = story.objects.get(o.index) else { continue };
+                let (w, h) = o.size;
+                o.origin = match &obj.position {
+                    designcraft_doc::AnchorPosition::Inline { y_offset } => Point::new(o.x, l.baseline - y_offset - h),
+                    designcraft_doc::AnchorPosition::AboveLine { align, space_after, .. } => {
+                        let x = match align {
+                            designcraft_doc::anchored::AnchorAlign::Left => l.x0,
+                            designcraft_doc::anchored::AnchorAlign::Center => (l.x0 + l.x1 - w) / 2.0,
+                            designcraft_doc::anchored::AnchorAlign::Right => l.x1 - w,
+                        };
+                        Point::new(x, l.baseline - o.text_ascent - space_after - h)
+                    }
+                };
+            }
+        }
     }
     // Frame ranges for empty frames after the text: start at the end of the text shown.
     let mut last_end = 0;
@@ -742,6 +801,7 @@ impl Snapshot {
             f.lines.truncate(l);
             f.decos.truncate(d);
             f.tables.truncate(t);
+            f.objects.retain(|o| o.line < l);
         }
         *cur = self.cur.clone();
         *list_counter = self.list_counter;

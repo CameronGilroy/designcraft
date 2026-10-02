@@ -55,6 +55,24 @@ fn copy_text(s: &mut Session) -> Result<Option<String>> {
 fn paste_text(s: &mut Session, text: Option<String>, formatted: bool) -> Result<Value> {
     let t = s.doc()?.selection.text.ok_or_else(|| super::bad("edit.paste", "no insertion point"))?;
     let clip = s.text_clipboard.clone();
+    // Items copied last (no text copied since) paste into the text as anchored objects.
+    if formatted
+        && clip.is_none()
+        && t.cell.is_none()
+        && let Some(items) = s.clipboard.clone()
+    {
+        let list: Vec<designcraft_doc::Item> = items.spreads.first().map(|sp| sp.items.iter().map(|i| (**i).clone()).collect()).unwrap_or_default();
+        if !list.is_empty() && list.iter().all(|i| !i.is_text_frame()) {
+            return s.edit(|d, sel| {
+                let st = d.story_mut(t.story).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
+                let r = t.range();
+                st.delete(r.start.min(st.len())..r.end.min(st.len()));
+                let end = super::anchored::anchor_items(d, t.story, r.start, list.clone(), &Default::default())?;
+                sel.text = Some(designcraft_doc::TextSel { anchor: end, focus: end, ..t });
+                Ok(json!({"pos": end, "anchored": list.len()}))
+            });
+        }
+    }
     let use_clip = formatted && clip.as_ref().is_some_and(|(_, p)| text.as_ref().is_none_or(|x| x.replace("\r\n", "\n") == *p));
     // Footnotes, cross-references and tables only paste into story text, not cells or footnotes.
     if use_clip && let Some((slice, _)) = clip {
@@ -184,6 +202,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 return Ok(json!({"text": text}));
             }
             s.clipboard = Some(Arc::new(clip_doc(s)?));
+            s.text_clipboard = None;
             ok()
         }),
         cmd!("edit.cut", "Cut", ["Edit"], Some("Cmd+X"), "{}", has_selection_or_text, |s, p| {

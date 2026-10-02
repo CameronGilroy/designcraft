@@ -268,6 +268,16 @@ impl Renderer {
                 self.draw_text(ctx, f, &n.text, nft, xf * Affine::translate(n.origin.to_vec2()));
             }
         }
+        // Anchored objects ride on their lines.
+        if !ft.objects.is_empty()
+            && let Some(st) = doc.story(cs.story)
+        {
+            for o in &ft.objects {
+                if let Some(obj) = st.objects.get(o.index) {
+                    self.draw_item(ctx, f, &obj.item, xf * Affine::translate(o.origin.to_vec2()), None);
+                }
+            }
+        }
     }
 }
 

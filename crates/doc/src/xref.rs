@@ -208,6 +208,13 @@ impl Story {
                 self.index_refs.insert(k + i, Arc::new(crate::index::IndexRef::default()));
             }
         }
+        let n = text.matches(crate::anchored::OBJECT_MARK).count();
+        if n > 0 {
+            let k = self.marks_before(crate::anchored::OBJECT_MARK, pos);
+            for i in 0..n {
+                self.objects.insert(k + i, Arc::new(crate::anchored::AnchoredObject::default()));
+            }
+        }
     }
 
     /// Insert an index page reference at `pos`.
@@ -220,7 +227,7 @@ impl Story {
 
     /// Keep anchor/xref lists in step with a deletion of `a..b` (before it happens).
     pub(crate) fn marks_deleted(&mut self, a: usize, b: usize) {
-        for mark in [ANCHOR_MARK, XREF_MARK, crate::index::INDEX_MARK] {
+        for mark in [ANCHOR_MARK, XREF_MARK, crate::index::INDEX_MARK, crate::anchored::OBJECT_MARK] {
             let n = self.text[a..b].matches(mark).count();
             if n == 0 {
                 continue;
@@ -230,8 +237,10 @@ impl Story {
                 self.anchors.drain(k..(k + n).min(self.anchors.len()));
             } else if mark == XREF_MARK {
                 self.xrefs.drain(k..(k + n).min(self.xrefs.len()));
-            } else {
+            } else if mark == crate::index::INDEX_MARK {
                 self.index_refs.drain(k..(k + n).min(self.index_refs.len()));
+            } else {
+                self.objects.drain(k..(k + n).min(self.objects.len()));
             }
         }
     }
@@ -256,12 +265,21 @@ impl Story {
         while self.index_refs.len() < n {
             self.index_refs.push(Arc::new(crate::index::IndexRef::default()));
         }
+        let n = self.text.matches(crate::anchored::OBJECT_MARK).count();
+        self.objects.truncate(n);
+        while self.objects.len() < n {
+            self.objects.push(Arc::new(crate::anchored::AnchoredObject::default()));
+        }
     }
 
     pub(crate) fn check_marks(&self) -> Result<(), String> {
         let (a, x) = (self.text.matches(ANCHOR_MARK).count(), self.text.matches(XREF_MARK).count());
         if a != self.anchors.len() || x != self.xrefs.len() {
             return Err(format!("story {}: {a} anchor / {x} xref marks for {} anchors / {} xrefs", self.id.0, self.anchors.len(), self.xrefs.len()));
+        }
+        let o = self.text.matches(crate::anchored::OBJECT_MARK).count();
+        if o != self.objects.len() {
+            return Err(format!("story {}: {o} object marks for {} anchored objects", self.id.0, self.objects.len()));
         }
         let i = self.text.matches(crate::index::INDEX_MARK).count();
         if i != self.index_refs.len() {

@@ -1026,6 +1026,7 @@ impl<'r> Importer<'r> {
             anchors: anchor_list,
             xrefs: xref_list,
             index_refs: index_refs.into_iter().map(Arc::new).collect(),
+            objects: vec![],
         };
         st.fix_notes();
         st.fix_marks();
