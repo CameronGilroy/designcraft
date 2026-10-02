@@ -28,6 +28,15 @@ pub fn specs() -> Vec<CommandSpec> {
             relink
         ),
         cmd!(
+            "links.relinkFolder",
+            "Relink to Folder…",
+            ["Window", "Links"],
+            None,
+            "{dir?: folder to look in (default: each link's own folder), extension?: e.g. \"tif\" (Relink File Extension), assets?: [ids], missingOnly?: bool (default true with `dir`)} → {relinked, notFound: [names]}",
+            has_doc,
+            relink_folder
+        ),
+        cmd!(
             "links.update",
             "Update Link",
             ["Window", "Links"],
@@ -161,6 +170,42 @@ fn relink(s: &mut Session, p: &Value) -> Result<Value> {
     })
 }
 
+fn relink_folder(s: &mut Session, p: &Value) -> Result<Value> {
+    let dir = str_param(p, "dir").map(std::path::PathBuf::from);
+    let ext = str_param(p, "extension").map(|e| e.trim_start_matches('.').to_string());
+    if dir.is_none() && ext.is_none() {
+        return Err(bad("links.relinkFolder", "give `dir` and/or `extension`"));
+    }
+    let missing_only = p.get("missingOnly").and_then(Value::as_bool).unwrap_or(dir.is_some() && ext.is_none());
+    let only: Option<Vec<u64>> = p.get("assets").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect());
+    let d = &s.doc()?.doc;
+    let mut todo: Vec<(AssetId, std::path::PathBuf)> = Vec::new();
+    let mut not_found = Vec::new();
+    for a in d.assets.values() {
+        if only.as_ref().is_some_and(|o| !o.contains(&a.id.0)) || (missing_only && status(a) != "missing") {
+            continue;
+        }
+        let old = std::path::PathBuf::from(a.link.clone().unwrap_or_else(|| a.name.clone()));
+        let mut name = old.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| a.name.clone().into());
+        if let Some(e) = &ext {
+            name = std::path::Path::new(&name).with_extension(e).into_os_string();
+        }
+        let folder = dir.clone().or_else(|| old.parent().map(|p| p.to_path_buf())).unwrap_or_default();
+        let cand = folder.join(&name);
+        if cand.exists() {
+            todo.push((a.id, cand));
+        } else {
+            not_found.push(name.to_string_lossy().to_string());
+        }
+    }
+    let mut n = 0;
+    for (aid, path) in todo {
+        relink(s, &json!({"asset": aid.0, "path": path.to_string_lossy()}))?;
+        n += 1;
+    }
+    Ok(json!({"relinked": n, "notFound": not_found}))
+}
+
 fn update(s: &mut Session, p: &Value) -> Result<Value> {
     let d = &s.doc()?.doc;
     let which: Vec<(AssetId, String)> = d
@@ -231,6 +276,38 @@ mod tests {
         assert_eq!(r["ids"].as_array().unwrap().len(), 1);
         s.execute("links.embed", &json!({"asset": aid})).unwrap();
         assert_eq!(s.execute("links.list", &json!({})).unwrap()[0]["status"], "embedded");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod relink_folder_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn relink_missing_links_to_a_folder_and_by_extension() {
+        let dir = std::env::temp_dir().join(format!("dc-relink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("new")).unwrap();
+        let svg =
+            |c: &str| format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="{c}"/></svg>"##);
+        let orig = dir.join("logo.svg");
+        std::fs::write(&orig, svg("red")).unwrap();
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("file.place", &json!({"path": orig.to_string_lossy()})).unwrap();
+        // The file moves away: relink from the new folder.
+        std::fs::rename(&orig, dir.join("new").join("logo.svg")).unwrap();
+        let r = s.execute("links.relinkFolder", &json!({"dir": dir.join("new").to_string_lossy()})).unwrap();
+        assert_eq!(r["relinked"], 1);
+        let link = s.doc().unwrap().doc.assets.values().next().unwrap().link.clone().unwrap();
+        assert!(link.contains("new"), "{link}");
+        // Relink File Extension: the same name as .png doesn't exist → reported.
+        let r = s.execute("links.relinkFolder", &json!({"extension": "png"})).unwrap();
+        assert_eq!(r["relinked"], 0);
+        assert_eq!(r["notFound"], json!(["logo.png"]));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

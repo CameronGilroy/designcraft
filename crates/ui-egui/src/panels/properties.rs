@@ -1587,6 +1587,18 @@ pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
             let _ = app.run("links.embed", json!({"asset": aid}));
         }
     });
+    ui.horizontal(|ui| {
+        // Choose any file in the folder: missing links are looked up there by name.
+        if ui.button("Relink to Folder…").on_hover_text("Pick a file in the folder holding the moved graphics").clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|pick| pick("relink"))
+            && let Some(dir) = std::path::Path::new(&path).parent()
+        {
+            let r = app.run("links.relinkFolder", json!({"dir": dir.to_string_lossy()}));
+            if let Ok(v) = r {
+                app.status(format!("Relinked {}", v["relinked"]));
+            }
+        }
+    });
 }
 
 pub fn info_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
