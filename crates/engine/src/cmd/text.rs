@@ -11,6 +11,15 @@ use crate::{Result, Session};
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(noundo "text.placeCaret", "Place Caret", [], None, "{frame, point: [x,y] (spread coords)} — converts empty frames to text frames", has_doc, |s, p| place(s, p, false)),
+        cmd!(
+            "text.release",
+            "Release",
+            [],
+            None,
+            "{frame, point, moved: bool, copy?: bool} — ends a press in text: a drag that started in the selected text moves (copy: duplicates) it to the point; a click places the caret",
+            has_doc,
+            release
+        ),
         cmd!(noundo "text.extendTo", "Extend Text Selection", [], None, "{frame, point}", has_doc, |s, p| place(s, p, true)),
         cmd!(noundo "text.selectWord", "Select Word", [], None, "{frame, point}", has_doc, |s, p| {
             place(s, p, false)?;
@@ -203,6 +212,15 @@ fn place(s: &mut Session, p: &Value, extend: bool) -> Result<Value> {
         s.execute("object.content", &json!({"ids": [frame.0], "type": "text"}))?;
     }
     let (sid, b, cell) = hit_byte(s, frame, pt).ok_or_else(|| bad("text.placeCaret", "not a text frame"))?;
+    // Drag and drop: a press inside the selected text keeps it (to be dragged).
+    if !extend {
+        s.text_drag = s.doc()?.selection.text.is_some_and(|t| t.story == sid && t.cell == cell && !t.range().is_empty() && t.range().contains(&b));
+        if s.text_drag {
+            return Ok(json!({"story": sid.0, "dragging": true}));
+        }
+    } else if s.text_drag {
+        return Ok(json!({"story": sid.0, "dragging": true}));
+    }
     let st = s.doc_mut()?;
     // Dragging from one cell into another selects cells.
     if extend
@@ -224,6 +242,40 @@ fn place(s: &mut Session, p: &Value, extend: bool) -> Result<Value> {
     st.selection = Selection::text(t);
     st.revision += 1;
     Ok(json!({"story": sid.0, "pos": b, "cell": cell}))
+}
+
+fn release(s: &mut Session, p: &Value) -> Result<Value> {
+    if !std::mem::take(&mut s.text_drag) {
+        return ok();
+    }
+    let frame = id_param(p, "frame").ok_or_else(|| bad("text.release", "missing frame"))?;
+    let pt = point_param(p, "point").unwrap_or(Point::ZERO);
+    if !p.get("moved").and_then(Value::as_bool).unwrap_or(false) {
+        // A click in the selection: the caret goes there.
+        s.doc_mut()?.selection.text = None;
+        return place(s, &json!({"frame": frame.0, "point": [pt.x, pt.y]}), false);
+    }
+    let copy = p.get("copy").and_then(Value::as_bool).unwrap_or(false);
+    let Some(t) = s.doc()?.selection.text else { return ok() };
+    let Some((sid, b, cell)) = hit_byte(s, frame, pt) else { return ok() };
+    let r = t.range();
+    if sid != t.story || cell != t.cell || (r.contains(&b) && !copy) {
+        return ok();
+    }
+    s.edit(|d, sel| {
+        let st = d.text_story_mut(sid, cell).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+        let piece = st.extract(r.clone());
+        let mut at = b;
+        if !copy {
+            st.delete(r.clone());
+            if at > r.start {
+                at -= r.len().min(at - r.start);
+            }
+        }
+        let end = st.insert_story(at, &piece);
+        sel.text = Some(TextSel { story: sid, anchor: at, focus: end, frame: Some(frame), cell });
+        Ok(json!({"moved": piece.text.len(), "at": at}))
+    })
 }
 
 fn insert(s: &mut Session, p: &Value) -> Result<Value> {
@@ -844,5 +896,50 @@ mod nested_style_tests {
         assert_eq!(fill_at(text.find("words").unwrap()), "C=100 M=0 Y=0 K=0");
         assert_eq!(fill_at(text.find("then").unwrap()), "[Black]");
         assert_eq!(fill_at(text.find("2026").unwrap()), "C=0 M=100 Y=0 K=0", "GREP: digits");
+    }
+}
+
+#[cfg(test)]
+mod drag_text_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn drag_selected_text_to_move_or_copy_it() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 500, 200], "content": "text", "text": "Hello brave world"})).unwrap();
+        let (fid, sid) = (r["id"].as_u64().unwrap(), r["story"].as_u64().unwrap());
+        // Spread point of the glyph at byte `b`.
+        let at = |s: &Session, b: usize| {
+            let d = &s.doc().unwrap().doc;
+            let cs = designcraft_compose::compose_story(d, designcraft_doc::StoryId(sid), &Default::default());
+            let l = &cs.frames[0].lines[0];
+            let g = l.glyphs.iter().find(|g| g.byte == b).unwrap();
+            json!([g.x + g.adv * 0.25, l.baseline - 3.0])
+        };
+        let end = |s: &Session| {
+            let d = &s.doc().unwrap().doc;
+            let cs = designcraft_compose::compose_story(d, designcraft_doc::StoryId(sid), &Default::default());
+            let l = &cs.frames[0].lines[0];
+            json!([l.end_x + 2.0, l.baseline - 3.0])
+        };
+        s.execute("text.select", &json!({"story": sid, "anchor": 6, "focus": 12})).unwrap();
+        let r = s.execute("text.placeCaret", &json!({"frame": fid, "point": at(&s, 8)})).unwrap();
+        assert_eq!(r["dragging"], true);
+        s.execute("text.extendTo", &json!({"frame": fid, "point": end(&s)})).unwrap();
+        s.execute("text.release", &json!({"frame": fid, "point": end(&s), "moved": true})).unwrap();
+        let text = |s: &Session| s.doc().unwrap().doc.story(designcraft_doc::StoryId(sid)).unwrap().text.clone();
+        assert_eq!(text(&s), "Hello worldbrave ");
+        // Alt-drag copies (the moved text is still selected).
+        s.execute("text.placeCaret", &json!({"frame": fid, "point": at(&s, 12)})).unwrap();
+        s.execute("text.release", &json!({"frame": fid, "point": at(&s, 0), "moved": true, "copy": true})).unwrap();
+        assert_eq!(text(&s), "brave Hello worldbrave ");
+        // A click inside the selection just places the caret.
+        s.execute("text.placeCaret", &json!({"frame": fid, "point": at(&s, 2)})).unwrap();
+        s.execute("text.release", &json!({"frame": fid, "point": at(&s, 2), "moved": false})).unwrap();
+        let t = s.doc().unwrap().selection.text.unwrap();
+        assert_eq!(t.anchor, t.focus);
     }
 }

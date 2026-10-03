@@ -66,10 +66,19 @@ impl Tool for TypeTool {
                 out
             }
             PointerKind::Up => {
-                self.start = None;
-                self.selecting = None;
+                let start = self.start.take();
                 if std::mem::take(&mut self.drawing) {
+                    self.selecting = None;
                     return vec![Action::Commit];
+                }
+                // Ends a press in text: drops dragged text, or is ignored by the engine.
+                if let Some(fid) = self.selecting.take() {
+                    let sp = cx.layout.spread_at(ev.pos).map(|(_, p)| p).unwrap_or(ev.pos);
+                    let moved = start.is_some_and(|a| (ev.pos - a).hypot() >= cx.tol(3.0));
+                    return vec![Action::Exec(
+                        "text.release".into(),
+                        json!({"frame": fid, "point": [sp.x, sp.y], "moved": moved, "copy": ev.mods.alt}),
+                    )];
                 }
                 vec![]
             }

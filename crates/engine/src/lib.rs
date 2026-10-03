@@ -171,6 +171,8 @@ pub struct Session {
     /// Again), with the selection they were applied to and whether the last one came from a
     /// tool interaction (its previews replace each other).
     pub(crate) transforms: (Vec<(String, Value)>, Vec<designcraft_doc::ItemId>, bool),
+    /// Drag and drop text editing: the press landed in the selected text.
+    pub(crate) text_drag: bool,
 }
 
 impl Default for Session {
@@ -194,6 +196,7 @@ impl Session {
             ui_requests: vec![],
             loaded: None,
             transforms: Default::default(),
+            text_drag: false,
             untitled: 0,
         }
     }
