@@ -77,7 +77,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Place…",
             ["File"],
             Some("Cmd+D"),
-            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options)} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?}",
+            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options)} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) and Excel workbooks (.xlsx, as a table) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?}",
             has_doc,
             file_place
         ),

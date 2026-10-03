@@ -5,7 +5,8 @@ use designcraft_ui_egui::{DesignApp, Inbox, Services};
 use wasm_bindgen::JsCast as _;
 
 const DOC_EXTS: &[&str] = &["designcraft", "idml"];
-const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai", "txt", "docx", "rtf", "md"];
+const IMAGE_EXTS: &[&str] =
+    &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai", "txt", "docx", "rtf", "md", "xlsx"];
 const CANVAS_ID: &str = "designcraft_canvas";
 const LOADING_ID: &str = "designcraft_loading";
 

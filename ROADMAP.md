@@ -51,6 +51,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - File ▸ Print Booklet (`file.printBooklet`): saddle-stitch or 2-up consecutive printer spreads as PDF, padded with blanks, with a gap between pages.
 - Edit ▸ Transparency Blend Space (`edit.transparencyBlendSpace`; RGB for web/mobile documents; IDML TransparencyPreference) — stored; compositing is still RGB on screen and in PDF.
 - High Contrast interface theme (fifth Interface Color Theme: black chrome, white text, yellow selection).
+- Place Excel workbooks (.xlsx): the first worksheet's used range becomes a table (shared/inline strings, numbers, booleans).
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.

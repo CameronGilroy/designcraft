@@ -11,8 +11,8 @@ use crate::{ImportError, Imported, ImportedStyle};
 
 /// A minimal element tree (local names, attributes by local name).
 #[derive(Debug, Default, Clone)]
-struct El {
-    name: String,
+pub(crate) struct El {
+    pub(crate) name: String,
     attrs: Vec<(String, String)>,
     kids: Vec<Node>,
 }
@@ -24,16 +24,16 @@ enum Node {
 }
 
 impl El {
-    fn attr(&self, k: &str) -> Option<&str> {
+    pub(crate) fn attr(&self, k: &str) -> Option<&str> {
         self.attrs.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str())
     }
-    fn els(&self) -> impl Iterator<Item = &El> {
+    pub(crate) fn els(&self) -> impl Iterator<Item = &El> {
         self.kids.iter().filter_map(|n| if let Node::El(e) = n { Some(e) } else { None })
     }
-    fn child(&self, name: &str) -> Option<&El> {
+    pub(crate) fn child(&self, name: &str) -> Option<&El> {
         self.els().find(|e| e.name == name)
     }
-    fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         self.kids
             .iter()
             .map(|n| match n {
@@ -56,7 +56,7 @@ fn local(n: &[u8]) -> String {
     s.rsplit(':').next().unwrap_or(&s).to_string()
 }
 
-fn parse(xml: &str) -> Result<El, ImportError> {
+pub(crate) fn parse(xml: &str) -> Result<El, ImportError> {
     let mut r = quick_xml::Reader::from_str(xml);
     let mut stack: Vec<El> = vec![El::default()];
     loop {
@@ -125,7 +125,7 @@ fn parse(xml: &str) -> Result<El, ImportError> {
     Ok(root.kids.drain(..).find_map(|n| if let Node::El(e) = n { Some(e) } else { None }).unwrap_or_default())
 }
 
-fn part(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option<String> {
+pub(crate) fn part(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option<String> {
     let mut f = zip.by_name(name).ok()?;
     let mut s = String::new();
     f.read_to_string(&mut s).ok()?;

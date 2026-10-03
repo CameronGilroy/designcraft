@@ -86,10 +86,10 @@ fn services() -> Services {
             } else if purpose == "place" {
                 d.add_filter(
                     "Graphics and text",
-                    &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai", "txt", "docx", "rtf", "md"],
+                    &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai", "txt", "docx", "rtf", "md", "xlsx"],
                 )
                 .add_filter("Graphics", &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai"])
-                .add_filter("Text (Word, RTF, plain)", &["docx", "rtf", "txt", "md"])
+                .add_filter("Text (Word, RTF, plain, Excel)", &["docx", "rtf", "txt", "md", "xlsx"])
             } else {
                 d.add_filter("DesignCraft or IDML", &["designcraft", "idml"])
                     .add_filter("DesignCraft", &["designcraft"])
