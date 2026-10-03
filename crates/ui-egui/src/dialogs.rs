@@ -641,6 +641,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "findFont" => "Find/Replace Font",
         "polygonSettings" => "Polygon Settings",
         "userDictionary" => "User Dictionary",
+        "fittingOptions" => "Frame Fitting Options",
         "qrCode" => "Generate QR Code",
         "preferences" => "Preferences",
         "print" => "Print",
@@ -793,6 +794,64 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
             "userDictionary" => user_dictionary(app, ui, &mut d),
+            "fittingOptions" => {
+                check(ui, &mut d, "autoFit", "Auto-Fit");
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new("Content Fitting").font(semibold(12.0)));
+                let cur = d.s("fitting");
+                let label = |v: &str| match v {
+                    "fillProportionally" => "Fill Frame Proportionally",
+                    "fitProportionally" => "Fit Content Proportionally",
+                    "fitContentToFrame" => "Fit Content to Frame",
+                    "centerContent" => "Center Content",
+                    _ => "None",
+                };
+                ui.horizontal(|ui| {
+                    ui.label("Fitting:");
+                    egui::ComboBox::from_id_salt("ff_fit").selected_text(label(&cur)).width(200.0).show_ui(ui, |ui| {
+                        for v in ["none", "fillProportionally", "fitProportionally", "fitContentToFrame", "centerContent"] {
+                            if ui.selectable_label(cur == v, label(v)).clicked() {
+                                d.fields.insert("fitting".into(), json!(v));
+                            }
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Align From:");
+                    let a = d.n("align").unwrap_or(4.0) as u8;
+                    egui::Grid::new("ff_align").spacing([2.0, 2.0]).show(ui, |ui| {
+                        for row in 0..3u8 {
+                            for col in 0..3u8 {
+                                let i = row * 3 + col;
+                                let (r, resp) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::click());
+                                let c = ui.visuals().text_color();
+                                if a == i {
+                                    ui.painter().rect_filled(r.shrink(2.0), 1.0, c);
+                                } else {
+                                    ui.painter().rect_stroke(r.shrink(3.0), 1.0, egui::Stroke::new(1.0, c), egui::StrokeKind::Inside);
+                                }
+                                if resp.clicked() {
+                                    d.fields.insert("align".into(), json!(i));
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+                });
+                ui.label(egui::RichText::new("Crop Amount").font(semibold(12.0)));
+                egui::Grid::new("ff_crop").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
+                    for (k, l) in [("cropTop", "Top:"), ("cropLeft", "Left:")] {
+                        ui.label(l);
+                        text_field(ui, &mut d, k, 70.0);
+                    }
+                    ui.end_row();
+                    for (k, l) in [("cropBottom", "Bottom:"), ("cropRight", "Right:")] {
+                        ui.label(l);
+                        text_field(ui, &mut d, k, 70.0);
+                    }
+                    ui.end_row();
+                });
+            }
             "qrCode" => {
                 let cur = d.s("type");
                 ui.horizontal(|ui| {
@@ -1075,6 +1134,14 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             doc["advancedType"] = adv;
             doc["overprintBlack"] = json!(d.b("overprintBlack"));
             app.run("document.preferences", doc)
+        }
+        "fittingOptions" => {
+            let m = |k: &str| d.fields.get(k).and_then(Value::as_str).and_then(|s| parse_measure(s, Unit::Points).ok()).unwrap_or(0.0);
+            app.run(
+                "object.fittingOptions",
+                json!({"autoFit": d.b("autoFit"), "fitting": d.s("fitting"), "align": d.n("align").unwrap_or(4.0) as u64,
+                    "crop": [m("cropTop"), m("cropLeft"), m("cropBottom"), m("cropRight")]}),
+            )
         }
         "qrCode" => {
             let mut p = Value::Object(d.fields.clone());

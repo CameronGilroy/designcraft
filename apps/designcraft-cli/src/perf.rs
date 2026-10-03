@@ -244,6 +244,8 @@ pub fn synthetic(spec: &Spec) -> Document {
                 size: (nw, nh),
                 xf: Affine::translate((r.x0 + (r.width() - nw * s) / 2.0, r.y0 + (r.height() - nh * s) / 2.0)) * Affine::scale(s),
                 auto_fit: designcraft_doc::Fitting::FillProportionally,
+                fit_align: 4,
+                crop: [0.0; 4],
             });
             if k == 0 && pi == 0 {
                 it.effects.drop_shadow.on = true;

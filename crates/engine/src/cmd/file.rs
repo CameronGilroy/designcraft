@@ -253,6 +253,8 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
                 size: (nw, nh),
                 xf: Affine::translate((r.x0 + (r.width() - gw) / 2.0, r.y0 + (r.height() - gh) / 2.0)) * Affine::scale(k),
                 auto_fit: designcraft_doc::Fitting::FillProportionally,
+                fit_align: 4,
+                crop: [0.0; 4],
             });
             fid
         } else {
@@ -267,6 +269,8 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
                 size: (nw, nh),
                 xf: Affine::translate((x, y)) * Affine::scale(w / nw),
                 auto_fit: Default::default(),
+                fit_align: 4,
+                crop: [0.0; 4],
             });
             d.insert_item(spread, it, None)?;
             id
@@ -361,6 +365,8 @@ fn place_drop(s: &mut Session, p: &Value) -> Result<Value> {
                     size: (nw, nh),
                     xf: Affine::translate((r.x0 + (r.width() - nw * k) / 2.0, r.y0 + (r.height() - nh * k) / 2.0)) * Affine::scale(k),
                     auto_fit: designcraft_doc::Fitting::FillProportionally,
+                    fit_align: 4,
+                    crop: [0.0; 4],
                 });
                 fid
             }
@@ -381,6 +387,8 @@ fn place_drop(s: &mut Session, p: &Value) -> Result<Value> {
                     size: (nw, nh),
                     xf: Affine::translate((frame_r.x0, frame_r.y0)) * Affine::scale(k),
                     auto_fit: Default::default(),
+                    fit_align: 4,
+                    crop: [0.0; 4],
                 });
                 d.insert_item(sr, it, None)?;
                 id

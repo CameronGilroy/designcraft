@@ -376,6 +376,15 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection,
             fit
         ),
+        cmd!(
+            "object.fittingOptions",
+            "Frame Fitting Options…",
+            ["Object", "Fitting"],
+            None,
+            "{autoFit?: bool, fitting?: none|fillProportionally|fitProportionally|fitContentToFrame|centerContent, align?: 0..8 (reference point, 4 = centre), crop?: n | [t, l, b, r] (negative adds space), ids?}",
+            has_selection,
+            fitting_options
+        ),
         cmd!("object.rename", "Rename", [], None, "{id, name}", has_doc, |s, p| {
             let name = str_param(p, "name").unwrap_or("").to_string();
             set_flag(s, p, move |i| i.name = name.clone(), false)
@@ -743,9 +752,16 @@ fn transform_resize(s: &mut Session, p: &Value) -> Result<Value> {
             } else if matches!(it.content, Content::Group { .. }) {
                 it.xf = m * it.xf;
             } else {
-                // Resize the frame's path (in inner space); content keeps its size (InDesign's default).
+                // Resize the frame's path (in inner space); content keeps its size (InDesign's
+                // default) unless the frame auto-fits it.
                 let inner = it.xf.inverse() * m * it.xf;
                 bake(it, inner);
+                let r = it.inner_bounds();
+                if let Content::Graphic(g) = &mut it.content
+                    && let Some(xf) = g.fitted(r, g.auto_fit)
+                {
+                    g.xf = xf;
+                }
             }
         }
         Ok(json!({"resized": ids.len()}))
@@ -1206,6 +1222,65 @@ fn text_frame_options(s: &mut Session, p: &Value) -> Result<Value> {
     })
 }
 
+fn fitting_mode(s: &str) -> Option<designcraft_doc::Fitting> {
+    use designcraft_doc::Fitting as F;
+    Some(match s {
+        "none" => F::None,
+        "fillProportionally" => F::FillProportionally,
+        "fitProportionally" => F::FitProportionally,
+        "fitContentToFrame" => F::FitContentToFrame,
+        "centerContent" => F::CenterContent,
+        _ => return None,
+    })
+}
+
+/// Frame Fitting Options: auto-fit, fitting, align from, crop amounts.
+fn fitting_options(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "object.fittingOptions";
+    let ids = targets(s, p)?;
+    let fitting = match str_param(p, "fitting") {
+        Some(f) => Some(fitting_mode(f).ok_or_else(|| bad(ID, format!("unknown fitting `{f}`")))?),
+        None => None,
+    };
+    let auto = p.get("autoFit").and_then(Value::as_bool);
+    let align = p.get("align").and_then(Value::as_u64).map(|v| v.min(8) as u8);
+    let crop = match p.get("crop") {
+        Some(Value::Array(a)) if a.len() == 4 => Some([0, 1, 2, 3].map(|i| a[i].as_f64().unwrap_or(0.0))),
+        Some(Value::Number(n)) => Some([n.as_f64().unwrap_or(0.0); 4]),
+        Some(v) => return Err(bad(ID, format!("bad `crop`: {v} (n or [t, l, b, r])"))),
+        None => None,
+    };
+    s.edit(|d, _| {
+        let mut n = 0;
+        for id in &ids {
+            let Some(it) = d.item_mut(*id) else { continue };
+            let r = it.inner_bounds();
+            let Content::Graphic(g) = &mut it.content else { continue };
+            if let Some(a) = align {
+                g.fit_align = a;
+            }
+            if let Some(c) = crop {
+                g.crop = c;
+            }
+            let mode = fitting.unwrap_or(g.auto_fit);
+            if let Some(a) = auto {
+                g.auto_fit = if a {
+                    if mode == designcraft_doc::Fitting::None { designcraft_doc::Fitting::FillProportionally } else { mode }
+                } else {
+                    designcraft_doc::Fitting::None
+                };
+            } else if fitting.is_some() && g.auto_fit != designcraft_doc::Fitting::None {
+                g.auto_fit = mode;
+            }
+            if let Some(xf) = g.fitted(r, mode) {
+                g.xf = xf;
+            }
+            n += 1;
+        }
+        Ok(json!({"changed": n}))
+    })
+}
+
 fn fit(s: &mut Session, p: &Value) -> Result<Value> {
     let ids = targets(s, p)?;
     let mode = str_param(p, "mode").unwrap_or("fitProportionally").to_string();
@@ -1216,15 +1291,15 @@ fn fit(s: &mut Session, p: &Value) -> Result<Value> {
             let Content::Graphic(g) = &mut it.content else { continue };
             let (nw, nh) = g.size;
             let cur = g.xf.transform_rect_bbox(Rect::new(0.0, 0.0, nw, nh));
-            match mode.as_str() {
-                "fillProportionally" | "fitProportionally" => {
-                    let k = if mode == "fillProportionally" { (r.width() / nw).max(r.height() / nh) } else { (r.width() / nw).min(r.height() / nh) };
-                    g.xf = Affine::translate((r.x0 + (r.width() - nw * k) / 2.0, r.y0 + (r.height() - nh * k) / 2.0)) * Affine::scale(k);
-                }
-                "fitContentToFrame" => g.xf = Affine::translate((r.x0, r.y0)) * Affine::scale_non_uniform(r.width() / nw, r.height() / nh),
-                "centerContent" => g.xf = Affine::translate(r.center() - cur.center()) * g.xf,
-                "fitFrameToContent" => it.path = shapes::rectangle(cur),
-                _ => return Err(bad("object.fit", format!("unknown mode `{mode}`"))),
+            if mode == "fitFrameToContent" {
+                it.path = shapes::rectangle(cur);
+                continue;
+            }
+            let m = fitting_mode(&mode)
+                .filter(|m| *m != designcraft_doc::Fitting::None)
+                .ok_or_else(|| bad("object.fit", format!("unknown mode `{mode}`")))?;
+            if let Some(xf) = g.fitted(r, m) {
+                g.xf = xf;
             }
         }
         ok()
@@ -1707,5 +1782,42 @@ mod attributes_tests {
         let back = designcraft_idml::import_idml(&bytes).unwrap();
         let it = back.spreads.iter().flat_map(|sp| sp.items.iter()).find(|i| i.fill.overprint).expect("overprint fill survives");
         assert!(it.stroke.gap_overprint);
+    }
+}
+
+#[cfg(test)]
+mod fitting_tests {
+    use super::*;
+
+    #[test]
+    fn frame_fitting_options_align_crop_and_auto_fit() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        // A 40×20 pt image placed into a 200×200 frame.
+        let png = designcraft_render::Rendered { width: 40, height: 20, pixels: vec![200; 40 * 20 * 4] }.to_png();
+        let f = s.execute("frame.create", &json!({"rect": [100, 100, 300, 300]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("file.place", &json!({"base64": super::super::file::base64_encode(&png), "name": "a.png", "frame": f})).unwrap();
+        let content = |s: &Session| {
+            let it = s.doc().unwrap().doc.item(ItemId(f)).unwrap().clone();
+            let Content::Graphic(g) = &it.content else { panic!("graphic") };
+            it.xf.transform_rect_bbox(g.xf.transform_rect_bbox(Rect::new(0.0, 0.0, g.size.0, g.size.1)))
+        };
+        // Fit proportionally from the top-left: 200 wide, 100 high, against the top.
+        s.execute("object.fittingOptions", &json!({"ids": [f], "fitting": "fitProportionally", "align": 0})).unwrap();
+        let c = content(&s);
+        assert!((c.x0 - 100.0).abs() < 1e-6 && (c.y0 - 100.0).abs() < 1e-6 && (c.width() - 200.0).abs() < 1e-6, "{c:?}");
+        // Crop 10 pt on every side: the content spreads past the frame.
+        s.execute("object.fittingOptions", &json!({"ids": [f], "crop": 10, "align": 4})).unwrap();
+        let c = content(&s);
+        assert!((c.width() - 220.0).abs() < 1e-6, "{c:?}");
+        // Auto-fit: resizing the frame refits the content.
+        s.execute("object.fittingOptions", &json!({"ids": [f], "autoFit": true, "fitting": "fillProportionally", "crop": 0})).unwrap();
+        s.execute("transform.resize", &json!({"from": [100, 100, 300, 300], "to": [100, 100, 500, 300], "ids": [f]})).unwrap();
+        let c = content(&s);
+        assert!((c.width() - 400.0).abs() < 1e-6, "fills the wider frame: {c:?}");
+        // IDML keeps the options.
+        let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&s.doc().unwrap().doc)).unwrap();
+        let g = back.spreads.iter().flat_map(|sp| sp.items.iter()).find_map(|i| i.graphic().cloned()).unwrap();
+        assert_eq!(g.auto_fit, designcraft_doc::Fitting::FillProportionally);
     }
 }

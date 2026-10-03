@@ -1887,6 +1887,16 @@ impl<'r> Importer<'r> {
             _ => {
                 if let Some(g) = e.elements().find(|c| matches!(c.local(), "Image" | "PDF" | "EPS" | "ImportedPage" | "WMF" | "PICT" | "SVG")) {
                     it.content = self.graphic(g);
+                    if let (Some(ff), Content::Graphic(gr)) = (e.elements().find(|c| c.local() == "FrameFittingOption"), &mut it.content) {
+                        gr.crop = [ff.num("TopCrop"), ff.num("LeftCrop"), ff.num("BottomCrop"), ff.num("RightCrop")].map(|v| v.unwrap_or(0.0));
+                        gr.fit_align = ff.get("FittingAlignment").map_or(4, names::anchor_in);
+                        if ff.get("AutoFit") == Some("true") {
+                            gr.auto_fit = ff.get("FittingOnEmptyFrame").map_or(designcraft_doc::Fitting::FillProportionally, names::fitting_in);
+                            if gr.auto_fit == designcraft_doc::Fitting::None {
+                                gr.auto_fit = designcraft_doc::Fitting::FillProportionally;
+                            }
+                        }
+                    }
                 } else {
                     // Page items pasted into this frame (Paste Into).
                     let kids: Vec<Arc<Item>> = e
@@ -1939,7 +1949,14 @@ impl<'r> Importer<'r> {
         let id = AssetId(self.alloc());
         let link_path = uri.filter(|p| p.contains('/') || p.contains('\\'));
         self.assets.insert(id, Arc::new(Asset { page: 0, id, name, mime, link: link_path, data: Arc::new(data), pixels }));
-        Content::Graphic(designcraft_doc::Graphic { asset: id, size, xf: gxf * Affine::translate((l, t)), auto_fit: Default::default() })
+        Content::Graphic(designcraft_doc::Graphic {
+            asset: id,
+            size,
+            xf: gxf * Affine::translate((l, t)),
+            auto_fit: Default::default(),
+            fit_align: 4,
+            crop: [0.0; 4],
+        })
     }
 
     fn link_threads(&mut self) {

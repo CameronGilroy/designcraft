@@ -1050,6 +1050,8 @@ mod tests {
             size: (100.0, 100.0),
             xf: Affine::translate((100.0, 100.0)),
             auto_fit: Default::default(),
+            fit_align: 4,
+            crop: [0.0; 4],
         });
         d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
         let cache = Cache::new();

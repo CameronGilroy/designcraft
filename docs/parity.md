@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 80 | 16 | 1 | 91% |
+| P1 | 97 | 82 | 14 | 1 | 92% |
 | P2 | 76 | 23 | 13 | 40 | 39% |
 
 | Area | Parity |
@@ -18,7 +18,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Application shell & workspace | 80% |
 | Documents, pages, spreads | 85% |
 | Layers | 95% |
-| Frames, shapes & paths | 93% |
+| Frames, shapes & paths | 95% |
 | Transform | 100% |
 | Fill, stroke, colour | 93% |
 | Effects & transparency | 71% |
@@ -109,9 +109,9 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Frames, shapes & paths | Text outlines | P1 | D |
 | Frames, shapes & paths | Clipping paths | P2 | M |
 | Frames, shapes & paths | Frame fitting | P0 | D |
-| Frames, shapes & paths | Frame Fitting Options | P1 | P |
+| Frames, shapes & paths | Frame Fitting Options | P1 | D |
 | Frames, shapes & paths | Content grabber, select content/container | P0 | D |
-| Frames, shapes & paths | Auto-fit | P1 | P |
+| Frames, shapes & paths | Auto-fit | P1 | D |
 | Frames, shapes & paths | Step and Repeat | P1 | D |
 | Frames, shapes & paths | Gridify while drawing | P2 | M |
 | Frames, shapes & paths | Gap tool | P2 | M |

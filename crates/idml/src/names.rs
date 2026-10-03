@@ -9,6 +9,48 @@ use designcraft_geom::Unit;
 use designcraft_geom::corners::CornerShape;
 
 /// `%` → `%25`, `:` → `%3a` (IDML Self-id escaping).
+const ANCHORS: [&str; 9] = [
+    "TopLeftAnchor",
+    "TopCenterAnchor",
+    "TopRightAnchor",
+    "LeftCenterAnchor",
+    "CenterAnchor",
+    "RightCenterAnchor",
+    "BottomLeftAnchor",
+    "BottomCenterAnchor",
+    "BottomRightAnchor",
+];
+
+pub fn anchor_out(i: u8) -> &'static str {
+    ANCHORS[(i as usize).min(8)]
+}
+
+pub fn anchor_in(s: &str) -> u8 {
+    ANCHORS.iter().position(|a| *a == s).unwrap_or(4) as u8
+}
+
+pub fn fitting_out(f: designcraft_doc::Fitting) -> &'static str {
+    use designcraft_doc::Fitting as F;
+    match f {
+        F::None => "None",
+        F::FillProportionally => "FillProportionally",
+        F::FitProportionally => "Proportionally",
+        F::FitContentToFrame => "ContentToFrame",
+        F::CenterContent => "CenterContent",
+    }
+}
+
+pub fn fitting_in(s: &str) -> designcraft_doc::Fitting {
+    use designcraft_doc::Fitting as F;
+    match s {
+        "FillProportionally" => F::FillProportionally,
+        "Proportionally" => F::FitProportionally,
+        "ContentToFrame" => F::FitContentToFrame,
+        "CenterContent" => F::CenterContent,
+        _ => F::None,
+    }
+}
+
 pub fn escape_id(s: &str) -> String {
     s.replace('%', "%25").replace(':', "%3a")
 }

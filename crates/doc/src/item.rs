@@ -395,6 +395,51 @@ pub struct Graphic {
     pub xf: Affine,
     #[serde(default)]
     pub auto_fit: Fitting,
+    /// Frame Fitting Options › Align From: the reference point (0–8, row-major; 4 = centre).
+    #[serde(default = "center_ref")]
+    pub fit_align: u8,
+    /// Frame Fitting Options › Crop Amount: top, left, bottom, right (negative adds space).
+    #[serde(default)]
+    pub crop: [f64; 4],
+}
+
+fn center_ref() -> u8 {
+    4
+}
+
+impl Graphic {
+    /// The graphic transform that fits it into `frame` (the frame's inner rect) with `mode`,
+    /// honouring the crop amounts and the reference point.
+    pub fn fitted(&self, frame: Rect, mode: Fitting) -> Option<Affine> {
+        let (nw, nh) = self.size;
+        if nw <= 0.0 || nh <= 0.0 {
+            return None;
+        }
+        let [t, l, b, r] = self.crop;
+        let area = Rect::new(frame.x0 - l, frame.y0 - t, frame.x1 + r, frame.y1 + b);
+        if area.width() <= 0.0 || area.height() <= 0.0 {
+            return None;
+        }
+        let (fx, fy) = ([0.0, 0.5, 1.0][(self.fit_align % 3) as usize], [0.0, 0.5, 1.0][(self.fit_align / 3).min(2) as usize]);
+        let place = |w: f64, h: f64| (area.x0 + (area.width() - w) * fx, area.y0 + (area.height() - h) * fy);
+        Some(match mode {
+            Fitting::None => return None,
+            Fitting::FillProportionally | Fitting::FitProportionally => {
+                let k = if mode == Fitting::FillProportionally {
+                    (area.width() / nw).max(area.height() / nh)
+                } else {
+                    (area.width() / nw).min(area.height() / nh)
+                };
+                Affine::translate(place(nw * k, nh * k)) * Affine::scale(k)
+            }
+            Fitting::FitContentToFrame => Affine::translate((area.x0, area.y0)) * Affine::scale_non_uniform(area.width() / nw, area.height() / nh),
+            Fitting::CenterContent => {
+                let cur = self.xf.transform_rect_bbox(Rect::new(0.0, 0.0, nw, nh));
+                let (x, y) = place(cur.width(), cur.height());
+                Affine::translate((x - cur.x0, y - cur.y0)) * self.xf
+            }
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
