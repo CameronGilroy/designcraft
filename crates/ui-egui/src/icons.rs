@@ -310,6 +310,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.circle(10.0, 10.0, 7.0);
             pen.line(&[(6.5, 10.0), (9.0, 12.5), (13.5, 7.5)]);
         }
+        "panel-attributes" => {
+            // Two overlapping inks: overprint.
+            pen.rect(3.0, 3.0, 13.0, 13.0);
+            pen.rect(7.0, 7.0, 17.0, 17.0);
+        }
         "panel-text-frame" => {
             pen.rect(3.0, 4.0, 17.0, 16.0);
             pen.text(10.0, 10.0, "T", 9.0);

@@ -178,6 +178,9 @@ pub struct Stroke {
     pub gap_swatch: String,
     pub gap_tint: f32,
     pub overprint: bool,
+    /// Overprint Gap (Attributes panel).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gap_overprint: bool,
 }
 
 impl Default for Stroke {
@@ -197,6 +200,7 @@ impl Default for Stroke {
             gap_swatch: designcraft_color::swatch::NONE.into(),
             gap_tint: 1.0,
             overprint: false,
+            gap_overprint: false,
         }
     }
 }

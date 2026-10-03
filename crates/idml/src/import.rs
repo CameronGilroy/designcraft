@@ -1619,6 +1619,7 @@ impl<'r> Importer<'r> {
             s.gap_tint = tint(Some(t)).unwrap_or(1.0);
         }
         s.overprint = g(self, "OverprintStroke").as_deref() == Some("true");
+        s.gap_overprint = g(self, "OverprintGap").as_deref() == Some("true");
         s
     }
 

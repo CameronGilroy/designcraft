@@ -1189,6 +1189,7 @@ impl<'a> Ex<'a> {
         el.set("GapColor", self.sw(&s.gap_swatch));
         el.set("GapTint", pct(s.gap_tint as f64));
         el.set("OverprintStroke", bool_s(s.overprint));
+        el.set("OverprintGap", bool_s(s.gap_overprint));
     }
 
     // ---------- spreads ----------

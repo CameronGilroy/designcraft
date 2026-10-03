@@ -462,6 +462,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:data.merge",
             "<",
             ">Output",
+            "ui:window.panel|Attributes|{\"panel\": \"attributes\"}",
             "cmd:preflight.run",
             "<",
             "-",

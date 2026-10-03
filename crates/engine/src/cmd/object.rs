@@ -161,7 +161,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Stroke",
             [],
             None,
-            "{swatch?, tint?, weight?, align?: center|inside|outside, type?: {kind:…}, cap?: butt|round|projecting, join?: miter|round|bevel, miterLimit?, start?, end?: none|simple|simpleWide|triangle|triangleWide|barbed|curved|circle|circleSolid|square|squareSolid|bar, gapSwatch?, gapTint?, ids?}",
+            "{swatch?, tint?, weight?, align?: center|inside|outside, type?: {kind:…}, cap?: butt|round|projecting, join?: miter|round|bevel, miterLimit?, start?, end?: none|simple|simpleWide|triangle|triangleWide|barbed|curved|circle|circleSolid|square|squareSolid|bar, gapSwatch?, gapTint?, gapOverprint?: bool, ids?}",
             has_selection,
             |s, p| {
                 let p2 = p.clone();
@@ -187,6 +187,9 @@ pub fn specs() -> Vec<CommandSpec> {
                         }
                         if let Some(v) = p2.get("gapTint").and_then(Value::as_f64) {
                             st.gap_tint = v as f32;
+                        }
+                        if let Some(v) = p2.get("gapOverprint").and_then(Value::as_bool) {
+                            st.gap_overprint = v;
                         }
                         for (k, apply) in [("align", 0), ("type", 1), ("cap", 2), ("join", 3), ("start", 4), ("end", 5)] {
                             if let Some(v) = p2.get(k).cloned() {
@@ -423,6 +426,37 @@ pub fn specs() -> Vec<CommandSpec> {
                     s.prefs.star_inset = (v / 100.0).clamp(0.0, 1.0);
                 }
                 Ok(json!({"sides": s.prefs.polygon_sides, "starInset": (s.prefs.star_inset * 100.0).round()}))
+            }
+        ),
+        cmd!(
+            "object.attributes",
+            "Attributes",
+            ["Window", "Output", "Attributes"],
+            None,
+            "{overprintFill?, overprintStroke?, overprintGap?, nonprinting?: bool, ids?} — Attributes panel",
+            has_selection,
+            |s, p| {
+                let b = |k: &str| p.get(k).and_then(Value::as_bool);
+                let (of, os, og, np) = (b("overprintFill"), b("overprintStroke"), b("overprintGap"), b("nonprinting"));
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        if let Some(v) = of {
+                            i.fill.overprint = v;
+                        }
+                        if let Some(v) = os {
+                            i.stroke.overprint = v;
+                        }
+                        if let Some(v) = og {
+                            i.stroke.gap_overprint = v;
+                        }
+                        if let Some(v) = np {
+                            i.nonprinting = v;
+                        }
+                    },
+                    false,
+                )
             }
         ),
         cmd!(
@@ -1653,5 +1687,25 @@ mod transform_values_tests {
         // Scale is relative to what's shown: a frame always shows 100%.
         s.execute("transform.set", &json!({"scaleX": 200, "ids": [b]})).unwrap();
         assert_eq!(info(&mut s, b)["scaleX"], 100.0);
+    }
+}
+
+#[cfg(test)]
+mod attributes_tests {
+    use super::*;
+
+    #[test]
+    fn attributes_panel_flags() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [10, 10, 50, 50]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.attributes", &json!({"overprintFill": true, "overprintGap": true, "nonprinting": true})).unwrap();
+        let it = s.doc().unwrap().doc.item(ItemId(a)).unwrap().clone();
+        assert!(it.fill.overprint && it.stroke.gap_overprint && it.nonprinting && !it.stroke.overprint);
+        // IDML keeps them.
+        let bytes = designcraft_idml::export_idml(&s.doc().unwrap().doc);
+        let back = designcraft_idml::import_idml(&bytes).unwrap();
+        let it = back.spreads.iter().flat_map(|sp| sp.items.iter()).find(|i| i.fill.overprint).expect("overprint fill survives");
+        assert!(it.stroke.gap_overprint);
     }
 }

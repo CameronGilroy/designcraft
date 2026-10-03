@@ -549,6 +549,12 @@ impl Renderer {
         if let Some(g) = gap
             && !matches!(st.align, StrokeAlign::Inside | StrokeAlign::Outside if closed)
         {
+            let op = overprints(f, &st.gap_swatch, st.gap_tint, st.gap_overprint);
+            if op {
+                ctx.set_transform(Affine::IDENTITY);
+                ctx.push_layer(None, Some(BlendMode::new(Mix::Multiply, Compose::SrcOver)), None, None, None);
+                ctx.set_transform(f.view * xf);
+            }
             ctx.set_paint(color_of(&g, 1.0));
             ctx.set_stroke(kurbo::Stroke {
                 dash_pattern: Default::default(),
@@ -557,6 +563,9 @@ impl Renderer {
                 ..stroke.clone()
             });
             ctx.stroke_path(bp);
+            if op {
+                ctx.pop_layer();
+            }
             ctx.set_paint(color_of(&c, 1.0));
         }
         match st.align {
