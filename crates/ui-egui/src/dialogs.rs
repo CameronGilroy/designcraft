@@ -1332,7 +1332,14 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             if !rename.is_empty() && rename != name {
                 params["rename"] = json!(rename);
             }
-            app.run("style.paragraph.edit", params)
+            let r = app.run("style.paragraph.edit", params)?;
+            if d.fields.contains_key("x.tag") {
+                let tag = d.s("x.tag");
+                let tag = if tag == "[Automatic]" { String::new() } else { tag };
+                let style = if !rename.is_empty() && rename != name { rename } else { name };
+                app.run("style.exportTag", json!({"style": style, "tag": tag, "class": d.s("x.class")}))?;
+            }
+            Ok(r)
         }
         "colorPicker" => {
             let hex = d.s("hex");
@@ -1581,6 +1588,7 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
                 ("nested", "Drop Caps and Nested Styles"),
                 ("grep", "GREP Style"),
                 ("color", "Character Color"),
+                ("export", "Export Tagging"),
             ] {
                 if ui.selectable_label(d.s("section") == id, label).clicked() {
                     d.fields.insert("section".into(), json!(id));
@@ -1590,6 +1598,29 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
         ui.separator();
         let cnames: Vec<String> = app.session.active().map(|s| s.doc.styles.character.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
         ui.vertical(|ui| match d.s("section").as_str() {
+            "export" => {
+                ui.label(egui::RichText::new("EPUB and HTML").font(semibold(12.0)));
+                let et = app.session.active().and_then(|s| s.doc.styles.export_tag(&name, false).cloned()).unwrap_or_default();
+                if !d.fields.contains_key("x.tag") {
+                    d.fields.insert("x.tag".into(), json!(if et.tag.is_empty() { "[Automatic]" } else { et.tag.as_str() }));
+                    d.fields.insert("x.class".into(), json!(et.class));
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Tag:");
+                    let cur = d.s("x.tag");
+                    egui::ComboBox::from_id_salt("export_tag").selected_text(&cur).show_ui(ui, |ui| {
+                        for t in ["[Automatic]", "p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "li", "figcaption", "aside", "div"] {
+                            if ui.selectable_label(cur == t, t).clicked() {
+                                d.fields.insert("x.tag".into(), json!(t));
+                            }
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Class:");
+                    text_field(ui, d, "x.class", 160.0);
+                });
+            }
             "nested" => {
                 ui.label(egui::RichText::new("Nested Styles").font(semibold(12.0)));
                 let mut list: Vec<Value> = cur(d, "p.nestedStyles", &pv["nestedStyles"]).as_array().cloned().unwrap_or_default();

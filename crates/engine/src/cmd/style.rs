@@ -9,6 +9,39 @@ use crate::{Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
+        cmd!(
+            "style.exportTag",
+            "Export Tagging",
+            [],
+            None,
+            "{style, character?: bool, tag?: p|h1…h6|blockquote|pre|li|… (span|em|strong|code|sup|sub… for characters; \"\" = automatic), class?} → the tagging",
+            has_doc,
+            |s, p| {
+                let name = str_param(p, "style").ok_or_else(|| bad("style.exportTag", "`style` required"))?.to_string();
+                let character = p.get("character").and_then(Value::as_bool).unwrap_or(false);
+                let exists = if character { s.doc()?.doc.styles.char_style(&name).is_some() } else { s.doc()?.doc.styles.para(&name).is_some() };
+                if !exists {
+                    return Err(bad("style.exportTag", format!("no style `{name}`")));
+                }
+                let key = format!("{}:{name}", if character { "c" } else { "p" });
+                let (tag, class) = (str_param(p, "tag").map(str::to_string), str_param(p, "class").map(str::to_string));
+                s.edit(|d, _| {
+                    let st = d.styles_mut();
+                    let e = st.export_tags.entry(key.clone()).or_default();
+                    if let Some(t) = tag.clone() {
+                        e.tag = t;
+                    }
+                    if let Some(c) = class.clone() {
+                        e.class = c;
+                    }
+                    let out = serde_json::to_value(&*e).unwrap_or_default();
+                    if e.tag.is_empty() && e.class.is_empty() {
+                        st.export_tags.remove(&key);
+                    }
+                    Ok(out)
+                })
+            }
+        ),
         cmd!("style.paragraph.apply", "Apply Paragraph Style", [], None, "{name, clearOverrides?: bool}", has_text_or_frames, apply_para),
         cmd!("style.character.apply", "Apply Character Style", [], None, "{name}", has_text_or_frames, apply_char),
         cmd!(
@@ -1034,5 +1067,32 @@ mod ink_tests {
         assert!(back.inks.resolve("Pantone A").1, "IDML ConvertToProcess");
         assert!(back.inks.aliases.iter().any(|(a, b)| a == "Pantone A" && b == "Pantone B"), "IDML AliasInkName");
         assert!(s.execute("ink.options", &json!({"ink": "[Black]", "toProcess": true})).is_err());
+    }
+}
+
+#[cfg(test)]
+mod export_tag_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn export_tagging_shapes_epub_markup() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("style.paragraph.create", &json!({"name": "Chapter Title", "chars": {"size": 24}})).unwrap();
+        s.execute("style.character.create", &json!({"name": "Key Term", "chars": {"fontStyle": "Bold"}})).unwrap();
+        s.execute("style.exportTag", &json!({"style": "Chapter Title", "tag": "h1", "class": "chapter"})).unwrap();
+        s.execute("style.exportTag", &json!({"style": "Key Term", "character": true, "tag": "strong"})).unwrap();
+        assert!(s.execute("style.exportTag", &json!({"style": "Nope"})).is_err());
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "Origins\nA word"})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 0})).unwrap();
+        s.execute("style.paragraph.apply", &json!({"name": "Chapter Title"})).unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 10, "focus": 14})).unwrap();
+        s.execute("style.character.apply", &json!({"name": "Key Term"})).unwrap();
+        let html = s.execute("file.exportHtml", &json!({})).unwrap()["text"].as_str().unwrap().to_string();
+        assert!(html.contains("<h1 class=\"chapter\">Origins</h1>"), "{html}");
+        assert!(html.contains("<strong class=\"key-term\">word</strong>"), "{html}");
     }
 }

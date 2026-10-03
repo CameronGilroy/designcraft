@@ -203,16 +203,28 @@ fn override_css(doc: &Document, o: &CharAttrs) -> String {
     s.trim_end().to_string()
 }
 
+/// Elements Export Tagging may choose (paragraph or character level).
+fn is_tag(t: &str, character: bool) -> bool {
+    if character {
+        matches!(t, "span" | "em" | "strong" | "i" | "b" | "code" | "sup" | "sub" | "small" | "mark" | "cite" | "q")
+    } else {
+        matches!(t, "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "blockquote" | "pre" | "li" | "figcaption" | "aside" | "div")
+    }
+}
+
 /// One story as XHTML paragraphs.
 pub fn story_html(doc: &Document, sid: StoryId) -> String {
     let Some(st) = doc.story(sid) else { return String::new() };
     let mut out = String::new();
     for (pi, r) in st.para_ranges().iter().enumerate() {
         let pf = &st.paras[pi];
-        let class = slug(&pf.style);
+        // Export Tagging: the style's element and class.
+        let et = doc.styles.export_tag(&pf.style, false);
+        let tag = et.map(|e| e.tag.as_str()).filter(|t| is_tag(t, false)).unwrap_or("p");
+        let class = et.map(|e| e.class.clone()).filter(|c| !c.is_empty()).unwrap_or_else(|| slug(&pf.style));
         let text_empty = st.text[r.clone()].trim().is_empty();
         let rtl = doc.styles.resolve_para(pf).0.direction == designcraft_doc::TextDirection::RightToLeft;
-        let _ = write!(out, "<p class=\"{class}\"{}>", if rtl { " dir=\"rtl\"" } else { "" });
+        let _ = write!(out, "<{tag} class=\"{class}\"{}>", if rtl { " dir=\"rtl\"" } else { "" });
         if text_empty {
             out.push_str("&#160;");
         }
@@ -239,16 +251,22 @@ pub fn story_html(doc: &Document, sid: StoryId) -> String {
             } else {
                 esc(raw)
             };
-            let cls = if f.style != story::NO_CHAR_STYLE { format!(" class=\"{}\"", slug(&f.style)) } else { String::new() };
+            let et = (f.style != story::NO_CHAR_STYLE).then(|| doc.styles.export_tag(&f.style, true)).flatten();
+            let ctag = et.map(|e| e.tag.as_str()).filter(|t| is_tag(t, true)).unwrap_or("span");
+            let cls = if f.style != story::NO_CHAR_STYLE {
+                format!(" class=\"{}\"", et.map(|e| e.class.clone()).filter(|c| !c.is_empty()).unwrap_or_else(|| slug(&f.style)))
+            } else {
+                String::new()
+            };
             let style = override_css(doc, &f.over);
             let style_attr = if style.is_empty() { String::new() } else { format!(" style=\"{style}\"") };
             if cls.is_empty() && style_attr.is_empty() {
                 out.push_str(&t);
             } else {
-                let _ = write!(out, "<span{cls}{style_attr}>{t}</span>");
+                let _ = write!(out, "<{ctag}{cls}{style_attr}>{t}</{ctag}>");
             }
         }
-        out.push_str("</p>\n");
+        let _ = writeln!(out, "</{tag}>");
     }
     out
 }

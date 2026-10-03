@@ -60,6 +60,9 @@ pub struct ObjectStyle {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Styles {
+    /// Export Tagging per style (`p:Name` or `c:Name`): the HTML tag and class for EPUB/HTML.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub export_tags: std::collections::BTreeMap<String, ExportTag>,
     pub paragraph: Vec<ParagraphStyle>,
     pub character: Vec<CharacterStyle>,
     pub object: Vec<ObjectStyle>,
@@ -75,9 +78,28 @@ pub struct Styles {
     pub default_graphic_frame: String,
 }
 
+/// A style's Export Tagging.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportTag {
+    /// HTML element (`p`, `h1`…`h6`, `blockquote`, `pre`, `li` for paragraphs; `span`, `em`,
+    /// `strong`, `code`, `sup`, `sub` for characters). Empty = automatic.
+    pub tag: String,
+    /// CSS class (empty = from the style name).
+    pub class: String,
+}
+
+impl Styles {
+    /// Export tagging of a paragraph (`character` false) or character style.
+    pub fn export_tag(&self, name: &str, character: bool) -> Option<&ExportTag> {
+        self.export_tags.get(&format!("{}:{name}", if character { "c" } else { "p" }))
+    }
+}
+
 impl Default for Styles {
     fn default() -> Self {
         Styles {
+            export_tags: Default::default(),
             paragraph: vec![
                 ParagraphStyle {
                     name: NO_PARA_STYLE.into(),
