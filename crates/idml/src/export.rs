@@ -560,6 +560,18 @@ impl<'a> Ex<'a> {
         for g in gradients {
             root.push(g);
         }
+        for (gi, g) in d.color_groups.iter().enumerate() {
+            let mut el = El::new("ColorGroup")
+                .attr("Self", format!("ColorGroup/{}", escape_id(&g.name)))
+                .attr("Name", &g.name)
+                .attr("IsRootColorGroup", "false");
+            for (k, n) in g.swatches.iter().enumerate() {
+                if let Some(id) = self.swatch_ids.get(n) {
+                    el.push(El::new("ColorGroupSwatch").attr("Self", format!("u{gi}ColorGroupSwatch{k}")).attr("SwatchItemRef", id));
+                }
+            }
+            root.push(el);
+        }
         for s in STROKE_STYLES {
             root.push(El::new("StrokeStyle").attr("Self", format!("StrokeStyle/$ID/{s}")).attr("Name", format!("$ID/{s}")));
         }

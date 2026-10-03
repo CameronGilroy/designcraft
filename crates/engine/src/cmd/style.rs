@@ -126,6 +126,91 @@ pub fn specs() -> Vec<CommandSpec> {
                     return Err(bad("swatch.delete", "special swatches can't be deleted"));
                 }
                 d.swatches.retain(|w| w.name != name);
+                for g in &mut d.color_groups {
+                    g.swatches.retain(|w| *w != name);
+                }
+                ok()
+            })
+        }),
+        cmd!(
+            "swatch.newColorGroup",
+            "New Color Group",
+            [],
+            None,
+            "{name?, swatches?: [names]} — a Swatches panel folder (the swatches move into it) → {name}",
+            has_doc,
+            |s, p| {
+                let names: Vec<String> = p
+                    .get("swatches")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default();
+                let want = str_param(p, "name").map(str::to_string);
+                s.edit(|d, _| {
+                    for n in &names {
+                        if d.swatch(n).is_none_or(|w| w.locked) {
+                            return Err(bad("swatch.newColorGroup", format!("`{n}` can't go in a group")));
+                        }
+                    }
+                    let taken = |n: &str| d.color_groups.iter().any(|g| g.name == n);
+                    let name = match want {
+                        Some(n) if taken(&n) => return Err(bad("swatch.newColorGroup", format!("a group named `{n}` exists"))),
+                        Some(n) => n,
+                        None => (1..).map(|i| format!("Color Group {i}")).find(|n| !taken(n)).expect("free name"),
+                    };
+                    for g in &mut d.color_groups {
+                        g.swatches.retain(|w| !names.contains(w));
+                    }
+                    d.color_groups.push(designcraft_doc::ColorGroup { name: name.clone(), swatches: names });
+                    Ok(json!({"name": name}))
+                })
+            }
+        ),
+        cmd!("swatch.moveToGroup", "Move to Color Group", [], None, "{swatches: [names], group: name | null (top level)}", has_doc, |s, p| {
+            let names: Vec<String> = p
+                .get("swatches")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            let group = str_param(p, "group").map(str::to_string);
+            s.edit(|d, _| {
+                if let Some(g) = &group
+                    && !d.color_groups.iter().any(|x| x.name == *g)
+                {
+                    return Err(bad("swatch.moveToGroup", format!("no color group `{g}`")));
+                }
+                for g in &mut d.color_groups {
+                    g.swatches.retain(|w| !names.contains(w));
+                }
+                if let Some(g) = group.and_then(|g| d.color_groups.iter_mut().find(|x| x.name == g)) {
+                    g.swatches.extend(names.iter().filter(|n| d.swatches.iter().any(|w| w.name == **n && !w.locked)).cloned());
+                }
+                ok()
+            })
+        }),
+        cmd!("swatch.ungroupColorGroup", "Ungroup Color Group", [], None, "{name} — its swatches go back to the top level", has_doc, |s, p| {
+            let name = str_param(p, "name").unwrap_or("").to_string();
+            s.edit(|d, _| {
+                let n = d.color_groups.len();
+                d.color_groups.retain(|g| g.name != name);
+                if d.color_groups.len() == n {
+                    return Err(bad("swatch.ungroupColorGroup", format!("no color group `{name}`")));
+                }
+                ok()
+            })
+        }),
+        cmd!("swatch.renameColorGroup", "Color Group Options", [], None, "{name, to}", has_doc, |s, p| {
+            let (name, to) = (str_param(p, "name").unwrap_or("").to_string(), str_param(p, "to").unwrap_or("").trim().to_string());
+            s.edit(|d, _| {
+                if to.is_empty() || d.color_groups.iter().any(|g| g.name == to) {
+                    return Err(bad("swatch.renameColorGroup", format!("can't rename to `{to}`")));
+                }
+                let g = d
+                    .color_groups
+                    .iter_mut()
+                    .find(|g| g.name == name)
+                    .ok_or_else(|| bad("swatch.renameColorGroup", format!("no color group `{name}`")))?;
+                g.name = to;
                 ok()
             })
         }),
@@ -696,6 +781,13 @@ fn add_to_swatches(s: &mut Session, p: &Value) -> Result<Value> {
         let w = d.swatches.iter_mut().find(|w| w.name == name).expect("found above");
         w.name = new.clone();
         w.named = true;
+        for g in &mut d.color_groups {
+            for w in &mut g.swatches {
+                if *w == name {
+                    *w = new.clone();
+                }
+            }
+        }
         // Everything using the colour follows the rename.
         for sp in d.spreads.iter_mut().chain(d.parents.iter_mut()) {
             let sp = std::sync::Arc::make_mut(sp);
@@ -806,5 +898,41 @@ mod group_sample_tests {
         s.execute("style.group", &json!({"kind": "paragraph", "names": ["Table Head", "Table Body"], "group": "Tables"})).unwrap();
         let after = s.execute("preflight.run", &json!({})).unwrap();
         assert_eq!(after["errors"].as_u64().unwrap(), before, "{after}");
+    }
+}
+
+#[cfg(test)]
+mod color_group_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn color_groups_hold_swatches_and_round_trip() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("swatch.create", &json!({"name": "Brand Red", "color": {"c": 0, "m": 100, "y": 100, "k": 0}})).unwrap()["name"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let b = s.execute("swatch.create", &json!({"name": "Brand Blue", "color": {"c": 100, "m": 60, "y": 0, "k": 0}})).unwrap()["name"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let g = s.execute("swatch.newColorGroup", &json!({"name": "Brand", "swatches": [a]})).unwrap();
+        assert_eq!(g["name"], "Brand");
+        assert!(s.execute("swatch.newColorGroup", &json!({"swatches": ["[Black]"]})).is_err(), "special swatches stay at the top");
+        s.execute("swatch.moveToGroup", &json!({"swatches": [b], "group": "Brand"})).unwrap();
+        let groups = |s: &Session| s.doc().unwrap().doc.color_groups.clone();
+        assert_eq!(groups(&s)[0].swatches, [a.clone(), b.clone()]);
+        let bytes = designcraft_idml::export_idml(&s.doc().unwrap().doc);
+        let back = designcraft_idml::import_idml(&bytes).unwrap();
+        assert_eq!(back.color_groups, groups(&s), "IDML ColorGroup");
+        s.execute("swatch.delete", &json!({"name": b})).unwrap();
+        assert_eq!(groups(&s)[0].swatches, [a.as_str()]);
+        s.execute("swatch.renameColorGroup", &json!({"name": "Brand", "to": "Identity"})).unwrap();
+        s.execute("swatch.ungroupColorGroup", &json!({"name": "Identity"})).unwrap();
+        assert!(groups(&s).is_empty());
+        assert!(s.doc().unwrap().doc.swatch(&a).is_some(), "ungrouping keeps the swatches");
     }
 }

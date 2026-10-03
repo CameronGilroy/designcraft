@@ -131,6 +131,14 @@ impl Default for NumberedList {
     }
 }
 
+/// A Swatches panel colour group: a named folder of swatches (by name).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColorGroup {
+    pub name: String,
+    pub swatches: Vec<String>,
+}
+
 /// Preferences › Advanced Type (stored with the document, like InDesign).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -293,6 +301,10 @@ pub struct Document {
     pub stories: BTreeMap<StoryId, Arc<Story>>,
     pub styles: Arc<Styles>,
     pub swatches: Vec<Swatch>,
+    /// Swatches panel colour groups (folders), in panel order; swatches not in a group sit at
+    /// the top level.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub color_groups: Vec<ColorGroup>,
     pub sections: Vec<Section>,
     #[serde(default)]
     pub assets: BTreeMap<AssetId, Arc<Asset>>,

@@ -97,6 +97,7 @@ struct Importer<'r> {
     hidden_colors: HashMap<String, Color>,
     /// Unnamed swatches (gradients) added on first use.
     hidden_swatches: HashMap<String, Swatch>,
+    color_groups: Vec<designcraft_doc::ColorGroup>,
     styles: Styles,
     para_names: HashMap<String, String>,
     char_names: HashMap<String, String>,
@@ -175,6 +176,7 @@ impl<'r> Importer<'r> {
             swatch_names,
             hidden_colors: HashMap::new(),
             hidden_swatches: HashMap::new(),
+            color_groups: Vec::new(),
             styles,
             para_names: HashMap::new(),
             char_names: HashMap::new(),
@@ -544,6 +546,12 @@ impl<'r> Importer<'r> {
             }
             names.insert(s.name.clone());
             self.swatches.push(s);
+        }
+        // Colour groups other than the root one become Swatches panel folders.
+        for g in top.iter().filter(|e| e.local() == "ColorGroup" && e.get("IsRootColorGroup") != Some("true")) {
+            let swatches: Vec<String> =
+                g.find_all("ColorGroupSwatch").filter_map(|s| s.get("SwatchItemRef")).filter_map(|r| self.swatch_names.get(r).cloned()).collect();
+            self.color_groups.push(designcraft_doc::ColorGroup { name: g.get("Name").unwrap_or("Color Group").to_string(), swatches });
         }
     }
 
@@ -1947,6 +1955,7 @@ impl<'r> Importer<'r> {
             stories: std::mem::take(&mut self.stories).into_iter().map(|(k, v)| (k, Arc::new(v))).collect(),
             styles: Arc::new(std::mem::take(&mut self.styles)),
             swatches: std::mem::take(&mut self.swatches),
+            color_groups: std::mem::take(&mut self.color_groups),
             sections: std::mem::take(&mut self.sections),
             assets: std::mem::take(&mut self.assets),
             hyperlinks: vec![],

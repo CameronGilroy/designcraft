@@ -16,57 +16,60 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(if text { "Applies to text" } else { "Applies to fill" }).size(11.0).color(t.text_dim));
     });
-    // Unnamed colours (mixed in the Color panel) aren't listed until Add to Swatches.
-    for sw in doc.swatches.iter().filter(|w| !w.hidden) {
+    // Unnamed colours (mixed in the Color panel) aren't listed until Add to Swatches; swatches in
+    // colour groups are listed under their folder.
+    let grouped: Vec<&str> = doc.color_groups.iter().flat_map(|g| g.swatches.iter().map(String::as_str)).collect();
+    for sw in doc.swatches.iter().filter(|w| !w.hidden && !grouped.contains(&w.name.as_str())) {
+        swatch_row(app, ui, &doc, sw, 0.0, fill_cur.as_deref(), text);
+    }
+    for g in &doc.color_groups {
+        let open_id = egui::Id::new(("color_group_open", &g.name));
+        let mut open: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(true);
         let (row, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
-        if fill_cur.as_deref() == Some(sw.name.as_str()) {
-            ui.painter().rect_filled(row, 0.0, t.row_selected);
-        } else if resp.hovered() {
+        if resp.hovered() {
             ui.painter().rect_filled(row, 0.0, t.hover);
         }
-        let (c, g) = crate::widgets::swatch_colors(&doc, &sw.name, 1.0);
-        let chip = egui::Rect::from_min_size(row.min + vec2(4.0, 3.0), vec2(16.0, 16.0));
-        crate::widgets::paint_chip(ui.painter(), chip, c, g);
-        ui.painter().text(row.min + vec2(28.0, 11.0), egui::Align2::LEFT_CENTER, &sw.name, egui::FontId::proportional(12.5), t.text);
-        // Type indicators: spot dot / process square, colour mode.
-        let kind = match &sw.value {
-            SwatchValue::Color { color, color_type } => {
-                let m = match color {
-                    designcraft_color::Color::Cmyk { .. } => "CMYK",
-                    designcraft_color::Color::Rgb { .. } => "RGB",
-                    designcraft_color::Color::Gray { .. } => "Gray",
-                };
-                format!("{}{}", if *color_type == ColorType::Spot { "● " } else { "" }, m)
-            }
-            SwatchValue::Gradient { .. } => "Gradient".into(),
-            SwatchValue::Tint { tint, .. } => format!("{:.0}%", tint * 100.0),
-            _ => String::new(),
-        };
-        if sw.locked {
-            icons::paint(
-                ui.painter(),
-                egui::Rect::from_min_size(egui::pos2(row.max.x - 64.0, row.min.y + 4.0), vec2(13.0, 13.0)),
-                "lock",
-                t.text_dim,
-            );
-        }
-        ui.painter().text(row.right_center() - vec2(6.0, 0.0), egui::Align2::RIGHT_CENTER, kind, egui::FontId::proportional(10.5), t.text_dim);
+        icons::paint(
+            ui.painter(),
+            egui::Rect::from_min_size(row.min + vec2(2.0, 3.0), vec2(16.0, 16.0)),
+            if open { "chevron-down" } else { "chevron-right" },
+            t.text_dim,
+        );
+        // A folder.
+        let f = egui::Rect::from_min_size(row.min + vec2(20.0, 5.0), vec2(16.0, 12.0));
+        ui.painter().rect_stroke(f, 1.5, egui::Stroke::new(1.2, t.text_dim), egui::StrokeKind::Inside);
+        ui.painter().line_segment([f.left_top() + vec2(1.0, 3.0), f.right_top() + vec2(-1.0, 3.0)], egui::Stroke::new(1.0, t.text_dim));
+        ui.painter().text(row.min + vec2(42.0, 11.0), egui::Align2::LEFT_CENTER, &g.name, egui::FontId::proportional(12.5), t.text);
         if resp.clicked() {
-            let r = if text { app.run("type.char", json!({"attrs": {"fill": sw.name}})) } else { app.run("object.fill", json!({"swatch": sw.name})) };
-            let _ = r;
+            open = !open;
+            ui.data_mut(|d| d.insert_temp(open_id, open));
         }
-        if resp.secondary_clicked() {
-            let _ = app.run("object.stroke", json!({"swatch": sw.name}));
+        resp.context_menu(|ui| {
+            if ui.button("Ungroup Color Group").clicked() {
+                let _ = app.run("swatch.ungroupColorGroup", json!({"name": g.name}));
+                ui.close();
+            }
+        });
+        if open {
+            for n in &g.swatches {
+                if let Some(sw) = doc.swatches.iter().find(|w| w.name == *n) {
+                    swatch_row(app, ui, &doc, sw, 16.0, fill_cur.as_deref(), text);
+                }
+            }
         }
     }
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Right-click applies to stroke").size(10.5).color(t.text_disabled));
+        ui.label(egui::RichText::new("Right-click: stroke, groups").size(10.5).color(t.text_disabled));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if icons::button(ui, "plus", 20.0, false, "New Swatch").clicked() {
                 let _ = app.run("swatch.create", json!({"color": {"c": 0, "m": 50, "y": 100, "k": 0}}));
             }
             ui.menu_button("☰", |ui| {
+                if ui.button("New Color Group").clicked() {
+                    let _ = app.run("swatch.newColorGroup", json!({}));
+                    ui.close();
+                }
                 if ui.button("Load Swatches…").clicked() {
                     let _ = app.run("app.loadSwatches", json!({}));
                     ui.close();
@@ -77,6 +80,81 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
                 }
             });
         });
+    });
+}
+
+/// One Swatches panel row: chip, name, type; click applies to fill (or text), the context menu
+/// to stroke, colour groups and delete.
+fn swatch_row(
+    app: &mut DesignApp,
+    ui: &mut egui::Ui,
+    doc: &designcraft_doc::Document,
+    sw: &designcraft_color::swatch::Swatch,
+    indent: f32,
+    fill_cur: Option<&str>,
+    text: bool,
+) {
+    let t = Tokens::get(ui.ctx());
+    let (row, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+    if fill_cur == Some(sw.name.as_str()) {
+        ui.painter().rect_filled(row, 0.0, t.row_selected);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(row, 0.0, t.hover);
+    }
+    let (c, g) = crate::widgets::swatch_colors(doc, &sw.name, 1.0);
+    let chip = egui::Rect::from_min_size(row.min + vec2(4.0 + indent, 3.0), vec2(16.0, 16.0));
+    crate::widgets::paint_chip(ui.painter(), chip, c, g);
+    ui.painter().text(row.min + vec2(28.0 + indent, 11.0), egui::Align2::LEFT_CENTER, &sw.name, egui::FontId::proportional(12.5), t.text);
+    // Type indicators: spot dot / process square, colour mode.
+    let kind = match &sw.value {
+        SwatchValue::Color { color, color_type } => {
+            let m = match color {
+                designcraft_color::Color::Cmyk { .. } => "CMYK",
+                designcraft_color::Color::Rgb { .. } => "RGB",
+                designcraft_color::Color::Gray { .. } => "Gray",
+            };
+            format!("{}{}", if *color_type == ColorType::Spot { "● " } else { "" }, m)
+        }
+        SwatchValue::Gradient { .. } => "Gradient".into(),
+        SwatchValue::Tint { tint, .. } => format!("{:.0}%", tint * 100.0),
+        _ => String::new(),
+    };
+    if sw.locked {
+        icons::paint(ui.painter(), egui::Rect::from_min_size(egui::pos2(row.max.x - 64.0, row.min.y + 4.0), vec2(13.0, 13.0)), "lock", t.text_dim);
+    }
+    ui.painter().text(row.right_center() - vec2(6.0, 0.0), egui::Align2::RIGHT_CENTER, kind, egui::FontId::proportional(10.5), t.text_dim);
+    if resp.clicked() {
+        let r = if text { app.run("type.char", json!({"attrs": {"fill": sw.name}})) } else { app.run("object.fill", json!({"swatch": sw.name})) };
+        let _ = r;
+    }
+    resp.context_menu(|ui| {
+        if ui.button("Apply to Stroke").clicked() {
+            let _ = app.run("object.stroke", json!({"swatch": sw.name}));
+            ui.close();
+        }
+        if !sw.locked {
+            ui.menu_button("Move to Color Group", |ui| {
+                if ui.button("(Top Level)").clicked() {
+                    let _ = app.run("swatch.moveToGroup", json!({"swatches": [sw.name], "group": null}));
+                    ui.close();
+                }
+                for g in &doc.color_groups {
+                    if ui.button(&g.name).clicked() {
+                        let _ = app.run("swatch.moveToGroup", json!({"swatches": [sw.name], "group": g.name}));
+                        ui.close();
+                    }
+                }
+            });
+            if ui.button("New Color Group with Swatch").clicked() {
+                let _ = app.run("swatch.newColorGroup", json!({"swatches": [sw.name]}));
+                ui.close();
+            }
+            ui.separator();
+            if ui.button("Delete Swatch").clicked() {
+                let _ = app.run("swatch.delete", json!({"name": sw.name}));
+                ui.close();
+            }
+        }
     });
 }
 
