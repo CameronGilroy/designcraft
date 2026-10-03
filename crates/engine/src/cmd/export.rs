@@ -21,7 +21,7 @@ pub fn specs() -> Vec<CommandSpec> {
         "{path?, title?, language?} — one self-contained page (styles inline, images embedded), stories and graphics in reading order → {path, bytes} (no path: {text, bytes})",
         has_doc, export_html),
         cmd!(noundo "file.exportText", "Export Text…", ["File"], None,
-        "{path?, format?: \"txt\"|\"rtf\" (default from the path, else txt), story?, frame?} — the story being edited or of the selected frame → {path, bytes} (no path: {text, bytes})",
+        "{path?, format?: \"txt\"|\"rtf\"|\"tagged\" (Tagged Text; default from the path, else txt), story?, frame?} — the story being edited or of the selected frame → {path, bytes} (no path: {text, bytes})",
         has_story_target, export_text),
     ]
 }
@@ -71,13 +71,18 @@ fn export_text(s: &mut Session, p: &Value) -> Result<Value> {
     let doc = &s.doc()?.doc;
     let story = doc.stories.get(&sid).ok_or_else(|| bad(ID, format!("no story {}", sid.0)))?;
     let path = str_param(p, "path");
-    let rtf = match str_param(p, "format") {
-        Some("rtf") => true,
-        Some("txt") | Some("text") => false,
-        Some(f) => return Err(bad(ID, format!("unknown format `{f}` (txt, rtf)"))),
-        None => path.is_some_and(|x| x.to_ascii_lowercase().ends_with(".rtf")),
+    let format = match str_param(p, "format") {
+        Some(f @ ("rtf" | "tagged")) => f,
+        Some("txt") | Some("text") => "txt",
+        Some(f) => return Err(bad(ID, format!("unknown format `{f}` (txt, rtf, tagged)"))),
+        None if path.is_some_and(|x| x.to_ascii_lowercase().ends_with(".rtf")) => "rtf",
+        None => "txt",
     };
-    let text = if rtf { designcraft_textimport::export::rtf(doc, story) } else { designcraft_textimport::export::plain_text(story) };
+    let text = match format {
+        "rtf" => designcraft_textimport::export::rtf(doc, story),
+        "tagged" => designcraft_textimport::tagged::tagged_text(doc, story),
+        _ => designcraft_textimport::export::plain_text(story),
+    };
     match path {
         Some(path) => {
             #[cfg(not(target_arch = "wasm32"))]
@@ -528,6 +533,8 @@ mod text_tests {
         assert!(s.execute("file.exportText", &json!({"frame": r["id"]})).unwrap()["text"] == "One\r\nTwo");
         let html = s.execute("file.exportHtml", &json!({})).unwrap();
         assert!(html["text"].as_str().unwrap().contains("One</p>"));
+        let tagged = s.execute("file.exportText", &json!({"frame": r["id"], "format": "tagged"})).unwrap();
+        assert!(tagged["text"].as_str().unwrap().contains("<ParaStyle:"));
         let rtf = s.execute("file.exportText", &json!({"frame": r["id"], "format": "rtf"})).unwrap();
         assert!(rtf["text"].as_str().unwrap().starts_with("{\\rtf1"));
         let dir = std::env::temp_dir().join(format!("dc-export-text-{}", std::process::id()));

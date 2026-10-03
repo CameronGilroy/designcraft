@@ -10,6 +10,7 @@
 mod docx;
 pub mod export;
 mod rtf;
+pub mod tagged;
 mod xlsx;
 
 use designcraft_doc::{CharAttrs, ParaAttrs, Story};
@@ -65,6 +66,9 @@ pub fn import(name: &str, bytes: &[u8]) -> Result<Imported, ImportError> {
     }
     if l.ends_with(".rtf") || bytes.starts_with(b"{\\rtf") {
         return rtf::import(bytes);
+    }
+    if tagged::is_tagged(bytes) {
+        return tagged::import(bytes);
     }
     if l.ends_with(".doc") {
         return Err(ImportError::Unsupported("legacy Word .doc (save it as .docx)".into()));
