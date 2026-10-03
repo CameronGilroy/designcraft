@@ -92,7 +92,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Place…",
             ["File"],
             Some("Cmd+D"),
-            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options), pdfCrop?: crop|trim|bleed|art|media} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) and Excel workbooks (.xlsx, as a table) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?, styleMap?: {imported name: document style}, styleConflicts?: useExisting|redefine|autoRename}",
+            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options), pdfCrop?: crop|trim|bleed|art|media, layoutPage?: n (IDML / .designcraft: that page's objects as a group)} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) and Excel workbooks (.xlsx, as a table) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?, styleMap?: {imported name: document style}, styleConflicts?: useExisting|redefine|autoRename}",
             has_doc,
             file_place
         ),
@@ -214,6 +214,11 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
         s.ui_requests.push(crate::UiRequest::Pick { purpose: "place".into(), params: json!({}) });
         return ok();
     };
+    // A page of another layout (IDML or DesignCraft): its objects, as one group.
+    let lname = name.to_lowercase();
+    if lname.ends_with(".idml") || lname.ends_with(".designcraft") {
+        return place_layout_page(s, p, &name, &bytes);
+    }
     // Text files (plain, Word, RTF) flow into frames.
     if designcraft_textimport::is_text_file(&name) {
         return super::place_text::place_text(s, p, &name, &bytes);
@@ -449,6 +454,56 @@ fn snippet_export(s: &mut Session, p: &Value) -> Result<Value> {
     }
 }
 
+/// File › Place of an IDML or DesignCraft document: the objects of one page (`layoutPage`,
+/// 1-based) grouped, top-left at x/y (default: the source position on the first page).
+fn place_layout_page(s: &mut Session, p: &Value, name: &str, bytes: &[u8]) -> Result<Value> {
+    const ID: &str = "file.place";
+    let src = if name.to_lowercase().ends_with(".idml") {
+        designcraft_idml::import_idml(bytes).map_err(|e| bad(ID, e.to_string()))?
+    } else {
+        from_bytes(bytes)?
+    };
+    let n = src.page_count();
+    let page = p.get("layoutPage").and_then(Value::as_u64).unwrap_or(1) as usize;
+    if page == 0 || page > n {
+        return Err(bad(ID, format!("the document has {n} page(s)")));
+    }
+    let (si, pi) = src.page_loc(page - 1).ok_or_else(|| bad(ID, "no such page"))?;
+    let sp = &src.spreads[si];
+    let pr = sp.pages[pi].bounds();
+    let ids: Vec<ItemId> = sp.items.iter().filter(|it| !it.hidden && sp.page_at_x(it.bounds().center().x) == Some(pi)).map(|it| it.id).collect();
+    if ids.is_empty() {
+        return Err(bad(ID, format!("page {page} has no objects")));
+    }
+    let to = super::spread_param(p, "spread");
+    let off = match (p.get("x").and_then(Value::as_f64), p.get("y").and_then(Value::as_f64)) {
+        (Some(x), Some(y)) => designcraft_geom::Vec2::new(x - pr.x0, y - pr.y0),
+        _ => designcraft_geom::Vec2::new(-pr.x0, -pr.y0),
+    };
+    let placed = s.edit(|d, sel| {
+        for sw in &src.swatches {
+            if d.swatch(&sw.name).is_none() {
+                d.swatches.push(sw.clone());
+            }
+        }
+        let missing_p: Vec<_> = src.styles.paragraph.iter().filter(|ps| d.styles.para(&ps.name).is_none()).cloned().collect();
+        let missing_c: Vec<_> = src.styles.character.iter().filter(|cs| d.styles.char_style(&cs.name).is_none()).cloned().collect();
+        if !missing_p.is_empty() || !missing_c.is_empty() {
+            let st = d.styles_mut();
+            st.paragraph.extend(missing_p);
+            st.character.extend(missing_c);
+        }
+        let new = super::object::duplicate_from(d, &src, &ids, to, off)?;
+        *sel = Selection::items(new.clone());
+        Ok(new)
+    })?;
+    if placed.len() > 1 {
+        let g = s.execute("object.group", &json!({"ids": placed.iter().map(|i| i.0).collect::<Vec<_>>()}))?;
+        return Ok(json!({"id": g["id"], "items": placed.len()}));
+    }
+    Ok(json!({"id": placed[0].0, "items": 1}))
+}
+
 pub(crate) fn snippet_place(s: &mut Session, p: &Value) -> Result<Value> {
     let (bytes, _, _) = read_source(p)?;
     let src = from_bytes(&bytes)?;
@@ -557,5 +612,33 @@ mod pdf_crop_tests {
         assert!((full.width() - 630.0).abs() < 1e-6, "{full:?}");
         assert!((trim.width() - 612.0).abs() < 1e-3 && (trim.height() - 792.0).abs() < 1e-3, "{trim:?}");
         assert!(t.execute("file.place", &json!({"base64": b64, "name": "a.pdf", "pdfCrop": "nope"})).is_err());
+    }
+}
+
+#[cfg(test)]
+mod layout_place_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn place_a_page_of_an_idml_file_as_a_group() {
+        let mut a = Session::new();
+        a.execute("file.new", &json!({"pages": 2})).unwrap();
+        a.execute("frame.create", &json!({"rect": [100, 100, 200, 150], "content": "text", "text": "From page one", "caret": false})).unwrap();
+        a.execute("frame.create", &json!({"rect": [300, 400, 350, 450]})).unwrap();
+        let idml = designcraft_idml::export_idml(&a.doc().unwrap().doc);
+        let b64 = super::base64_encode(&idml);
+        let mut b = Session::new();
+        b.execute("file.new", &json!({})).unwrap();
+        let r = b.execute("file.place", &json!({"base64": b64, "name": "src.idml", "layoutPage": 1, "x": 0, "y": 0})).unwrap();
+        assert_eq!(r["items"], 2);
+        let d = &b.doc().unwrap().doc;
+        let g = d.item(designcraft_doc::ItemId(r["id"].as_u64().unwrap())).unwrap();
+        assert_eq!(g.children().len(), 2, "one group");
+        let bb = g.bounds();
+        assert!((bb.x0 - 100.0).abs() < 1e-6 && (bb.y0 - 100.0).abs() < 1e-6, "page top-left at 0,0: {bb:?}");
+        assert!(d.stories.values().any(|st| st.text == "From page one"), "stories come along");
+        assert!(b.execute("file.place", &json!({"base64": b64, "name": "src.idml", "layoutPage": 2})).is_err(), "page 2 is empty");
     }
 }

@@ -98,7 +98,27 @@ fn services() -> Services {
             } else if purpose == "place" {
                 d.add_filter(
                     "Graphics and text",
-                    &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai", "txt", "docx", "rtf", "md", "xlsx"],
+                    &[
+                        "png",
+                        "jpg",
+                        "jpeg",
+                        "gif",
+                        "webp",
+                        "tif",
+                        "tiff",
+                        "bmp",
+                        "psd",
+                        "svg",
+                        "pdf",
+                        "ai",
+                        "txt",
+                        "docx",
+                        "rtf",
+                        "md",
+                        "xlsx",
+                        "idml",
+                        "designcraft",
+                    ],
                 )
                 .add_filter("Graphics", &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai"])
                 .add_filter("Text (Word, RTF, plain, Excel)", &["docx", "rtf", "txt", "md", "xlsx"])
