@@ -96,6 +96,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Right-to-left text (World-Ready basics): right-to-left runs are shaped right to left, lines are reordered by the Unicode Bidirectional Algorithm (matched against the reference implementation), Paragraph Direction (`type.para {direction}`, Paragraph panel, IDML ParagraphDirection, EPUB `dir`). Kashida justification, caret movement in visual order and digit substitution aren't there yet.
 - Interface language (Edit ▸ Interface Language, `app.language`): German, French, Spanish and Japanese menu titles, common menu items and panel names (our own translations); dialogs and the rest of the UI stay English.
 - Page transitions (`page.transition/transitions`, Page Transitions panel): twelve transition types with speed and direction per spread, written into exported PDFs as `/Trans` entries through an incremental update.
+- PDF/X-4 export (`file.exportPdf {standard: "x4"}`): an output intent with our own Generic CMYK ICC profile (lut16 tables generated from the parametric press model), GTS_PDFXVersion in Info and XMP, and built-in PDF/X-4 checks reported as warnings. qpdf finds no errors in the result.
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.
@@ -153,7 +154,7 @@ four agents in parallel on separate crates:
 
 | Work | Estimate |
 |---|---|
-| Open P0 (3: PDF/X-4 output intent and validation, EPS place, remaining Preferences sections) | 12 h |
+| Open P0 (3: full PDF/X-4 validation against a certified checker, EPS place, remaining Preferences sections) | 9 h |
 | Open P1 (5: New Window, colour management, language support, UI keyboard navigation, …) | 15 h |
 | Open P2 (37: 12 missing — spread rotation, page transitions, vertical/RTL type, math, video/audio, split window, localization, flattener, placed-file layers — and 25 partial) | 110 h |
 | Depth and pixel fidelity of every dialog, panel and menu against InDesign 2026 | 90 h |

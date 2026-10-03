@@ -26,16 +26,16 @@ fn trans_dict(t: &PageTransition) -> String {
     format!("/Trans<</Type/Trans{body}/D {:.2}>>", t.duration.clamp(0.0, 60.0))
 }
 
-fn find(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+pub(crate) fn find(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
     hay.get(from..)?.windows(needle.len()).position(|w| w == needle).map(|i| i + from)
 }
 
-fn rfind(hay: &[u8], needle: &[u8]) -> Option<usize> {
+pub(crate) fn rfind(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).rposition(|w| w == needle)
 }
 
 /// The integer after `key` in `s` (e.g. `/Size 14`, `/Root 13 0 R`).
-fn int_after(s: &str, key: &str) -> Option<usize> {
+pub(crate) fn int_after(s: &str, key: &str) -> Option<usize> {
     let i = s.find(key)? + key.len();
     let rest = s[i..].trim_start();
     let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
@@ -43,7 +43,7 @@ fn int_after(s: &str, key: &str) -> Option<usize> {
 }
 
 /// Byte range of object `id`'s body (between `obj` and `endobj`).
-fn object(pdf: &[u8], id: usize) -> Option<std::ops::Range<usize>> {
+pub(crate) fn object(pdf: &[u8], id: usize) -> Option<std::ops::Range<usize>> {
     let head = format!("\n{id} 0 obj");
     let start = find(pdf, head.as_bytes(), 0)? + head.len();
     let end = find(pdf, b"endobj", start)?;

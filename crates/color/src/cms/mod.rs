@@ -11,6 +11,7 @@
 
 pub mod generic;
 pub mod icc;
+pub mod icc_out;
 pub mod lab;
 
 use std::sync::atomic::{AtomicBool, Ordering};

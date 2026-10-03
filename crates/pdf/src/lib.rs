@@ -30,8 +30,10 @@ mod links;
 mod marks;
 mod text;
 
+mod pdfx;
 mod transitions;
 pub use export::{BookletKind, BookletOptions, booklet_pairs, export_booklet, export_pdf, export_pdf_with_report, merge_pdfs, sheet_spreads};
+pub use pdfx::{check_pdfx4, make_pdfx4};
 pub use transitions::add_transitions;
 
 /// PDF standard to target.

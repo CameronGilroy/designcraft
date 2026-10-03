@@ -102,15 +102,10 @@ pub(crate) fn mark_start(opts: &PdfOptions, bleed: [f64; 4]) -> f64 {
 /// Like [`export_pdf`], also returning warnings about approximated or dropped features.
 pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) -> Result<ExportReport> {
     let sheets = sheets(doc, opts)?;
-    let mut warnings = Vec::new();
+    let warnings = Vec::new();
     let (version, archival) = match opts.standard {
         Standard::None => (PdfVersion::Pdf17, None),
-        Standard::PdfX4 => {
-            warnings.push(
-                "PDF/X-4: the output intent and PDF/X identification are not written yet; the file is PDF 1.6 with trim and bleed boxes".to_string(),
-            );
-            (PdfVersion::Pdf16, None)
-        }
+        Standard::PdfX4 => (PdfVersion::Pdf16, None),
         Standard::PdfA2b => (PdfVersion::Pdf17, Some(Archival::A2_B)),
     };
     let mut cb = ConfigurationBuilder::new().with_version(version);
@@ -203,8 +198,18 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
     if opts.tagged {
         pdf.set_tag_tree(ex.tag_tree());
     }
-    let bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
+    let mut bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
     let mut warnings = ex.warnings;
+    if opts.standard == Standard::PdfX4 {
+        // Output intent and PDF/X identification, then check the result.
+        match crate::pdfx::make_pdfx4(&bytes, &title) {
+            Some(b) => bytes = b,
+            None => warnings.push("PDF/X-4: the output intent couldn't be added".into()),
+        }
+        for issue in crate::pdfx::check_pdfx4(&bytes) {
+            warnings.push(format!("PDF/X-4: {issue}"));
+        }
+    }
     warnings.dedup();
     Ok(ExportReport { bytes, pages: sheets.len(), warnings })
 }

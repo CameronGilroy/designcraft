@@ -156,7 +156,15 @@ fn standards() {
     assert!(String::from_utf8_lossy(&r.bytes).contains("pdfaid"));
     let r = export_pdf_with_report(&d, &Cache::new(), &PdfOptions { standard: Standard::PdfX4, ..Default::default() }).unwrap();
     assert!(r.bytes.starts_with(b"%PDF-1.6"));
-    assert!(!r.warnings.is_empty());
+    // Output intent, identification and checks all in place; the update still reads.
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert!(crate::check_pdfx4(&r.bytes).is_empty());
+    let text = String::from_utf8_lossy(&r.bytes).to_string();
+    assert!(text.contains("/OutputIntents[") && text.contains("DesignCraft Generic CMYK"));
+    // A plain export fails the checks; both read with the same pages.
+    let plain = export_pdf(&d, &Cache::new(), &PdfOptions::default()).unwrap();
+    assert_eq!(hayro_syntax::Pdf::new(r.bytes.clone()).unwrap().pages().len(), hayro_syntax::Pdf::new(plain.clone()).unwrap().pages().len());
+    assert!(crate::check_pdfx4(&plain).len() >= 3);
     assert_eq!(Standard::parse("PDF/X-4"), Some(Standard::PdfX4));
     assert_eq!(Standard::parse("pdfa-2b"), Some(Standard::PdfA2b));
 }
