@@ -58,6 +58,8 @@ pub struct RunStyle {
     pub custom_tracking: bool,
     /// The first condition applied (its indicator colour underlines the text on screen).
     pub condition: Option<String>,
+    /// Added while tracking changes (marked on screen).
+    pub inserted: bool,
 }
 
 /// An underline or strikethrough bar: its top edge `offset` below the baseline (negative =

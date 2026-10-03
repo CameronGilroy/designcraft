@@ -325,6 +325,8 @@ pub struct DocSettings {
     pub blend_space: BlendSpace,
     /// Preferences › Appearance of Black: [Black] at 100% overprints (Overprint Preview, output).
     pub overprint_black: bool,
+    /// Type › Track Changes: edits are recorded as inserted / deleted text.
+    pub track_changes: bool,
 }
 
 impl Default for DocSettings {
@@ -354,6 +356,7 @@ impl Default for DocSettings {
             advanced_type: AdvancedType::default(),
             blend_space: BlendSpace::Cmyk,
             overprint_black: true,
+            track_changes: false,
         }
     }
 }

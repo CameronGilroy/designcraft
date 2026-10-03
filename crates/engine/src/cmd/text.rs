@@ -286,6 +286,7 @@ fn insert(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let raw = p.get("raw").and_then(Value::as_bool).unwrap_or(false);
     let text = if s.prefs.typographers_quotes && !raw { smart_quotes(s, &text) } else { text };
+    let tracking = s.doc()?.doc.settings.track_changes;
     s.edit(|d, sel| {
         let t = sel.text.ok_or_else(|| bad("text.insert", "no insertion point"))?;
         let st = d.text_story_mut(t.story, t.cell).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
@@ -306,6 +307,16 @@ fn insert(s: &mut Session, p: &Value) -> Result<Value> {
             } else if !text.starts_with('\n') {
                 text.insert(0, '\n');
             }
+        }
+        if tracking && t.cell.is_none() {
+            // Track Changes: the replaced text is marked deleted, the typing inserted after it.
+            let at = super::changes::mark_deleted(st, r.clone());
+            let mut fmt = st.char_format_at(at).clone();
+            fmt.over.change = Some(designcraft_doc::ChangeMark::Inserted);
+            st.insert_with(at, &text, fmt);
+            let pos = at + text.len() - trail;
+            sel.text = Some(TextSel { anchor: pos, focus: pos, ..t });
+            return Ok(json!({"pos": pos}));
         }
         st.replace(r.clone(), &text);
         let pos = r.start + text.len() - trail;
@@ -354,11 +365,16 @@ fn smart_quotes(s: &Session, text: &str) -> String {
 }
 
 pub(crate) fn delete_selection(s: &mut Session) -> Result<Value> {
+    let tracking = s.doc()?.doc.settings.track_changes;
     s.edit(|d, sel| {
         let t = sel.text.ok_or_else(|| bad("text.delete", "no text"))?;
         let r = t.range();
         if let Some(st) = d.text_story_mut(t.story, t.cell) {
-            st.delete(r.clone());
+            if tracking && t.cell.is_none() {
+                super::changes::mark_deleted(st, r.clone());
+            } else {
+                st.delete(r.clone());
+            }
         }
         sel.text = Some(TextSel { anchor: r.start, focus: r.start, ..t });
         ok()
@@ -368,6 +384,7 @@ pub(crate) fn delete_selection(s: &mut Session) -> Result<Value> {
 fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     let forward = bool_or(p, "forward", false);
     let word = bool_or(p, "word", false);
+    let tracking = s.doc()?.doc.settings.track_changes;
     s.edit(|d, sel| {
         let t = sel.text.ok_or_else(|| bad("text.delete", "no text"))?;
         let st = d.text_story_mut(t.story, t.cell).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
@@ -381,6 +398,13 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
             let start = if word { prev_word(&st.text, r.start) } else { prev_char(&st.text, r.start) };
             start..r.start
         };
+        if tracking && t.cell.is_none() {
+            // Marked, not removed: the caret steps over the deleted text.
+            let at = super::changes::mark_deleted(st, r.clone());
+            let pos = if forward { at.max(r.end.min(st.len())) } else { r.start.min(at) };
+            sel.text = Some(TextSel { anchor: pos, focus: pos, ..t });
+            return ok();
+        }
         st.delete(r.clone());
         sel.text = Some(TextSel { anchor: r.start, focus: r.start, ..t });
         ok()

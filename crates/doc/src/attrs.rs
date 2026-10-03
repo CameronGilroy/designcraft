@@ -115,6 +115,16 @@ pub enum Leading {
     Points(f64),
 }
 
+/// A tracked change on text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChangeMark {
+    #[default]
+    None,
+    Inserted,
+    Deleted,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", content = "value")]
 pub enum Kerning {
@@ -464,6 +474,8 @@ attr_set! {
         otf_features: Vec<String> = Vec::new(),
         /// Conditional text: the conditions applied (Window › Type & Tables › Conditional Text).
         conditions: Vec<String> = Vec::new(),
+        /// Track Changes: text added or deleted while tracking (deleted text isn't laid out).
+        change: ChangeMark = ChangeMark::None,
     }
 }
 

@@ -30,12 +30,19 @@ fn table_text(story: &Story, id: u64, nl: &str) -> String {
 
 /// Text Only: the story's text, CRLF between paragraphs.
 pub fn plain_text(story: &Story) -> String {
+    // Tracked deletions aren't part of the text.
+    let deleted: Vec<std::ops::Range<usize>> =
+        story.runs().filter(|(_, f)| f.over.change == Some(designcraft_doc::ChangeMark::Deleted)).map(|(r, _)| r).collect();
     let mut out = String::with_capacity(story.text.len() + 16);
     for (i, r) in story.para_ranges().into_iter().enumerate() {
         if i > 0 {
             out.push_str("\r\n");
         }
-        for c in story.text[r].chars() {
+        let start = r.start;
+        for (ci, c) in story.text[r].char_indices() {
+            if deleted.iter().any(|d| d.contains(&(start + ci))) {
+                continue;
+            }
             match (c, plain_char(c)) {
                 (TABLE_ANCHOR, _) => {
                     if let Some(id) = story.paras.get(i).and_then(|p| p.table) {
@@ -93,7 +100,7 @@ pub fn rtf(doc: &Document, story: &Story) -> String {
             }
             let cp = styles.resolve_char(&base, f);
             // Hidden conditional text isn't exported.
-            if doc.conditions_hide(&cp.conditions) {
+            if doc.conditions_hide(&cp.conditions) || cp.change == designcraft_doc::ChangeMark::Deleted {
                 continue;
             }
             if !fonts.contains(&cp.font_family) {

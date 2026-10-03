@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 92 | 4 | 1 | 97% |
-| P2 | 76 | 34 | 20 | 22 | 58% |
+| P2 | 76 | 34 | 21 | 21 | 59% |
 
 | Area | Parity |
 |---|---|
@@ -188,7 +188,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Type & text frames | Type on a path | P1 | D |
 | Type & text frames | Vertical type | P2 | M |
 | Type & text frames | Story Editor | P1 | D |
-| Type & text frames | Track Changes | P2 | M |
+| Type & text frames | Track Changes | P2 | P |
 | Type & text frames | Notes | P2 | D |
 | Type & text frames | Find/Change | P0 | D |
 | Type & text frames | Find Font | P0 | D |

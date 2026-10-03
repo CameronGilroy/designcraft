@@ -229,6 +229,15 @@ impl Renderer {
                 }
             }
         }
+        if f.opts.change_markup && cs.styles.iter().any(|s| s.inserted) {
+            ctx.set_transform(m);
+            for l in &ft.lines {
+                for g in l.glyphs.iter().filter(|g| g.adv > 0.0 && cs.styles.get(g.style as usize).is_some_and(|s| s.inserted)) {
+                    ctx.set_paint(peniko::Color::from_rgba8(120, 190, 255, 110));
+                    ctx.fill_rect(&kurbo::Rect::new(g.x, l.baseline - l.ascent, g.x + g.adv, l.baseline + l.descent));
+                }
+            }
+        }
         if f.opts.note_indicators
             && let Some(st) = f.doc.story(cs.story).filter(|st| !st.editorial.is_empty())
         {

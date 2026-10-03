@@ -109,6 +109,8 @@ pub struct RenderOptions {
     pub condition_indicators: bool,
     /// Editorial note anchors (screen view).
     pub note_indicators: bool,
+    /// Track Changes: added text highlighted (screen view).
+    pub change_markup: bool,
     /// View › Display Performance.
     pub quality: DisplayQuality,
     /// Preferences › Appearance of Black: show 100% K as rich (pure) black instead of the
@@ -146,6 +148,7 @@ impl Default for RenderOptions {
             highlight_custom_tracking: false,
             condition_indicators: false,
             note_indicators: false,
+            change_markup: false,
             quality: DisplayQuality::High,
             rich_black: false,
             overprint_preview: false,

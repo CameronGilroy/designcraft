@@ -222,7 +222,7 @@ pub fn story_html(doc: &Document, sid: StoryId) -> String {
                 continue;
             }
             // Hidden conditional text isn't exported.
-            if f.over.conditions.as_deref().is_some_and(|c| doc.conditions_hide(c)) {
+            if f.over.conditions.as_deref().is_some_and(|c| doc.conditions_hide(c)) || f.over.change == Some(designcraft_doc::ChangeMark::Deleted) {
                 continue;
             }
             let raw = &st.text[a..b];

@@ -134,6 +134,7 @@ impl StyleTable<'_> {
                 .or_insert_with(|| !p.font_family.is_empty() && !designcraft_fonts::FontDb::global().has_family(&p.font_family)),
             custom_tracking: p.tracking.abs() > 1e-9 || matches!(p.kerning, designcraft_doc::Kerning::Manual(_)),
             condition: p.conditions.first().cloned(),
+            inserted: p.change == designcraft_doc::ChangeMark::Inserted,
         };
         if let Some(i) = self.styles.iter().rposition(|s| *s == rs) {
             return i as u32;
@@ -199,7 +200,8 @@ pub(crate) fn shape_para(
         };
         let props = styles.resolve_char(para_chars, fmt);
         let style = table.intern(&props);
-        if !props.conditions.is_empty() && props.conditions.iter().all(|c| sub.hidden_conditions.contains(c)) {
+        let deleted = props.change == designcraft_doc::ChangeMark::Deleted;
+        if deleted || (!props.conditions.is_empty() && props.conditions.iter().all(|c| sub.hidden_conditions.contains(c))) {
             // Hidden conditional text: zero-width, unbreakable, undrawn place-holders keep every
             // byte addressable (caret, selection) without taking space.
             let face = db.face(&props.font_family, &props.font_style);
