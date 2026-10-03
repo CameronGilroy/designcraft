@@ -1718,6 +1718,7 @@ impl<'r> Importer<'r> {
                     distance: x.hypot(y),
                     size: ds.num("Size").unwrap_or(def.size),
                     spread: ds.num("Spread").unwrap_or(def.spread),
+                    global_light: false,
                 };
             }
             if let Some(f) = t.find("FeatherSetting")

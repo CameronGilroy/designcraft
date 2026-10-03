@@ -1337,7 +1337,7 @@ impl<'a> Ex<'a> {
             let mut t = El::new("TransparencySetting");
             t.push(El::new("BlendingSetting").attr("BlendMode", names::blend_out(it.blend)).attr("Opacity", pct(it.opacity as f64)));
             if ds.on {
-                let a = ds.angle.to_radians();
+                let a = self.d.light_angle(ds.angle, ds.global_light).to_radians();
                 t.push(
                     El::new("DropShadowSetting")
                         .attr("Mode", "Drop")

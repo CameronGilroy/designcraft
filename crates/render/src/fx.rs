@@ -80,7 +80,7 @@ impl Renderer {
         }
         if e.drop_shadow.on {
             let d = &e.drop_shadow;
-            below.push((offset(d.angle, d.distance), d.size, d.spread, d.color.clone(), d.opacity));
+            below.push((offset(doc.light_angle(d.angle, d.global_light), d.distance), d.size, d.spread, d.color.clone(), d.opacity));
         }
         for (off, size, pct, color, opacity) in below {
             let Some(c) = doc.resolve_color(&color, 1.0) else { continue };
@@ -164,7 +164,7 @@ impl Renderer {
         {
             let s = &e.inner_shadow;
             let (sigma, choke) = split(s.size, s.choke);
-            let off = offset(s.angle, s.distance);
+            let off = offset(doc.light_angle(s.angle, s.global_light), s.distance);
             let paint = color_of(&c, s.opacity.clamp(0.0, 1.0));
             self.with_filters(ctx, f, reach, sigma, |_, c, fr| {
                 c.set_transform(fr.view * xf);

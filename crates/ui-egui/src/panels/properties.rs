@@ -1702,8 +1702,22 @@ pub fn effects_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
                 let _ = app.run("object.dropShadow", json!({"on": true, "distance": v}));
             }
             caption(ui, "Angle");
-            if let Some(v) = number(ui, "dsa", Some(ds.angle), "°", 50.0, 0) {
-                let _ = app.run("object.dropShadow", json!({"on": true, "angle": v}));
+            let global = app.session.active().map_or(120.0, |st| st.doc.settings.global_light);
+            if let Some(v) = number(ui, "dsa", Some(if ds.global_light { global } else { ds.angle }), "°", 50.0, 0) {
+                // With Use Global Light on, the angle is the document's (every such shadow moves).
+                let _ = if ds.global_light {
+                    app.run("object.globalLight", json!({"angle": v}))
+                } else {
+                    app.run("object.dropShadow", json!({"on": true, "angle": v}))
+                };
+            }
+            ui.end_row();
+            ui.label("");
+            ui.label("");
+            caption(ui, "");
+            let mut gl = ds.global_light;
+            if ui.checkbox(&mut gl, "Use Global Light").changed() {
+                let _ = app.run("object.dropShadow", json!({"on": true, "globalLight": gl}));
             }
             ui.end_row();
             caption(ui, "Opacity");

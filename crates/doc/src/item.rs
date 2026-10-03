@@ -433,6 +433,9 @@ pub struct DropShadow {
     pub color: String,
     pub opacity: f32,
     pub angle: f64,
+    /// Use Global Light (the document angle instead of `angle`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub global_light: bool,
     pub distance: f64,
     pub size: f64,
     pub spread: f64,
@@ -440,7 +443,16 @@ pub struct DropShadow {
 
 impl Default for DropShadow {
     fn default() -> Self {
-        DropShadow { on: false, color: designcraft_color::swatch::BLACK.into(), opacity: 0.75, angle: 135.0, distance: 7.0, size: 5.0, spread: 0.0 }
+        DropShadow {
+            on: false,
+            color: designcraft_color::swatch::BLACK.into(),
+            opacity: 0.75,
+            angle: 135.0,
+            distance: 7.0,
+            size: 5.0,
+            spread: 0.0,
+            global_light: false,
+        }
     }
 }
 
@@ -452,6 +464,9 @@ pub struct InnerShadow {
     pub color: String,
     pub opacity: f32,
     pub angle: f64,
+    /// Use Global Light (the document angle instead of `angle`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub global_light: bool,
     pub distance: f64,
     pub size: f64,
     /// Percentage (0–100) of `size` that hardens the edge instead of blurring it.
@@ -460,7 +475,16 @@ pub struct InnerShadow {
 
 impl Default for InnerShadow {
     fn default() -> Self {
-        InnerShadow { on: false, color: designcraft_color::swatch::BLACK.into(), opacity: 0.75, angle: 135.0, distance: 7.0, size: 7.0, choke: 0.0 }
+        InnerShadow {
+            on: false,
+            color: designcraft_color::swatch::BLACK.into(),
+            opacity: 0.75,
+            angle: 135.0,
+            distance: 7.0,
+            size: 7.0,
+            choke: 0.0,
+            global_light: false,
+        }
     }
 }
 

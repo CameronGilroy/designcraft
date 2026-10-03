@@ -162,6 +162,8 @@ pub struct DocSettings {
     pub primary_story: Option<StoryId>,
     /// Chapter number (Numbering & Section Options › Document Chapter Numbering).
     pub chapter_number: u32,
+    /// Object › Effects › Global Light: the angle (degrees) shadows that use it share.
+    pub global_light: f64,
 }
 
 impl Default for DocSettings {
@@ -187,6 +189,7 @@ impl Default for DocSettings {
             primary_story: None,
             lists: Vec::new(),
             chapter_number: 1,
+            global_light: 120.0,
         }
     }
 }
@@ -454,6 +457,11 @@ impl Document {
     }
 
     /// Resolve a swatch reference to a display colour.
+    /// A shadow's light angle: its own, or the document's Global Light.
+    pub fn light_angle(&self, angle: f64, global: bool) -> f64 {
+        if global { self.settings.global_light } else { angle }
+    }
+
     pub fn resolve_color(&self, swatch: &str, tint: f32) -> Option<designcraft_color::Color> {
         designcraft_color::swatch::resolve(&self.swatches, swatch, tint)
     }

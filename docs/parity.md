@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 67 | 26 | 4 | 82% |
-| P2 | 76 | 11 | 10 | 55 | 21% |
+| P2 | 76 | 12 | 13 | 51 | 24% |
 
 | Area | Parity |
 |---|---|
@@ -21,14 +21,14 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Frames, shapes & paths | 88% |
 | Transform | 93% |
 | Fill, stroke, colour | 86% |
-| Effects & transparency | 54% |
-| Placing & links | 81% |
+| Effects & transparency | 62% |
+| Placing & links | 82% |
 | Type & text frames | 88% |
 | Typography | 85% |
 | Styles | 92% |
 | Tables | 85% |
-| Long documents | 75% |
-| Interactivity & digital | 30% |
+| Long documents | 79% |
+| Interactivity & digital | 35% |
 | Output & production | 70% |
 | XML & automation | 50% |
 | View & navigation | 82% |
@@ -163,7 +163,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Effects & transparency | Drop Shadow | P1 | D |
 | Effects & transparency | Inner Shadow, Outer Glow, Inner Glow, Bevel, Satin | P2 | P |
 | Effects & transparency | Basic/Directional/Gradient Feather | P2 | P |
-| Effects & transparency | Global Light | P2 | M |
+| Effects & transparency | Global Light | P2 | D |
 | Effects & transparency | Transparency blend space | P1 | M |
 | Effects & transparency | Transparency flattener | P2 | M |
 | Placing & links | Place | P0 | D |
@@ -176,7 +176,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Placing & links | Effective/actual PPI | P0 | D |
 | Placing & links | Relink to folder / extension | P1 | D |
 | Placing & links | Copy Links To / Package | P1 | D |
-| Placing & links | Captions | P2 | M |
+| Placing & links | Captions | P2 | P |
 | Placing & links | Image import options | P1 | P |
 | Placing & links | Linked text/stories | P2 | M |
 | Placing & links | Display performance | P0 | D |
@@ -267,13 +267,13 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Long documents | Cross-references | P2 | D |
 | Long documents | Running headers via variables | P1 | D |
 | Long documents | Footnotes/endnotes | P1 | P |
-| Long documents | Captions | P2 | M |
+| Long documents | Captions | P2 | P |
 | Interactivity & digital | Hyperlinks panel | P1 | P |
 | Interactivity & digital | Bookmarks | P1 | P |
 | Interactivity & digital | Buttons and Forms | P2 | M |
 | Interactivity & digital | Object States | P2 | M |
 | Interactivity & digital | Articles panel | P2 | M |
-| Interactivity & digital | Object Export Options | P2 | M |
+| Interactivity & digital | Object Export Options | P2 | P |
 | Interactivity & digital | EPUB export | P2 | D |
 | Interactivity & digital | HTML export | P2 | M |
 | Output & production | Export to PDF (print) | P0 | P |

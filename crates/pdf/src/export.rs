@@ -622,7 +622,7 @@ impl Exporter<'_> {
             && let Some(p) = &path
             && let Some(c) = self.swatch_color(&ds.color, 1.0)
         {
-            let a = ds.angle.to_radians();
+            let a = self.doc.light_angle(ds.angle, ds.global_light).to_radians();
             let off = Vec2::new(-a.cos() * ds.distance, a.sin() * ds.distance);
             s.push_transform(&tf(Affine::translate(off) * xf));
             s.set_stroke(None);

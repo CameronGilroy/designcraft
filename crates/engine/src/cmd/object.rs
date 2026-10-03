@@ -225,7 +225,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Drop Shadow",
             ["Object", "Effects"],
             Some("Cmd+Alt+M"),
-            "{on?: bool, distance?, angle?, opacity?, size?, spread? (%), color? (swatch), ids?}",
+            "{on?: bool, distance?, angle?, globalLight?: bool, opacity?, size?, spread? (%), color? (swatch), ids?}",
             has_selection,
             |s, p| {
                 let p2 = p.clone();
@@ -237,6 +237,7 @@ pub fn specs() -> Vec<CommandSpec> {
                         ds.on = p2.get("on").and_then(Value::as_bool).unwrap_or(!ds.on);
                         ds.distance = f64_or(&p2, "distance", ds.distance);
                         ds.angle = f64_or(&p2, "angle", ds.angle);
+                        ds.global_light = p2.get("globalLight").and_then(Value::as_bool).unwrap_or(ds.global_light);
                         ds.opacity = f64_or(&p2, "opacity", ds.opacity as f64) as f32;
                         ds.size = f64_or(&p2, "size", ds.size);
                         ds.spread = f64_or(&p2, "spread", ds.spread);
@@ -253,7 +254,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Inner Shadow",
             ["Object", "Effects"],
             None,
-            "{on?: bool, distance?, angle?, opacity?, size?, choke? (%), color?, ids?}",
+            "{on?: bool, distance?, angle?, globalLight?: bool, opacity?, size?, choke? (%), color?, ids?}",
             has_selection,
             |s, p| {
                 let p2 = p.clone();
@@ -265,6 +266,7 @@ pub fn specs() -> Vec<CommandSpec> {
                         e.on = p2.get("on").and_then(Value::as_bool).unwrap_or(!e.on);
                         e.distance = f64_or(&p2, "distance", e.distance);
                         e.angle = f64_or(&p2, "angle", e.angle);
+                        e.global_light = p2.get("globalLight").and_then(Value::as_bool).unwrap_or(e.global_light);
                         e.opacity = f64_or(&p2, "opacity", e.opacity as f64) as f32;
                         e.size = f64_or(&p2, "size", e.size);
                         e.choke = f64_or(&p2, "choke", e.choke);
@@ -420,6 +422,22 @@ pub fn specs() -> Vec<CommandSpec> {
                     s.prefs.star_inset = (v / 100.0).clamp(0.0, 1.0);
                 }
                 Ok(json!({"sides": s.prefs.polygon_sides, "starInset": (s.prefs.star_inset * 100.0).round()}))
+            }
+        ),
+        cmd!(
+            "object.globalLight",
+            "Global Light…",
+            ["Object", "Effects"],
+            None,
+            "{angle} — the light angle shared by shadows that use Global Light",
+            has_doc,
+            |s, p| {
+                let a = p.get("angle").and_then(Value::as_f64).ok_or_else(|| bad("object.globalLight", "angle required"))?;
+                let a = (a + 180.0).rem_euclid(360.0) - 180.0;
+                s.edit(|d, _| {
+                    d.settings.global_light = a;
+                    Ok(json!({"angle": a}))
+                })
             }
         ),
         cmd!(
@@ -1493,5 +1511,29 @@ mod label_tests {
         assert!(it.knockout && !it.isolate);
         s.execute("edit.undo", &json!({})).unwrap();
         assert!(!s.doc().unwrap().doc.item(ItemId(b)).unwrap().knockout);
+    }
+}
+
+#[cfg(test)]
+mod light_tests {
+    use super::*;
+
+    #[test]
+    fn global_light_moves_shadows_that_use_it() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [10, 10, 50, 50]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.dropShadow", &json!({"on": true, "angle": 45, "ids": [a]})).unwrap();
+        let angle = |s: &Session| {
+            let d = &s.doc().unwrap().doc;
+            let ds = &d.item(ItemId(a)).unwrap().effects.drop_shadow;
+            d.light_angle(ds.angle, ds.global_light)
+        };
+        s.execute("object.globalLight", &json!({"angle": 200})).unwrap();
+        assert_eq!(angle(&s), 45.0, "own angle");
+        s.execute("object.dropShadow", &json!({"globalLight": true, "on": true, "ids": [a]})).unwrap();
+        assert_eq!(angle(&s), -160.0, "normalised to -180..180");
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(angle(&s), 45.0);
     }
 }
