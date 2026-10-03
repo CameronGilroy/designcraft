@@ -115,6 +115,15 @@ pub enum Leading {
     Points(f64),
 }
 
+/// Paragraph direction.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextDirection {
+    #[default]
+    LeftToRight,
+    RightToLeft,
+}
+
 /// A tracked change on text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -483,6 +492,8 @@ attr_set! {
     /// Paragraph attributes (Paragraph panel / paragraph styles).
     ParaAttrs / ParaProps {
         align: Align = Align::Left,
+        /// Paragraph Direction (World-Ready): the base direction lines are ordered in.
+        direction: TextDirection = TextDirection::LeftToRight,
         left_indent: f64 = 0.0,
         right_indent: f64 = 0.0,
         first_line_indent: f64 = 0.0,

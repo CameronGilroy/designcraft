@@ -797,3 +797,46 @@ fn hj_severity_shades() {
     assert_eq!(hj_severity(2.5, 0.8, 1.33), 3);
     assert_eq!(hj_severity(0.6, 0.8, 1.33), 3);
 }
+
+#[test]
+fn right_to_left_runs_are_ordered_visually() {
+    // Hebrew between Latin words: the Hebrew letters read right to left.
+    let text = "abc \u{5D0}\u{5D1}\u{5D2} def";
+    let (d, sid, _) = doc_with(text, Rect::new(36.0, 36.0, 500.0, 200.0), ParaAttrs::default());
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let l = all_lines(&cs)[0];
+    let x_of = |byte: usize| l.glyphs.iter().find(|g| g.byte == byte).map(|g| g.x).unwrap();
+    let (alef, bet, gimel) = (4, 6, 8);
+    assert!(x_of(alef) > x_of(bet) && x_of(bet) > x_of(gimel), "Hebrew reversed");
+    assert!(x_of(0) < x_of(gimel) && x_of(alef) < x_of(11), "Latin around it stays in place");
+    // A right-to-left paragraph puts its first word on the right.
+    let rtl = ParaAttrs { direction: Some(designcraft_doc::TextDirection::RightToLeft), ..Default::default() };
+    let (d, sid, _) = doc_with("\u{5D0}\u{5D1} abc", Rect::new(36.0, 36.0, 500.0, 200.0), rtl);
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let l = all_lines(&cs)[0];
+    let x_of = |byte: usize| l.glyphs.iter().find(|g| g.byte == byte).map(|g| g.x).unwrap();
+    assert!(x_of(0) > x_of(5), "the Hebrew word (first in the text) is right of the Latin one");
+    // Shaping keeps clusters in text order.
+    let face = designcraft_fonts::FontDb::global().face(designcraft_fonts::DEFAULT_FAMILY, "Regular");
+    let g = designcraft_fonts::shape(&face, "ab \u{5D0}\u{5D1}", &[], |c| c);
+    assert!(g.windows(2).all(|w| w[0].cluster <= w[1].cluster), "{:?}", g.iter().map(|g| g.cluster).collect::<Vec<_>>());
+}
+
+#[test]
+fn bidi_matches_the_reference_order() {
+    use unicode_bidi::{BidiInfo, Level};
+    let text = "English then \u{645}\u{631}\u{62D}\u{628}\u{627} \u{628}\u{627}\u{644}\u{639}\u{627}\u{644}\u{645} 123 and \u{5E9}\u{5DC}\u{5D5}\u{5DD} \u{5E2}\u{5D5}\u{5DC}\u{5DD} end.";
+    for rtl in [false, true] {
+        let dir = if rtl { designcraft_doc::TextDirection::RightToLeft } else { designcraft_doc::TextDirection::LeftToRight };
+        let (d, sid, _) = doc_with(text, Rect::new(0.0, 0.0, 2000.0, 200.0), ParaAttrs { direction: Some(dir), ..Default::default() });
+        let cs = compose_story(&d, sid, &ComposeOptions::default());
+        let l = all_lines(&cs)[0];
+        // Characters by glyph x (one glyph per character in this text).
+        let mut gs: Vec<_> = l.glyphs.iter().filter(|g| g.len > 0).collect();
+        gs.sort_by(|a, b| a.x.total_cmp(&b.x));
+        let ours: String = gs.iter().map(|g| text[g.byte..].chars().next().unwrap()).collect();
+        let info = BidiInfo::new(text, Some(if rtl { Level::rtl() } else { Level::ltr() }));
+        let reference = info.reorder_line(&info.paragraphs[0], 0..text.len()).to_string();
+        assert_eq!(ours, reference, "rtl={rtl}");
+    }
+}

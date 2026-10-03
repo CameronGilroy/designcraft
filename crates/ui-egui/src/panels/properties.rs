@@ -1288,6 +1288,21 @@ pub fn paragraph_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
             }
         }
     });
+    // Paragraph Direction (World-Ready): switching also mirrors left/right alignment.
+    let rtl = p["direction"] == "rightToLeft";
+    ui.horizontal(|ui| {
+        caption(ui, "Direction");
+        for (on, label, dir) in [(!rtl, "Left to Right", "leftToRight"), (rtl, "Right to Left", "rightToLeft")] {
+            if ui.selectable_label(on, label).clicked() && !on {
+                let align = match cur {
+                    Align::Left => Align::Right,
+                    Align::Right => Align::Left,
+                    a => a,
+                };
+                let _ = app.run("type.para", json!({"attrs": {"direction": dir, "align": align}}));
+            }
+        }
+    });
     egui::Grid::new("paragrid").num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
         for (row, ((la, ka), (lb, kb))) in [
             (("Left", "leftIndent"), ("Right", "rightIndent")),

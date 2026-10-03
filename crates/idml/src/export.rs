@@ -1123,6 +1123,12 @@ impl<'a> Ex<'a> {
         if let Some(v) = a.align {
             el.set("Justification", names::align_out(v));
         }
+        if let Some(v) = a.direction {
+            el.set(
+                "ParagraphDirection",
+                if v == designcraft_doc::TextDirection::RightToLeft { "RightToLeftDirection" } else { "LeftToRightDirection" },
+            );
+        }
         n!(left_indent, "LeftIndent");
         n!(right_indent, "RightIndent");
         n!(first_line_indent, "FirstLineIndent");

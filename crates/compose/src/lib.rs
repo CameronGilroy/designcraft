@@ -1513,7 +1513,13 @@ fn layout_line(
     let ratio = if ratio_n > 0 { ratio_sum / ratio_n as f64 } else { 1.0 };
     let mut out = Vec::with_capacity(line.len());
     let mut x = x0 + offset;
+    let rtl_para = pp.direction == designcraft_doc::TextDirection::RightToLeft;
+    let bidi = (rtl_para || line.iter().any(|g| designcraft_fonts::is_rtl(g.ch))) && leaders.is_empty();
+    let mut pens = Vec::with_capacity(if bidi { line.len() } else { 0 });
     for (i, g) in line.iter().enumerate() {
+        if bidi {
+            pens.push(x);
+        }
         let mut p = place(g, x);
         if scale[i] != 1.0 {
             p.sx *= scale[i];
@@ -1529,7 +1535,43 @@ fn layout_line(
             tab_leader(g, l, tab_x, tab_w, tab_origin, &mut out);
         }
     }
+    if bidi {
+        pens.push(x);
+        reorder_visual(&line, &mut out, &pens, x0 + offset, rtl_para);
+    }
     (out, x, ratio)
+}
+
+/// Bidi: put a laid-out line (glyphs in text order, `pens` their pen positions and then the end
+/// position) into visual order from `start`, cluster by cluster (Unicode Bidirectional
+/// Algorithm, rule L2).
+fn reorder_visual(line: &[Glyph], out: &mut [PlacedGlyph], pens: &[f64], start: f64, rtl: bool) {
+    use unicode_bidi::{BidiInfo, Level};
+    // Clusters: runs of glyphs from the same source character.
+    let mut units: Vec<std::ops::Range<usize>> = Vec::new();
+    for i in 0..line.len() {
+        match units.last_mut() {
+            Some(u) if line[u.start].byte == line[i].byte && line[i].len > 0 => u.end = i + 1,
+            _ => units.push(i..i + 1),
+        }
+    }
+    let text: String = units.iter().map(|u| line[u.start].ch).collect();
+    let info = BidiInfo::new(&text, Some(if rtl { Level::rtl() } else { Level::ltr() }));
+    let levels: Vec<Level> = text.char_indices().map(|(b, _)| info.levels[b]).collect();
+    let order = BidiInfo::reorder_visual(&levels);
+    let width = |u: &std::ops::Range<usize>| pens[u.end] - pens[u.start];
+    let mut cur = start;
+    let mut shifts = vec![0.0; line.len()];
+    for &k in &order {
+        let u = &units[k];
+        for i in u.clone() {
+            shifts[i] = cur - pens[u.start];
+        }
+        cur += width(u);
+    }
+    for (p, d) in out.iter_mut().zip(shifts) {
+        p.x += d;
+    }
 }
 
 /// Fill a tab's gap with repeats of its leader, on a grid shared by all lines (so dots align).

@@ -42,9 +42,71 @@ pub fn feature(tag: &str) -> Option<Feature> {
     Some(Feature::new(Tag::new(&[b[0], b[1], b[2], b[3]]), on as u32, ..))
 }
 
+/// A strong right-to-left character (Hebrew, Arabic, …)?
+pub fn is_rtl(c: char) -> bool {
+    use unicode_bidi::BidiClass::{AL, R};
+    matches!(unicode_bidi::bidi_class(c), R | AL)
+}
+
+/// Maximal runs of one direction (neutrals join the run they're in): (byte range, right-to-left).
+fn direction_runs(text: &str) -> Vec<(std::ops::Range<usize>, bool)> {
+    let mut runs: Vec<(std::ops::Range<usize>, bool)> = Vec::new();
+    let mut cur: Option<bool> = None;
+    let mut start = 0;
+    for (i, c) in text.char_indices() {
+        let strong = if is_rtl(c) {
+            Some(true)
+        } else if unicode_bidi::bidi_class(c) == unicode_bidi::BidiClass::L {
+            Some(false)
+        } else {
+            None
+        };
+        match (cur, strong) {
+            (None, Some(d)) => cur = Some(d),
+            (Some(a), Some(d)) if a != d => {
+                runs.push((start..i, a));
+                start = i;
+                cur = Some(d);
+            }
+            _ => {}
+        }
+    }
+    runs.push((start..text.len(), cur.unwrap_or(false)));
+    runs
+}
+
 /// Shape `text` with `face`. `chars` lets callers substitute characters (e.g. uppercase for All
-/// Caps) while keeping clusters pointing into the original string.
+/// Caps) while keeping clusters pointing into the original string. Glyphs come in logical
+/// order: right-to-left runs are shaped right to left, then their clusters put back in text
+/// order (each cluster's glyphs keep the shaper's order); line layout reorders them visually.
 pub fn shape(face: &FontFace, text: &str, features: &[Feature], map: impl Fn(char) -> char) -> Vec<ShapedGlyph> {
+    if !text.chars().any(is_rtl) {
+        return shape_dir(face, text, features, &map, false);
+    }
+    let mut out = Vec::with_capacity(text.len());
+    for (r, rtl) in direction_runs(text) {
+        let mut g = shape_dir(face, &text[r.clone()], features, &map, rtl);
+        for x in &mut g {
+            x.cluster += r.start;
+        }
+        if rtl {
+            // Visual (clusters descending) → logical, cluster by cluster.
+            let mut groups: Vec<Vec<ShapedGlyph>> = Vec::new();
+            for x in g {
+                match groups.last_mut() {
+                    Some(last) if last[0].cluster == x.cluster => last.push(x),
+                    _ => groups.push(vec![x]),
+                }
+            }
+            groups.sort_by_key(|grp| grp[0].cluster);
+            g = groups.into_iter().flatten().collect();
+        }
+        out.extend(g);
+    }
+    out
+}
+
+fn shape_dir(face: &FontFace, text: &str, features: &[Feature], map: &impl Fn(char) -> char, rtl: bool) -> Vec<ShapedGlyph> {
     let mut out = Vec::with_capacity(text.len());
     let shaped = face.hb().map(|hb| {
         let shaper = face.shaper.shaper(&hb).instance(face.instance.as_ref()).build();
@@ -52,8 +114,8 @@ pub fn shape(face: &FontFace, text: &str, features: &[Feature], map: impl Fn(cha
         for (i, c) in text.char_indices() {
             buf.add(map(c), i as u32);
         }
-        buf.set_direction(Direction::LeftToRight);
         buf.guess_segment_properties();
+        buf.set_direction(if rtl { Direction::RightToLeft } else { Direction::LeftToRight });
         let gb = shaper.shape(buf, ShapeOptions::new().features(features));
         for (info, pos) in gb.glyph_infos().iter().zip(gb.glyph_positions()) {
             out.push(ShapedGlyph {

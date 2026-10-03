@@ -908,6 +908,7 @@ dependencies = [
  "miniz_oxide 0.8.9",
  "proptest",
  "regex",
+ "unicode-bidi",
 ]
 
 [[package]]
@@ -968,6 +969,7 @@ dependencies = [
  "kurbo",
  "log",
  "skrifa 0.47.0",
+ "unicode-bidi",
 ]
 
 [[package]]

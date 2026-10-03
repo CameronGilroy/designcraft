@@ -1078,6 +1078,9 @@ impl<'r> Importer<'r> {
         let u = |k: &str| e.num(k).map(|v| v.max(0.0) as u32);
         let frac = |k: &str| e.num(k).map(|v| v / 100.0);
         a.align = e.prop("Justification").and_then(|v| names::align_in(v.trim()));
+        a.direction = e.prop("ParagraphDirection").map(|v| {
+            if v.trim() == "RightToLeftDirection" { designcraft_doc::TextDirection::RightToLeft } else { designcraft_doc::TextDirection::LeftToRight }
+        });
         a.left_indent = e.num("LeftIndent");
         a.right_indent = e.num("RightIndent");
         a.first_line_indent = e.num("FirstLineIndent");

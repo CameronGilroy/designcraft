@@ -211,7 +211,8 @@ pub fn story_html(doc: &Document, sid: StoryId) -> String {
         let pf = &st.paras[pi];
         let class = slug(&pf.style);
         let text_empty = st.text[r.clone()].trim().is_empty();
-        let _ = write!(out, "<p class=\"{class}\">");
+        let rtl = doc.styles.resolve_para(pf).0.direction == designcraft_doc::TextDirection::RightToLeft;
+        let _ = write!(out, "<p class=\"{class}\"{}>", if rtl { " dir=\"rtl\"" } else { "" });
         if text_empty {
             out.push_str("&#160;");
         }
