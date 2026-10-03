@@ -166,8 +166,10 @@ fn transparent(it: &designcraft_doc::Item) -> bool {
     it.opacity < 1.0 || it.blend != Default::default() || it.effects.any() || it.knockout || it.children().iter().any(|c| transparent(c))
 }
 
-/// Transparency Flattener: spreads with transparency become one raster per page at `ppi`
-/// (in a copy of the document made for export). Returns the copy and the flattened page count.
+/// Transparency Flattener: each object involving transparency becomes an opaque image of its
+/// area as it looks over what's beneath it (so the rest stays vector); spreads whose parent items
+/// involve transparency are rasterised whole. Works on a copy of the document made for export.
+/// Returns the copy and the number of rasterised regions.
 fn flatten(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, ppi: f64) -> (designcraft_doc::Document, usize) {
     use designcraft_doc::{Asset, AssetId, Content, Graphic, Item, ItemId, Shape, SpreadRef};
     let mut out = d.clone();
@@ -178,24 +180,9 @@ fn flatten(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, pp
     let parent_transparent = |pid: Option<designcraft_doc::SpreadId>| {
         pid.and_then(|id| d.parents.iter().find(|p| p.id == id)).is_some_and(|p| p.items.iter().any(|it| transparent(it)))
     };
-    for (si, sp) in d.spreads.iter().enumerate() {
-        if !sp.items.iter().any(|it| transparent(it)) && !sp.pages.iter().any(|pg| pg.show_parent_items && parent_transparent(pg.parent)) {
-            continue;
-        }
-        let first = d.first_page_of_spread(si);
-        let mut images = Vec::new();
-        for (pi, pg) in sp.pages.iter().enumerate() {
-            if let Some(img) = rr.render_page(d, cache, first + pi, k, false, &Default::default()) {
-                images.push((pg.bounds(), img));
-            }
-        }
-        let lid = out.default_layer();
-        let osp = std::sync::Arc::make_mut(&mut out.spreads[si]);
-        osp.items.clear();
-        for pg in &mut osp.pages {
-            pg.show_parent_items = false;
-        }
-        for (b, img) in images {
+    // An opaque image item showing `img` over `r`.
+    let image_item =
+        |out: &mut designcraft_doc::Document, r: designcraft_geom::Rect, img: designcraft_render::Rendered, layer: designcraft_doc::LayerId| {
             let (w, h) = (img.width, img.height);
             let aid = AssetId(out.alloc());
             out.assets.insert(
@@ -210,19 +197,80 @@ fn flatten(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, pp
                     pixels: Some((w, h)),
                 }),
             );
-            let id = ItemId(out.alloc());
-            let mut it = Item::new(id, lid, Shape::Rectangle, designcraft_geom::shapes::rectangle(b));
+            let mut it = Item::new(ItemId(out.alloc()), layer, Shape::Rectangle, designcraft_geom::shapes::rectangle(r));
             it.content = Content::Graphic(Graphic {
                 asset: aid,
                 size: (w as f64, h as f64),
-                xf: designcraft_geom::Affine::translate((b.x0, b.y0))
-                    * designcraft_geom::Affine::scale_non_uniform(b.width() / w as f64, b.height() / h as f64),
+                xf: designcraft_geom::Affine::translate((r.x0, r.y0))
+                    * designcraft_geom::Affine::scale_non_uniform(r.width() / w as f64, r.height() / h as f64),
                 auto_fit: Default::default(),
                 fit_align: 4,
                 crop: [0.0; 4],
             });
             it.stroke.weight = 0.0;
-            let _ = out.insert_item(SpreadRef::Doc(si), it, None);
+            it
+        };
+    for (si, sp) in d.spreads.iter().enumerate() {
+        let whole = sp.pages.iter().any(|pg| pg.show_parent_items && parent_transparent(pg.parent));
+        if whole {
+            // Parent items involve transparency: every page of the spread as one image.
+            let first = d.first_page_of_spread(si);
+            let lid = out.default_layer();
+            let mut images = Vec::new();
+            for (pi, pg) in sp.pages.iter().enumerate() {
+                if let Some(img) = rr.render_page(d, cache, first + pi, k, false, &Default::default()) {
+                    images.push((pg.bounds(), img));
+                }
+            }
+            let osp = std::sync::Arc::make_mut(&mut out.spreads[si]);
+            osp.items.clear();
+            for pg in &mut osp.pages {
+                pg.show_parent_items = false;
+            }
+            for (b, img) in images {
+                let it = image_item(&mut out, b, img, lid);
+                let _ = out.insert_item(SpreadRef::Doc(si), it, None);
+                n += 1;
+            }
+            continue;
+        }
+        // Region by region, bottom to top.
+        for (idx, it) in sp.items.iter().enumerate() {
+            if it.hidden || !transparent(it) {
+                continue;
+            }
+            let reach = it.bounds().inflate(
+                designcraft_render::effect_outset(it) + it.stroke.extent() + 1.0,
+                designcraft_render::effect_outset(it) + it.stroke.extent() + 1.0,
+            );
+            // Only the part on the spread's pages and pasteboard that prints.
+            let (w, h) = ((reach.width() * k).ceil().max(1.0) as u32, (reach.height() * k).ceil().max(1.0) as u32);
+            if w as u64 * h as u64 > 80_000_000 {
+                continue;
+            }
+            // The stack up to and including this object.
+            let mut below = d.clone();
+            std::sync::Arc::make_mut(&mut below.spreads[si]).items.truncate(idx + 1);
+            let view = designcraft_geom::Affine::scale(k) * designcraft_geom::Affine::translate((-reach.x0, -reach.y0));
+            let opts = designcraft_render::RenderOptions { printing_only: true, ..Default::default() };
+            let img = rr.render(
+                &below,
+                cache,
+                &[designcraft_render::Placed { spread: SpreadRef::Doc(si), offset: designcraft_geom::Vec2::ZERO }],
+                w,
+                h,
+                view,
+                &opts,
+            );
+            let new = image_item(&mut out, reach, img, it.layer);
+            let osp = std::sync::Arc::make_mut(&mut out.spreads[si]);
+            let Some(pos) = osp.items.iter().position(|x| x.id == it.id) else { continue };
+            if threaded(d, it) {
+                // Keep the frame (its story flows on) under the image.
+                osp.items.insert(pos + 1, std::sync::Arc::new(new));
+            } else {
+                osp.items[pos] = std::sync::Arc::new(new);
+            }
             n += 1;
         }
     }
@@ -418,7 +466,7 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some((_, n)) = &flattened
         && *n > 0
     {
-        r.warnings.push(format!("transparency flattened: {n} page(s) rasterised"));
+        r.warnings.push(format!("transparency flattened: {n} region(s) rasterised"));
     }
     match str_param(p, "path") {
         Some(path) => {
@@ -454,8 +502,12 @@ mod text_tests {
         let r = s.execute("file.exportPdf", &json!({"flatten": "low"})).unwrap();
         assert!(r["warnings"].as_array().unwrap().iter().all(|w| !w.as_str().unwrap().contains("flattened")));
         s.execute("object.opacity", &json!({"ids": [id], "opacity": 0.5})).unwrap();
+        // Text away from the transparency stays live text.
+        s.execute("frame.create", &json!({"rect": [72, 400, 400, 450], "content": "text", "text": "Still vector", "caret": false})).unwrap();
         let r = s.execute("file.exportPdf", &json!({"flatten": "low"})).unwrap();
-        assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("flattened: 1 page")), "{r}");
+        let pdf = super::super::file::base64_decode(r["base64"].as_str().unwrap());
+        assert!(String::from_utf8_lossy(&pdf).contains("/FontFile"), "the text is still text");
+        assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("flattened: 1 ")), "{r}");
         assert_eq!(r["pages"], 3);
         let bytes = super::super::file::base64_decode(r["base64"].as_str().unwrap());
         assert_eq!(designcraft_render::pdf_page_count(&bytes), Some(3));
