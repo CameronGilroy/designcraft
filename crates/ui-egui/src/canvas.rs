@@ -499,6 +499,9 @@ fn render_worker_spawn(ctx: &egui::Context) -> Option<crate::render_worker::Work
 }
 
 fn upload(app: &mut DesignApp, ctx: &egui::Context, mut img: designcraft_render::Rendered) {
+    if app.ui.proof_colors {
+        designcraft_render::proof_view(&mut img, &app.ui.proof_setup);
+    }
     if app.ui.separation.is_some() || app.ui.ink_limit.is_some() {
         designcraft_render::separation_view(&mut img, app.ui.separation, app.ui.ink_limit);
     }

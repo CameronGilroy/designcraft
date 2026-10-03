@@ -729,6 +729,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "preferences" => "Preferences",
         "print" => "Print",
         "pdfImport" => "Place PDF",
+        "colorSettings" => "Color Settings",
         "keyboardShortcuts" => "Keyboard Shortcuts",
         "colorPicker" => "Color Picker",
         id => match id.strip_prefix("cmd:").and_then(designcraft_engine::find_command) {
@@ -948,6 +949,48 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                         }
                     });
                 });
+            }
+            "colorSettings" => {
+                let profiles = d.fields.get("profiles").and_then(Value::as_array).cloned().unwrap_or_default();
+                egui::Grid::new("color_settings").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    for (key, label, kind) in [("rgb", "RGB:", "rgb"), ("cmyk", "CMYK:", "cmyk")] {
+                        ui.label(label);
+                        let cur = d.s(key);
+                        egui::ComboBox::from_id_salt(("ws", key)).selected_text(&cur).width(260.0).show_ui(ui, |ui| {
+                            for pr in profiles.iter().filter(|p| p["kind"] == kind) {
+                                let name = pr["name"].as_str().unwrap_or("");
+                                if ui.selectable_label(name == cur, name).clicked() {
+                                    d.fields.insert(key.into(), json!(name));
+                                }
+                            }
+                        });
+                        ui.end_row();
+                    }
+                    ui.label("Intent:");
+                    let cur = d.s("intent");
+                    egui::ComboBox::from_id_salt("ws_intent")
+                        .selected_text(designcraft_color::cms::Intent::parse(&cur).map_or("", |i| i.label()))
+                        .show_ui(ui, |ui| {
+                            for i in designcraft_color::cms::Intent::ALL {
+                                if ui.selectable_label(i.id() == cur, i.label()).clicked() {
+                                    d.fields.insert("intent".into(), json!(i.id()));
+                                }
+                            }
+                        });
+                    ui.end_row();
+                });
+                check(ui, &mut d, "bpc", "Use Black Point Compensation");
+                if ui.button("Load Profile…").clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("icc"))
+                {
+                    match app.session.execute("color.loadProfile", &json!({"path": path})) {
+                        Ok(_) => {
+                            let f = app.session.execute("color.settings", &json!({})).unwrap_or_default();
+                            d.fields.insert("profiles".into(), f["profiles"].clone());
+                        }
+                        Err(e) => app.status(format!("Color Settings: {e}")),
+                    }
+                }
             }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
             "userDictionary" => user_dictionary(app, ui, &mut d),
@@ -1280,6 +1323,12 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "colorPicker" => {
             let hex = d.s("hex");
             app.run("object.color", json!({"color": hex, "target": d.s("target")}))
+        }
+        "colorSettings" => {
+            let r = app.run("color.settings", json!({"rgb": d.s("rgb"), "cmyk": d.s("cmyk"), "intent": d.s("intent"), "bpc": d.b("bpc")}))?;
+            app.ui.color_settings = Some(designcraft_color::cms::active_settings());
+            app.canvas.shown = None;
+            Ok(r)
         }
         "pdfImport" => {
             let crop = d.s("crop");

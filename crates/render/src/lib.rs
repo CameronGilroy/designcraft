@@ -906,6 +906,25 @@ pub fn pdf_page_box(bytes: &[u8], page: usize, kind: &str) -> Option<(f64, f64, 
 /// Separations Preview on a rendered image: `plate` 0–3 shows that process plate (C, M, Y, K) as
 /// ink density in grey; with an `ink_limit` (0–4, total ink) areas over it are shown in red.
 /// Pixels are separated with a plain GCR (black = 1 − max(r, g, b)), so it's a preview.
+/// View › Proof Colors: simulate the proof target (a press, another RGB space, colour-vision
+/// deficiencies) through the active colour settings' proof table.
+pub fn proof_view(img: &mut Rendered, setup: &designcraft_color::cms::ProofSetup) {
+    let lut = designcraft_color::cms::active().proof_lut(setup);
+    for px in img.pixels.chunks_exact_mut(4) {
+        let a = px[3];
+        if a == 0 {
+            continue;
+        }
+        // Premultiplied → straight, proof, back.
+        let k = 255.0 / a as f32;
+        let rgb = [px[0], px[1], px[2]].map(|v| ((v as f32 * k).round()).min(255.0) as u8);
+        let out = lut.apply8(rgb);
+        for i in 0..3 {
+            px[i] = ((out[i] as u32 * a as u32 + 127) / 255) as u8;
+        }
+    }
+}
+
 pub fn separation_view(img: &mut Rendered, plate: Option<u8>, ink_limit: Option<f32>) {
     for px in img.pixels.chunks_exact_mut(4) {
         let a = px[3] as f32 / 255.0;
@@ -940,6 +959,23 @@ mod tests {
     use super::*;
     use designcraft_doc::build::NewDocument;
     use designcraft_doc::{Fill, ParaFormat};
+
+    #[test]
+    fn proof_view_simulates_the_target() {
+        use designcraft_color::cms::{ProofSetup, ProofTarget};
+        let red = |a: u8| Rendered { width: 1, height: 1, pixels: vec![a, 0, 0, a] };
+        let mut img = red(255);
+        proof_view(&mut img, &ProofSetup { target: ProofTarget::Protanopia, ..Default::default() });
+        assert!(img.pixels[1] > 40, "protanopia turns pure red olive: {:?}", img.pixels);
+        let mut img = red(255);
+        proof_view(&mut img, &ProofSetup { target: ProofTarget::MonitorRgb, ..Default::default() });
+        assert!(img.pixels[0] > 245 && img.pixels[1] < 10, "monitor RGB is no simulation: {:?}", img.pixels);
+        // Transparent pixels stay transparent; premultiplication is kept.
+        let mut img = Rendered { width: 2, height: 1, pixels: vec![0, 0, 0, 0, 100, 0, 0, 128] };
+        proof_view(&mut img, &ProofSetup { target: ProofTarget::WorkingCmyk, ..Default::default() });
+        assert_eq!(&img.pixels[..4], &[0, 0, 0, 0]);
+        assert!(img.pixels[4] <= 128 && img.pixels[7] == 128);
+    }
 
     #[test]
     fn renders_page_with_text_and_fill() {

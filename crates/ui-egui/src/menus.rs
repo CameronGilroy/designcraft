@@ -73,6 +73,14 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.textThreads", "Show/Hide Text Threads", Some("Cmd+Alt+Y"), "{}"),
     ("view.hiddenCharacters", "Show/Hide Hidden Characters", Some("Cmd+Alt+I"), "{}"),
     ("view.taggedFrames", "Show/Hide Tagged Frames", None, "{} — XML-tagged frames outlined in their tag colour"),
+    ("view.proofColors", "Proof Colors", None, "{on?: bool} — simulate the proof target on screen"),
+    (
+        "view.proofSetup",
+        "Proof Setup",
+        None,
+        "{target?: workingCmyk|srgb|legacyMacRgb|monitorRgb|protanopia|deuteranopia|cmyk:<profile>, intent?, simulatePaper?: bool|\"toggle\"}",
+    ),
+    ("app.colorSettings", "Color Settings…", None, "{} — the working spaces, intent and black-point compensation"),
     ("view.separations", "Separations Preview", None, "{plate?: cyan|magenta|yellow|black|null, inkLimit?: percent|null}"),
     ("view.overprintPreview", "Overprint Preview", Some("Cmd+Alt+Shift+Y"), "{} — show how overprinting inks mix"),
     ("view.fastDisplay", "Fast Display", Some("Cmd+Alt+Shift+Z"), "{} — placed graphics as grey boxes, no effects"),
@@ -179,6 +187,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:edit.transparencyBlendSpace|Document RGB|{\"space\": \"rgb\"}",
             "cmd:edit.transparencyBlendSpace|Document CMYK|{\"space\": \"cmyk\"}",
             "<",
+            "ui:app.colorSettings",
             ">Interface Language",
             "ui:app.language|English|{\"lang\": \"\"}",
             "ui:app.language|Deutsch|{\"lang\": \"de\"}",
@@ -320,6 +329,17 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "ui:view.hiddenCharacters",
             "ui:view.taggedFrames",
+            ">Proof Setup",
+            "ui:view.proofSetup|Working CMYK|{\"target\": \"workingCmyk\"}",
+            "ui:view.proofSetup|Internet Standard RGB (sRGB)|{\"target\": \"srgb\"}",
+            "ui:view.proofSetup|Legacy Macintosh RGB|{\"target\": \"legacyMacRgb\"}",
+            "ui:view.proofSetup|Monitor RGB|{\"target\": \"monitorRgb\"}",
+            "ui:view.proofSetup|Color Blindness – Protanopia|{\"target\": \"protanopia\"}",
+            "ui:view.proofSetup|Color Blindness – Deuteranopia|{\"target\": \"deuteranopia\"}",
+            "-",
+            "ui:view.proofSetup|Simulate Paper Color|{\"simulatePaper\": \"toggle\"}",
+            "<",
+            "ui:view.proofColors",
             ">Separations Preview",
             "ui:view.separations|Off|{\"plate\": null, \"inkLimit\": null}",
             "ui:view.separations|Cyan|{\"plate\": \"cyan\"}",
@@ -956,6 +976,34 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "view.textThreads" => flag(&mut app.ui.text_threads),
         "view.hiddenCharacters" => flag(&mut app.ui.hidden_characters),
         "view.taggedFrames" => flag(&mut app.ui.tagged_frames),
+        "view.proofColors" => {
+            app.ui.proof_colors = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.proof_colors);
+            app.canvas.shown = None;
+            Ok(json!(app.ui.proof_colors))
+        }
+        "view.proofSetup" => {
+            if let Some(t) = p.get("target").and_then(Value::as_str) {
+                let Some(t) = designcraft_color::cms::ProofTarget::parse(t) else { return Some(Err(format!("unknown proof target `{t}`"))) };
+                app.ui.proof_setup.target = t;
+                app.ui.proof_colors = true;
+            }
+            if let Some(i) = p.get("intent").and_then(Value::as_str) {
+                let Some(i) = designcraft_color::cms::Intent::parse(i) else { return Some(Err(format!("unknown intent `{i}`"))) };
+                app.ui.proof_setup.intent = i;
+            }
+            match p.get("simulatePaper") {
+                Some(Value::Bool(b)) => app.ui.proof_setup.simulate_paper = *b,
+                Some(Value::String(s)) if s == "toggle" => app.ui.proof_setup.simulate_paper = !app.ui.proof_setup.simulate_paper,
+                _ => {}
+            }
+            app.canvas.shown = None;
+            Ok(json!({"target": app.ui.proof_setup.target.id(), "simulatePaper": app.ui.proof_setup.simulate_paper, "on": app.ui.proof_colors}))
+        }
+        "app.colorSettings" => {
+            let f = app.session.execute("color.settings", &json!({})).unwrap_or_default();
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("colorSettings", f));
+            Ok(Value::Null)
+        }
         "view.separations" => {
             if let Some(v) = p.get("plate") {
                 app.ui.separation = v.as_str().and_then(|s| ["cyan", "magenta", "yellow", "black"].iter().position(|x| *x == s)).map(|i| i as u8);
@@ -1440,6 +1488,12 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "changes.track" => app.session.active().is_some_and(|d| d.doc.settings.track_changes),
         "window.controlBar" => app.ui.control_bar,
         "window.split" => app.split,
+        "view.proofColors" => app.ui.proof_colors,
+        "view.proofSetup" => match (params.get("target").and_then(Value::as_str), params.get("simulatePaper")) {
+            (Some(t), _) => app.ui.proof_setup.target.id() == t,
+            (None, Some(_)) => app.ui.proof_setup.simulate_paper,
+            _ => return None,
+        },
         "edit.dynamicSpelling" => app.ui.dynamic_spelling,
         "app.language" => app.ui.language == params.get("lang").and_then(Value::as_str).unwrap_or(""),
         "app.flattener" => app.ui.flattener == params.get("preset").and_then(Value::as_str).unwrap_or(""),
@@ -1821,6 +1875,20 @@ mod tests {
         for (title, _) in menu_tree() {
             assert_ne!(crate::i18n::tr("ja", title), title, "{title}");
         }
+    }
+
+    #[test]
+    fn proof_setup_and_colors() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        assert_eq!(checked(&app, "view.proofColors", &Value::Null), Some(false));
+        let r = run_ui(&mut app, "view.proofSetup", &json!({"target": "deuteranopia"})).unwrap().unwrap();
+        assert_eq!(r["on"], true);
+        assert_eq!(checked(&app, "view.proofSetup", &json!({"target": "deuteranopia"})), Some(true));
+        run_ui(&mut app, "view.proofSetup", &json!({"simulatePaper": "toggle"})).unwrap().unwrap();
+        assert!(app.ui.proof_setup.simulate_paper);
+        run_ui(&mut app, "view.proofColors", &json!({})).unwrap().unwrap();
+        assert!(!app.ui.proof_colors);
+        assert!(run_ui(&mut app, "view.proofSetup", &json!({"target": "nope"})).unwrap().is_err());
     }
 
     #[test]

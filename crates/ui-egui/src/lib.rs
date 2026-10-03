@@ -103,6 +103,11 @@ pub struct UiState {
     /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
     pub hidden_menu_items: Vec<String>,
     pub show_full_menus: bool,
+    /// Edit › Color Settings (re-applied at start).
+    pub color_settings: Option<designcraft_color::cms::ColorSettings>,
+    /// View › Proof Colors and View › Proof Setup.
+    pub proof_colors: bool,
+    pub proof_setup: designcraft_color::cms::ProofSetup,
     /// Edit › Spelling › Dynamic Spelling: misspelled words underlined on the canvas.
     pub dynamic_spelling: bool,
     /// Preferences › Story Editor Display: text size (points).
@@ -179,6 +184,9 @@ impl Default for UiState {
             hidden_menu_items: Vec::new(),
             show_full_menus: false,
             story_editor_size: 14.0,
+            color_settings: None,
+            proof_colors: false,
+            proof_setup: Default::default(),
             dynamic_spelling: false,
             language: String::new(),
             flattener: String::new(),
@@ -313,6 +321,8 @@ pub struct DesignApp {
     pub other_pane: Option<(CanvasCache, Option<egui::Rect>)>,
     /// Power Zoom in progress: the zoom to return to and the canvas point it will centre on.
     pub power_zoom: Option<(f64, designcraft_geom::Point)>,
+    /// The persisted colour settings have been applied this session.
+    pub color_applied: bool,
     pub perf: Perf,
     pub synthetic: Vec<egui::Event>,
     /// Story open in the Story Editor.
@@ -348,6 +358,7 @@ impl DesignApp {
             focus_pane: 0,
             other_pane: None,
             power_zoom: None,
+            color_applied: false,
             perf: Perf::default(),
             synthetic: vec![],
             story_editor: None,
@@ -489,6 +500,12 @@ impl DesignApp {
 
     /// Per-frame logic before layout.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        if !self.color_applied {
+            self.color_applied = true;
+            if let Some(cs) = self.ui.color_settings.clone() {
+                let _ = designcraft_color::cms::set_active(&cs);
+            }
+        }
         let scale = self.ui.ui_scale.clamp(0.5, 3.0);
         if (ctx.zoom_factor() - scale).abs() > 1e-3 {
             ctx.set_zoom_factor(scale);
