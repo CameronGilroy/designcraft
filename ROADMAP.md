@@ -95,7 +95,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 
 ## How far from full parity (estimate, 2026-10-02, updated)
 
-**Breadth: ~87% weighted** (P0 core 99%, P1 89%, P2 33%) over the 275 features of the InDesign catalogue, scored
+**Breadth: ~86% weighted** (P0 core 99%, P1 88%, P2 31%) over the 275 features of the InDesign catalogue, scored
 row by row in [docs/parity.md](docs/parity.md) (`cargo xtask parity` recomputes it). Many features scored done still
 lack some of InDesign's options or dialog details, so **overall parity including depth is about 70%**.
 
