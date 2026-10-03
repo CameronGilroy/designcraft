@@ -229,6 +229,45 @@ fn flatten(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, pp
     (out, n)
 }
 
+/// A copy of `d` where placed PDFs with Object Layer Options hidden layers are 300 ppi images.
+fn rasterize_layered(d: &designcraft_doc::Document) -> (Option<designcraft_doc::Document>, usize) {
+    let ids: Vec<designcraft_doc::ItemId> =
+        d.all_items().into_iter().filter(|id| d.item(*id).is_some_and(|it| !it.pdf_hidden_layers.is_empty() && it.graphic().is_some())).collect();
+    if ids.is_empty() {
+        return (None, 0);
+    }
+    let mut out = d.clone();
+    let mut n = 0;
+    for id in ids {
+        let Some((g, hidden)) = out.item(id).and_then(|it| Some((it.graphic()?.clone(), it.pdf_hidden_layers.clone()))) else { continue };
+        let Some(a) = out.assets.get(&g.asset).cloned() else { continue };
+        if !designcraft_render::is_pdf(&a.data) {
+            continue;
+        }
+        let side = (g.size.0.max(g.size.1) * 300.0 / 72.0).clamp(64.0, 8000.0) as u32;
+        let Some(png) = designcraft_render::pdf_page_png(&a.data, a.page as usize, side, &hidden) else { continue };
+        let px = designcraft_render::image_size(&png);
+        let aid = designcraft_doc::AssetId(out.alloc());
+        out.assets.insert(
+            aid,
+            std::sync::Arc::new(designcraft_doc::Asset {
+                page: 0,
+                id: aid,
+                name: format!("{}.png", a.name),
+                mime: "image/png".into(),
+                link: None,
+                data: std::sync::Arc::new(png),
+                pixels: px,
+            }),
+        );
+        if let Some(designcraft_doc::Content::Graphic(gg)) = out.item_mut(id).map(|it| &mut it.content) {
+            gg.asset = aid;
+        }
+        n += 1;
+    }
+    (Some(out), n)
+}
+
 fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.doc()?;
     let opts = options(p, st.doc.page_count())?;
@@ -244,7 +283,10 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
         ),
     };
     let flattened = ppi.map(|ppi| flatten(&st.doc, &s.cache, ppi));
-    let doc: &designcraft_doc::Document = flattened.as_ref().map_or(&st.doc, |f| &f.0);
+    // Placed PDFs with hidden layers go out as images showing just their visible layers.
+    let base: &designcraft_doc::Document = flattened.as_ref().map_or(&st.doc, |f| &f.0);
+    let (layered, layer_count) = rasterize_layered(base);
+    let doc: &designcraft_doc::Document = layered.as_ref().unwrap_or(base);
     let r = designcraft_pdf::export_pdf_with_report(doc, &s.cache, &opts).map_err(|e| EngineError::Other(e.to_string()))?;
     let mut r = r;
     // Transparency Blend Space: the page group of pages with transparency.
@@ -264,6 +306,9 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
             Some(b) => r.bytes = b,
             None => r.warnings.push("page transitions couldn't be added to this PDF".into()),
         }
+    }
+    if layer_count > 0 {
+        r.warnings.push(format!("{layer_count} placed PDF(s) with hidden layers exported as images"));
     }
     if let Some((_, n)) = &flattened
         && *n > 0

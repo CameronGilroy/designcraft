@@ -811,6 +811,9 @@ pub struct Item {
     /// Liquid Layout (object-based pages): pins and resize permissions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquid: Option<ObjectLiquid>,
+    /// Object › Object Layer Options: layers of a placed PDF that are hidden.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pdf_hidden_layers: Vec<String>,
     /// Window › Interactive › Media: options of a placed video or sound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<MediaOptions>,
@@ -866,6 +869,7 @@ impl Item {
             alt_text: String::new(),
             xml_tag: String::new(),
             button: None,
+            pdf_hidden_layers: Vec::new(),
             media: None,
             liquid: None,
             states: Vec::new(),

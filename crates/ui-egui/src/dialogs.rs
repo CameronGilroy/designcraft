@@ -730,6 +730,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "print" => "Print",
         "pdfImport" => "Place PDF",
         "colorSettings" => "Color Settings",
+        "layerOptions" => "Object Layer Options",
         "keyboardShortcuts" => "Keyboard Shortcuts",
         "colorPicker" => "Color Picker",
         id => match id.strip_prefix("cmd:").and_then(designcraft_engine::find_command) {
@@ -949,6 +950,19 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                         }
                     });
                 });
+            }
+            "layerOptions" => {
+                let mut layers = d.fields.get("layers").and_then(Value::as_array).cloned().unwrap_or_default();
+                if layers.is_empty() {
+                    ui.label("This PDF has no layers.");
+                }
+                for l in &mut layers {
+                    let mut on = l["visible"].as_bool().unwrap_or(true);
+                    if ui.checkbox(&mut on, l["name"].as_str().unwrap_or("")).changed() {
+                        l["visible"] = json!(on);
+                    }
+                }
+                d.fields.insert("layers".into(), json!(layers));
             }
             "colorSettings" => {
                 let profiles = d.fields.get("profiles").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -1323,6 +1337,10 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "colorPicker" => {
             let hex = d.s("hex");
             app.run("object.color", json!({"color": hex, "target": d.s("target")}))
+        }
+        "layerOptions" => {
+            let hidden: Vec<Value> = d.fields.get("layers").and_then(Value::as_array).map(|a| a.iter().filter(|l| l["visible"] == false).map(|l| l["name"].clone()).collect()).unwrap_or_default();
+            app.run("object.layerOptions", json!({"hidden": hidden}))
         }
         "colorSettings" => {
             let r = app.run("color.settings", json!({"rgb": d.s("rgb"), "cmyk": d.s("cmyk"), "intent": d.s("intent"), "bpc": d.b("bpc")}))?;

@@ -77,6 +77,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("window.hidePanelsExceptTools", "Show/Hide Panels Except Tools", Some("Shift+Tab"), "{}"),
     ("window.nextDocument", "Next Document", Some("Cmd+F6"), "{}"),
     ("window.previousDocument", "Previous Document", Some("Cmd+Shift+F6"), "{}"),
+    ("app.layerOptions", "Object Layer Options…", None, "{} — show or hide the layers of the selected placed PDF"),
     ("view.rotateSpread", "Rotate Spread", None, "{angle: 90 (clockwise) | -90 | 180 | 0 (clear)} — turn the view in quarter turns"),
     ("view.proofColors", "Proof Colors", None, "{on?: bool} — simulate the proof target on screen"),
     (
@@ -433,6 +434,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:object.showAll",
             "-",
             "cmd:object.textFrameOptions",
+            "ui:app.layerOptions",
             "cmd:object.primaryTextFrame",
             "cmd:object.cornerOptions",
             "-",
@@ -1011,6 +1013,14 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 app.session.set_active(next);
             }
             Ok(json!(app.session.active_index()))
+        }
+        "app.layerOptions" => {
+            let layers = match app.session.execute("object.pdfLayers", &json!({})) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e.to_string())),
+            };
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("layerOptions", json!({"layers": layers})));
+            Ok(Value::Null)
         }
         "view.rotateSpread" => {
             let angle = p.get("angle").and_then(Value::as_i64).unwrap_or(90);

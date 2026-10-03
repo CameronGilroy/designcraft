@@ -11,13 +11,13 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 100 | 2 | 0 | 99% |
 | P1 | 97 | 94 | 3 | 0 | 98% |
-| P2 | 76 | 44 | 31 | 1 | 78% |
+| P2 | 76 | 45 | 31 | 0 | 80% |
 
 | Area | Parity |
 |---|---|
 | Application shell & workspace | 96% |
 | Documents, pages, spreads | 98% |
-| Layers | 95% |
+| Layers | 100% |
 | Frames, shapes & paths | 100% |
 | Transform | 100% |
 | Fill, stroke, colour | 99% |
@@ -93,7 +93,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Layers | Hide/Lock others | P1 | D |
 | Layers | Page item names in Layers panel | P1 | D |
 | Layers | Layer colour drives selection colour | P0 | D |
-| Layers | Object Layer Options for placed files | P2 | M |
+| Layers | Object Layer Options for placed files | P2 | D |
 | Frames, shapes & paths | Rectangle/Ellipse/Polygon frames | P0 | D |
 | Frames, shapes & paths | Rectangle/Ellipse/Polygon shapes | P0 | D |
 | Frames, shapes & paths | Polygon settings | P0 | D |

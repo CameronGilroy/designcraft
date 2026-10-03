@@ -25,6 +25,8 @@ pub use vello_cpu;
 pub mod damage;
 mod fx;
 pub mod glyphs;
+mod pdf_layers;
+pub use pdf_layers::{pdf_hide_layers, pdf_layers};
 pub mod images;
 mod text;
 
@@ -508,7 +510,13 @@ impl Renderer {
                 let g = &if it.media.is_some() { it.drawn_graphic(&f.doc.assets).unwrap_or_else(|| g.clone()) } else { g.clone() };
                 ctx.set_transform(f.view * xf);
                 ctx.push_clip_layer(bp);
+                if !it.pdf_hidden_layers.is_empty() {
+                    HIDDEN_LAYERS.with(|h| *h.borrow_mut() = it.pdf_hidden_layers.clone());
+                }
                 self.draw_graphic(ctx, f, g, xf);
+                if !it.pdf_hidden_layers.is_empty() {
+                    HIDDEN_LAYERS.with(|h| h.borrow_mut().clear());
+                }
                 ctx.pop_layer();
             }
             Content::Text(tf) => {
@@ -663,7 +671,9 @@ impl Renderer {
         // Pick a mip level close to the on-screen size (Typical: a 72 ppi proxy).
         let on_screen = (f.view * xf * g.xf).determinant().abs().sqrt();
         let on_screen = if f.opts.quality == DisplayQuality::Typical { on_screen.min(1.0) } else { on_screen };
-        let Some(pm) = images::mip(&asset.data, asset.page, g.size.0, on_screen) else { return };
+        let hidden = HIDDEN_LAYERS.with(|h| h.borrow().clone());
+        let data = if !hidden.is_empty() && is_pdf(&asset.data) { pdf_layers::layered(&asset.data, &hidden) } else { asset.data.clone() };
+        let Some(pm) = images::mip(&data, asset.page, g.size.0, on_screen) else { return };
         let rect = Rect::new(0.0, 0.0, g.size.0, g.size.1);
         ctx.set_transform(f.view * xf * g.xf);
         let sx = g.size.0 / pm.width().max(1) as f64;
@@ -683,6 +693,8 @@ fn rect_overlaps(a: Rect, b: Rect) -> bool {
 }
 
 thread_local! {
+    /// Object Layer Options of the placed PDF being drawn.
+    static HIDDEN_LAYERS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     /// Appearance of Black for the render on this thread: 100% K as pure black.
     static RICH_BLACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -864,6 +876,14 @@ pub fn pdf_page_size(bytes: &[u8], page: usize) -> Option<(f64, f64)> {
     let p = pdf.pages().get(page)?;
     let (w, h) = p.render_dimensions();
     Some((w as f64, h as f64))
+}
+
+/// PDF page `page` as PNG, its longer side about `max_side` pixels, with the `hidden` layers off.
+pub fn pdf_page_png(bytes: &[u8], page: usize, max_side: u32, hidden: &[String]) -> Option<Vec<u8>> {
+    let data = if hidden.is_empty() { bytes.to_vec() } else { pdf_hide_layers(bytes, hidden).unwrap_or_else(|| bytes.to_vec()) };
+    let pm = render_pdf_page(&data, page, max_side)?;
+    let pixels: Vec<u8> = pm.data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
+    Some(Rendered { width: pm.width() as u32, height: pm.height() as u32, pixels }.to_png())
 }
 
 /// Rasterize PDF page `page` so its longer side is about `max_side` pixels (screen display; PDF

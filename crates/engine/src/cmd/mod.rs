@@ -36,6 +36,7 @@ mod overrides;
 mod package;
 mod path_type;
 mod paths;
+mod pdflayers;
 mod place_text;
 pub mod preflight;
 mod prefs;
@@ -166,6 +167,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(linked::specs());
         v.extend(mathexpr::specs());
         v.extend(media::specs());
+        v.extend(pdflayers::specs());
         v.extend(liquid::specs());
         v.extend(xml::specs());
         v.extend(strokes::specs());
