@@ -9,6 +9,50 @@ use crate::{Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
+        cmd!(noundo "find.objects", "Find Object", [], None,
+        "{fill?, stroke?: swatch, strokeWeight?, opacity? (0–1), kind?: text|graphic|shape|line|group, layer?, label?, select?: bool (default true)} → {ids} — Find/Change › Object, through the document",
+        has_doc, |s, p| {
+            let ids = find_objects(&s.doc()?.doc, p);
+            if p.get("select").and_then(Value::as_bool).unwrap_or(true) && !ids.is_empty() {
+                let st = s.doc_mut()?;
+                st.selection = designcraft_doc::Selection::items(ids.clone());
+                st.revision += 1;
+            }
+            Ok(json!({"ids": ids.iter().map(|i| i.0).collect::<Vec<_>>()}))
+        }),
+        cmd!(
+            "find.changeObjects",
+            "Change All (Object)",
+            [],
+            None,
+            "{…find.objects criteria, change: {fill?, stroke?, strokeWeight?, opacity?}} → {changed}",
+            has_doc,
+            |s, p| {
+                let ids = find_objects(&s.doc()?.doc, p);
+                let ch = p.get("change").cloned().unwrap_or(Value::Null);
+                if !ch.is_object() {
+                    return Err(bad("find.changeObjects", "`change` required"));
+                }
+                s.edit(|d, _| {
+                    for id in &ids {
+                        let Some(it) = d.item_mut(*id) else { continue };
+                        if let Some(f) = ch.get("fill").and_then(Value::as_str) {
+                            it.fill = designcraft_doc::Fill::swatch(f);
+                        }
+                        if let Some(c) = ch.get("stroke").and_then(Value::as_str) {
+                            it.stroke.swatch = c.to_string();
+                        }
+                        if let Some(w) = ch.get("strokeWeight").and_then(Value::as_f64) {
+                            it.stroke.weight = w.max(0.0);
+                        }
+                        if let Some(o) = ch.get("opacity").and_then(Value::as_f64) {
+                            it.opacity = o.clamp(0.0, 1.0) as f32;
+                        }
+                    }
+                    Ok(json!({"changed": ids.len()}))
+                })
+            }
+        ),
         cmd!(query "find.find", "Find", ["Edit", "Find/Change"], None,
             "{find, grep?: bool, caseSensitive?: bool, wholeWord?: bool, scope?: document|story|selection, story?} → matches [{story, start, end, text}]",
             has_doc, find),
@@ -230,5 +274,69 @@ mod tests {
         assert_eq!(s.execute("find.find", &json!({"find": ".^pc"})).unwrap().as_array().unwrap().len(), 1);
         s.execute("find.next", &json!({"find": "or"})).unwrap();
         assert!(s.doc().unwrap().selection.text.is_some());
+    }
+}
+
+/// Objects matching Find/Change › Object criteria, in document order (nested ones included).
+fn find_objects(d: &designcraft_doc::Document, p: &Value) -> Vec<designcraft_doc::ItemId> {
+    use designcraft_doc::{Content, Shape};
+    let fill = str_param(p, "fill");
+    let stroke = str_param(p, "stroke");
+    let weight = p.get("strokeWeight").and_then(Value::as_f64);
+    let opacity = p.get("opacity").and_then(Value::as_f64);
+    let kind = str_param(p, "kind");
+    let layer = str_param(p, "layer").and_then(|n| d.layers.iter().find(|l| l.name == n).map(|l| l.id));
+    if str_param(p, "layer").is_some() && layer.is_none() {
+        return vec![];
+    }
+    let label = str_param(p, "label");
+    let mut out = Vec::new();
+    for sp in d.spreads.iter().chain(d.parents.iter()) {
+        for top in &sp.items {
+            top.walk(&mut |it| {
+                let k = match (&it.content, it.shape) {
+                    (_, Shape::Group) => "group",
+                    (Content::Text(_), _) => "text",
+                    (Content::Graphic(_), _) => "graphic",
+                    (_, Shape::GraphicLine) => "line",
+                    _ => "shape",
+                };
+                let ok = fill.is_none_or(|f| it.fill.swatch == f)
+                    && stroke.is_none_or(|c| it.stroke.swatch == c && it.stroke.weight > 0.0)
+                    && weight.is_none_or(|w| (it.stroke.weight - w).abs() < 1e-6)
+                    && opacity.is_none_or(|o| (it.opacity as f64 - o).abs() < 1e-3)
+                    && kind.is_none_or(|kk| kk == k)
+                    && layer.is_none_or(|l| it.layer == l)
+                    && label.is_none_or(|lb| it.label == lb);
+                if ok {
+                    out.push(it.id);
+                }
+            });
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod object_find_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn find_and_change_objects_by_attributes() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [10, 10, 50, 50], "content": "unassigned"})).unwrap()["id"].clone();
+        let _b = s.execute("frame.create", &json!({"rect": [60, 10, 90, 50], "content": "unassigned"})).unwrap()["id"].clone();
+        s.execute("object.fill", &json!({"swatch": "[Black]", "ids": [a]})).unwrap();
+        s.execute("frame.create", &json!({"rect": [10, 60, 90, 90], "content": "text", "text": "t"})).unwrap();
+        let r = s.execute("find.objects", &json!({"fill": "[Black]"})).unwrap();
+        assert_eq!(r["ids"], json!([a]));
+        assert_eq!(s.doc().unwrap().selection.items.len(), 1, "found objects are selected");
+        assert_eq!(s.execute("find.objects", &json!({"kind": "text", "select": false})).unwrap()["ids"].as_array().unwrap().len(), 1);
+        let c = s.execute("find.changeObjects", &json!({"kind": "shape", "change": {"opacity": 0.5}})).unwrap();
+        assert_eq!(c["changed"], 2);
+        assert_eq!(s.execute("find.objects", &json!({"opacity": 0.5, "select": false})).unwrap()["ids"].as_array().unwrap().len(), 2);
     }
 }

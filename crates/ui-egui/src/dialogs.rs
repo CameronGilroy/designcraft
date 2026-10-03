@@ -720,11 +720,66 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             "findChange" => {
                 ui.horizontal(|ui| {
                     for (label, grep) in [("Text", false), ("GREP", true)] {
-                        if ui.selectable_label(d.b("grep") == grep, label).clicked() {
+                        if ui.selectable_label(!d.b("objectMode") && d.b("grep") == grep, label).clicked() {
                             d.fields.insert("grep".into(), json!(grep));
+                            d.fields.insert("objectMode".into(), json!(false));
                         }
                     }
+                    if ui.selectable_label(d.b("objectMode"), "Object").clicked() {
+                        d.fields.insert("objectMode".into(), json!(true));
+                    }
                 });
+                if d.b("objectMode") {
+                    // Find/Change › Object: objects by fill and kind; change their fill or opacity.
+                    let swatches: Vec<String> = app.session.active().map(|st| st.doc.swatches.iter().filter(|w| !w.hidden).map(|w| w.name.clone()).collect()).unwrap_or_default();
+                    egui::Grid::new("fco").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                        for (key, label, any) in [("objFill", "Find fill:", "(any)"), ("objChangeFill", "Change fill to:", "(unchanged)")] {
+                            ui.label(label);
+                            let cur = d.s(key);
+                            egui::ComboBox::from_id_salt(key).selected_text(if cur.is_empty() { any } else { cur.as_str() }).width(180.0).show_ui(ui, |ui| {
+                                if ui.selectable_label(cur.is_empty(), any).clicked() {
+                                    d.fields.insert(key.into(), json!(""));
+                                }
+                                for w in &swatches {
+                                    if ui.selectable_label(*w == cur, w).clicked() {
+                                        d.fields.insert(key.into(), json!(w));
+                                    }
+                                }
+                            });
+                            ui.end_row();
+                        }
+                        ui.label("Kind:");
+                        let cur = d.s("objKind");
+                        egui::ComboBox::from_id_salt("objKind").selected_text(if cur.is_empty() { "(any)" } else { cur.as_str() }).show_ui(ui, |ui| {
+                            for v in ["", "text", "graphic", "shape", "line", "group"] {
+                                if ui.selectable_label(cur == v, if v.is_empty() { "(any)" } else { v }).clicked() {
+                                    d.fields.insert("objKind".into(), json!(v));
+                                }
+                            }
+                        });
+                        ui.end_row();
+                    });
+                    let mut crit = json!({});
+                    if !d.s("objFill").is_empty() {
+                        crit["fill"] = json!(d.s("objFill"));
+                    }
+                    if !d.s("objKind").is_empty() {
+                        crit["kind"] = json!(d.s("objKind"));
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Find All").clicked() {
+                            let n = app.run("find.objects", crit.clone()).ok().and_then(|r| r["ids"].as_array().map(Vec::len)).unwrap_or(0);
+                            d.fields.insert("status".into(), json!(format!("{n} found")));
+                        }
+                        if ui.button("Change All").clicked() && !d.s("objChangeFill").is_empty() {
+                            let mut p = crit.clone();
+                            p["change"] = json!({"fill": d.s("objChangeFill")});
+                            let n = app.run("find.changeObjects", p).ok().and_then(|r| r["changed"].as_u64()).unwrap_or(0);
+                            d.fields.insert("status".into(), json!(format!("{n} changed")));
+                        }
+                    });
+                    ui.label(d.s("status"));
+                } else {
                 egui::Grid::new("fc").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     ui.label("Find what:");
                     text_field(ui, &mut d, "find", 260.0);
@@ -776,6 +831,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                 });
                 if let Some(st) = d.fields.get("status").and_then(Value::as_str) {
                     ui.label(egui::RichText::new(st).color(crate::theme::Tokens::get(ui.ctx()).text_dim));
+                }
                 }
             }
             "paragraphStyleOptions" => paragraph_style_options(app, ui, &mut d),
@@ -1200,6 +1256,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             }
             app.run("footnote.options", p)
         }
+        "findChange" if d.b("objectMode") => Ok(Value::Null),
         "findChange" => app.run("find.change", json!({"find": d.s("find"), "change": d.s("change"), "grep": d.b("grep"), "caseSensitive": d.b("caseSensitive"), "wholeWord": d.b("wholeWord"), "scope": d.s("scope")})),
         id if id.starts_with("cmd:") => {
             let cid = &id[4..];

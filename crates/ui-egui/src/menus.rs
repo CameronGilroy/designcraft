@@ -45,6 +45,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "{}"),
     ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "{}"),
     ("view.fitPage", "Fit Page in Window", Some("Cmd+0"), "{}"),
+    ("view.fitSelection", "Fit Selection in Window", Some("Cmd+Alt+="), "{}"),
     ("view.fitSpread", "Fit Spread in Window", Some("Cmd+Alt+0"), "{}"),
     ("view.actualSize", "Actual Size", Some("Cmd+1"), "{}"),
     ("view.entirePasteboard", "Entire Pasteboard", Some("Cmd+Alt+Shift+0"), "{}"),
@@ -440,6 +441,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:view.zoomIn",
             "ui:view.zoomOut",
             "ui:view.fitPage",
+            "ui:view.fitSelection",
             "ui:view.fitSpread",
             "ui:view.actualSize",
             "ui:view.entirePasteboard",
@@ -736,6 +738,12 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "view.zoomIn" | "view.zoomOut" => {
             if let Some(r) = rect {
                 crate::canvas::zoom_at(app, r.center(), if id == "view.zoomIn" { 1.5 } else { 1.0 / 1.5 });
+            }
+            Ok(Value::Null)
+        }
+        "view.fitSelection" => {
+            if let Some(r) = rect {
+                crate::canvas::fit(app, r, "selection");
             }
             Ok(Value::Null)
         }

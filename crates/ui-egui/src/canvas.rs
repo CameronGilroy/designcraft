@@ -63,6 +63,21 @@ pub fn fit(app: &mut DesignApp, rect: Rect, what: &str) {
     if what == "all" {
         b = layout.slots.iter().map(|s| s.bounds).reduce(|a, b| a.union(b)).unwrap_or(b);
     }
+    if what == "selection" {
+        // Fit Selection in Window: the selected objects (on their spread's slot).
+        let sel: Vec<designcraft_geom::Rect> = st
+            .selection
+            .items
+            .iter()
+            .filter_map(|id| {
+                let loc = st.doc.find(*id)?;
+                let slot = layout.slots.iter().find(|s| s.spread == loc.spread)?;
+                Some(st.doc.item(*id)?.bounds() + slot.offset)
+            })
+            .collect();
+        let Some(u) = sel.into_iter().reduce(|a, b| a.union(b)) else { return };
+        b = u.inflate(u.width().max(u.height()) * 0.05 + 1.0, u.width().max(u.height()) * 0.05 + 1.0);
+    }
     let pad = 40.0;
     let zoom = ((rect.width() as f64 - 2.0 * pad) / b.width()).min((rect.height() as f64 - 2.0 * pad) / b.height()).clamp(0.05, 40.0);
     let origin = Point::new(b.center().x - rect.width() as f64 / 2.0 / zoom, b.center().y - rect.height() as f64 / 2.0 / zoom);
