@@ -92,7 +92,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Place…",
             ["File"],
             Some("Cmd+D"),
-            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options)} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) and Excel workbooks (.xlsx, as a table) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?, styleMap?: {imported name: document style}, styleConflicts?: useExisting|redefine|autoRename}",
+            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options), pdfCrop?: crop|trim|bleed|art|media} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) and Excel workbooks (.xlsx, as a table) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?, styleMap?: {imported name: document style}, styleConflicts?: useExisting|redefine|autoRename}",
             has_doc,
             file_place
         ),
@@ -237,6 +237,17 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
     };
     // 72 ppi by default unless the file says otherwise; scale so it fits the page when huge.
     let (nw, nh) = (pw as f64, ph as f64);
+    // Image Import Options › Crop to: the frame shows that box of the PDF page.
+    let crop_box = match str_param(p, "pdfCrop") {
+        Some(k) if designcraft_render::is_pdf(&bytes) => {
+            if !["crop", "trim", "bleed", "art", "media"].contains(&k) {
+                return Err(bad("file.place", format!("unknown pdfCrop `{k}` (crop, trim, bleed, art, media)")));
+            }
+            designcraft_render::pdf_page_box(&bytes, pdf_page as usize, k).filter(|b| b.2 > 0.0 && b.3 > 0.0)
+        }
+        Some(_) => None,
+        None => None,
+    };
     let target_frame = super::id_param(p, "frame").or_else(|| {
         let st = s.active()?;
         st.selection.items.iter().copied().find(|i| st.doc.item(*i).is_some_and(|it| matches!(it.content, Content::Unassigned | Content::Graphic(_))))
@@ -250,11 +261,12 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
         let aid = AssetId(d.alloc());
         let mime = designcraft_render::image_mime(&bytes).to_string();
         d.assets.insert(aid, Arc::new(Asset { page: pdf_page, id: aid, name, mime, link, data: Arc::new(bytes), pixels: Some((pw, ph)) }));
-        let (w, h) = match want_w {
-            Some(w) => (w, w * nh / nw),
+        // The width the whole page (or image) gets; the height follows the proportions.
+        let w = match want_w {
+            Some(w) => w,
             None => {
                 let page_w = d.settings.page_width * 0.6;
-                if nw > page_w { (page_w, page_w * nh / nw) } else { (nw, nh) }
+                nw.min(page_w)
             }
         };
         let id = if let Some(fid) = target_frame {
@@ -277,12 +289,14 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
             let pr = sp.pages.first().map(|pg| pg.margin_rect()).unwrap_or(Rect::new(36.0, 36.0, 300.0, 300.0));
             let (x, y) = (px.unwrap_or(pr.x0), py.unwrap_or(pr.y0));
             let id = ItemId(d.alloc());
-            let mut it = Item::new(id, lid, Shape::Rectangle, shapes::rectangle(Rect::new(x, y, x + w, y + h)));
+            let k = w / nw;
+            let (bx, by, bw, bh) = crop_box.unwrap_or((0.0, 0.0, nw, nh));
+            let mut it = Item::new(id, lid, Shape::Rectangle, shapes::rectangle(Rect::new(x, y, x + bw * k, y + bh * k)));
             it.object_style = d.styles.default_graphic_frame.clone();
             it.content = Content::Graphic(Graphic {
                 asset: aid,
                 size: (nw, nh),
-                xf: Affine::translate((x, y)) * Affine::scale(w / nw),
+                xf: Affine::translate((x - bx * k, y - by * k)) * Affine::scale(k),
                 auto_fit: Default::default(),
                 fit_align: 4,
                 crop: [0.0; 4],
@@ -515,5 +529,33 @@ fn file_revert(s: &mut Session, _: &Value) -> Result<Value> {
     {
         let _ = (s, path);
         Err(EngineError::Other("revert isn't available on the web".into()))
+    }
+}
+
+#[cfg(test)]
+mod pdf_crop_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn place_pdf_cropped_to_its_trim_box() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("layout.documentSetup", &json!({"bleed": 9})).unwrap();
+        let b64 = s.execute("file.exportPdf", &json!({"bleed": true})).unwrap()["base64"].as_str().unwrap().to_string();
+        let mut t = Session::new();
+        t.execute("file.new", &json!({})).unwrap();
+        let size = |t: &mut Session, crop: &str| {
+            t.execute("edit.deselectAll", &json!({})).unwrap();
+            let r = t.execute("file.place", &json!({"base64": b64, "name": "a.pdf", "pdfCrop": crop, "width": 630, "x": 0, "y": 0})).unwrap();
+            let id = designcraft_doc::ItemId(r["id"].as_u64().unwrap());
+            t.doc().unwrap().doc.item(id).unwrap().bounds()
+        };
+        let full = size(&mut t, "crop");
+        let trim = size(&mut t, "trim");
+        assert!((full.width() - 630.0).abs() < 1e-6, "{full:?}");
+        assert!((trim.width() - 612.0).abs() < 1e-3 && (trim.height() - 792.0).abs() < 1e-3, "{trim:?}");
+        assert!(t.execute("file.place", &json!({"base64": b64, "name": "a.pdf", "pdfCrop": "nope"})).is_err());
     }
 }

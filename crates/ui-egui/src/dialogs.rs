@@ -849,6 +849,24 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     ui.label(format!("Page (1–{}):", d.n("pages").unwrap_or(1.0)));
                     text_field(ui, &mut d, "page", 60.0);
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Crop to:");
+                    let cur = d.s("crop");
+                    let label = |v: &str| match v {
+                        "trim" => "Trim",
+                        "bleed" => "Bleed",
+                        "art" => "Art",
+                        "media" => "Media",
+                        _ => "Crop",
+                    };
+                    egui::ComboBox::from_id_salt("pdf_crop").selected_text(label(&cur)).show_ui(ui, |ui| {
+                        for v in ["crop", "trim", "bleed", "art", "media"] {
+                            if ui.selectable_label(label(&cur) == label(v), label(v)).clicked() {
+                                d.fields.insert("crop".into(), json!(v));
+                            }
+                        }
+                    });
+                });
             }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
             "userDictionary" => user_dictionary(app, ui, &mut d),
@@ -1169,7 +1187,10 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             let hex = d.s("hex");
             app.run("object.color", json!({"color": hex, "target": d.s("target")}))
         }
-        "pdfImport" => app.run("file.place", json!({"path": d.s("path"), "pdfPage": d.n("page").unwrap_or(1.0).max(1.0) as u64})),
+        "pdfImport" => {
+            let crop = d.s("crop");
+            app.run("file.place", json!({"path": d.s("path"), "pdfPage": d.n("page").unwrap_or(1.0).max(1.0) as u64, "pdfCrop": if crop.is_empty() { "crop".to_string() } else { crop }}))
+        }
         "print" => {
             let pages = if d.s("range") == "all" { Value::Null } else { json!(d.s("pages")) };
             let printer = d.s("printer");

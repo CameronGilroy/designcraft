@@ -847,6 +847,28 @@ pub fn render_pdf_page(bytes: &[u8], page: usize, max_side: u32) -> Option<Pixma
     Some(Pixmap::from_parts(data, pw, ph))
 }
 
+/// A page box of a PDF page (`crop`, `trim`, `bleed`, `art`, `media`) as (x, y, w, h) in points
+/// from the top-left of the page as rendered (its visible crop box); missing boxes fall back to the
+/// crop box, as PDF readers do.
+pub fn pdf_page_box(bytes: &[u8], page: usize, kind: &str) -> Option<(f64, f64, f64, f64)> {
+    use hayro::hayro_syntax::object::{Rect as PRect, dict::keys};
+    let pdf = hayro::hayro_syntax::Pdf::new(std::sync::Arc::new(bytes.to_vec())).ok()?;
+    let p = pdf.pages().get(page)?;
+    let visible = p.intersected_crop_box();
+    let key: &[u8] = match kind {
+        "trim" => keys::TRIM_BOX,
+        "bleed" => keys::BLEED_BOX,
+        "art" => keys::ART_BOX,
+        "media" => return Some(rel(visible, p.media_box())),
+        _ => return Some(rel(visible, visible)),
+    };
+    let b = p.raw().get::<PRect>(key).map(|b| b.intersect(p.media_box())).unwrap_or(visible);
+    fn rel(v: PRect, b: PRect) -> (f64, f64, f64, f64) {
+        (b.x0 - v.x0, v.y1 - b.y1, b.width(), b.height())
+    }
+    Some(rel(visible, b))
+}
+
 pub fn image_mime(bytes: &[u8]) -> &'static str {
     designcraft_images::mime(bytes)
 }
