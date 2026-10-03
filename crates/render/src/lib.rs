@@ -636,7 +636,7 @@ impl Renderer {
         }
     }
 
-    fn draw_graphic(&mut self, ctx: &mut RenderContext, f: &Frame, g: &designcraft_doc::Graphic, xf: Affine) {
+    pub(crate) fn draw_graphic(&mut self, ctx: &mut RenderContext, f: &Frame, g: &designcraft_doc::Graphic, xf: Affine) {
         let Some(asset) = f.doc.assets.get(&g.asset) else { return };
         if f.opts.quality == DisplayQuality::Fast {
             ctx.set_transform(f.view * xf * g.xf);

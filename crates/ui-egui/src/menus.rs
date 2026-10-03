@@ -26,6 +26,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.fittingOptions", "Frame Fitting Options…", None, "{} — the dialog for object.fittingOptions"),
     ("app.menus", "Menus…", None, "{} — show or hide menu items"),
     ("window.hideMenuItem", "Hide Menu Item", None, "{item: \"Menu/Label\", hidden?: bool}"),
+    ("app.graphicCell", "Convert Cell to Graphic Cell…", None, "{} — pick an image for the target table cell"),
     ("app.placeAndLink", "Place and Link", None, "{} — a linked copy of the selected frame's story, beside it"),
     ("app.placeWithOptions", "Place with Import Options…", Some("Cmd+Shift+D"), "{} — Word/RTF style mapping before placing"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
@@ -461,6 +462,10 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "cmd:table.merge",
             "cmd:table.unmerge",
+            ">Convert Cell Type",
+            "ui:app.graphicCell|Convert Cell to Graphic Cell…",
+            "cmd:table.textCell",
+            "<",
             "cmd:table.splitHorizontally",
             "cmd:table.splitVertically",
             "cmd:table.distributeColumns",
@@ -674,6 +679,13 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                     }
                     r
                 }
+                None => Ok(Value::Null),
+            }
+        }
+        "app.graphicCell" => {
+            let Some(pick) = app.services.pick_open.as_mut() else { return Some(Err("needs a file picker".into())) };
+            match pick("place") {
+                Some(path) => app.run("table.placeGraphic", json!({"path": path})),
                 None => Ok(Value::Null),
             }
         }

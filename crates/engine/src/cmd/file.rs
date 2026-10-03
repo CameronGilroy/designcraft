@@ -351,7 +351,7 @@ pub fn base64_decode(s: &str) -> Vec<u8> {
     out
 }
 
-fn read_source(p: &Value) -> Result<(Vec<u8>, String, Option<String>)> {
+pub(crate) fn read_source(p: &Value) -> Result<(Vec<u8>, String, Option<String>)> {
     if let Some(b) = str_param(p, "base64") {
         return Ok((base64_decode(b), str_param(p, "name").unwrap_or("image").to_string(), None));
     }

@@ -383,7 +383,13 @@ impl Renderer {
                 }
             }
             for c in &t.cells {
-                if let Some(cft) = c.text.frames.first() {
+                if let Some(g) = &c.graphic {
+                    ctx.set_transform(f.view * xf);
+                    ctx.push_clip_layer(&c.clip.to_path(0.1));
+                    self.draw_graphic(ctx, f, g, xf * Affine::translate((c.clip.x0, c.clip.y0)));
+                    ctx.set_transform(f.view * xf);
+                    ctx.pop_layer();
+                } else if let Some(cft) = c.text.frames.first() {
                     self.draw_text(ctx, f, &c.text, cft, xf * Affine::translate(c.origin.to_vec2()));
                 }
             }

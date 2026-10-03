@@ -1026,7 +1026,7 @@ impl Exporter<'_> {
         img
     }
 
-    fn graphic(&mut self, s: &mut Surface, g: &designcraft_doc::Graphic) {
+    pub(crate) fn graphic(&mut self, s: &mut Surface, g: &designcraft_doc::Graphic) {
         // Placed PDFs go in as vectors (the page as a form XObject).
         if let Some(asset) = self.doc.assets.get(&g.asset)
             && asset.data.starts_with(b"%PDF")

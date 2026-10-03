@@ -130,7 +130,15 @@ impl Exporter<'_> {
                 }
             }
             for c in &t.cells {
-                if let Some(cft) = c.text.frames.first() {
+                if let Some(g) = &c.graphic {
+                    if let Some(clip) = to_path(&c.clip.to_path(0.1)) {
+                        s.push_clip_path(&clip, &krilla::paint::FillRule::NonZero);
+                        s.push_transform(&tf(Affine::translate((c.clip.x0, c.clip.y0))));
+                        self.graphic(s, g);
+                        s.pop();
+                        s.pop();
+                    }
+                } else if let Some(cft) = c.text.frames.first() {
                     s.push_transform(&tf(Affine::translate(c.origin.to_vec2())));
                     self.frame_text(s, &c.text, cft, &c.source);
                     s.pop();

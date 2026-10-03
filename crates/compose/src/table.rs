@@ -30,6 +30,8 @@ pub struct PlacedCell {
     pub overset: bool,
     /// A header/footer row repeated in a continuation fragment.
     pub repeated: bool,
+    /// Graphic cell content (drawn at `clip`'s top left, clipped to it).
+    pub graphic: Option<designcraft_doc::Graphic>,
 }
 
 /// One cell edge (or the table border) to stroke.
@@ -365,6 +367,7 @@ fn emit(
                 clip,
                 overset,
                 repeated,
+                graphic: cell.graphic.clone(),
             });
             // Edges: every cell draws its top and left; the fragment's bottom/right cells their bottom/right.
             // The table border replaces outer edges.

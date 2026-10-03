@@ -119,6 +119,10 @@ pub struct Cell {
     /// Applied cell style ("" = [None]).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub style: String,
+    /// Graphic cell: an image in the cell instead of text (its `xf` maps into the cell's
+    /// content box, origin at the box's top left).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graphic: Option<crate::Graphic>,
 }
 
 impl Default for Cell {
@@ -134,6 +138,7 @@ impl Default for Cell {
             rotation: 0.0,
             strokes: Default::default(),
             style: String::new(),
+            graphic: None,
         }
     }
 }

@@ -113,6 +113,36 @@ fn table_specs() -> Vec<CommandSpec> {
         cmd!("table.delete", "Delete Table", ["Table", "Delete"], None, "{}", in_table, delete_table),
         cmd!("table.merge", "Merge Cells", ["Table"], None, "{} — merge the target cell range", in_table, merge),
         cmd!(
+            "table.placeGraphic",
+            "Convert Cell to Graphic Cell",
+            ["Table", "Convert Cell Type"],
+            None,
+            "{path | base64+name, fit?: proportional|fill (default proportional)} — an image in the target cell (its text is kept but hidden)",
+            in_table,
+            place_graphic
+        ),
+        cmd!(
+            "table.textCell",
+            "Convert Cell to Text Cell",
+            ["Table", "Convert Cell Type"],
+            None,
+            "{} — drop the target cells' graphics",
+            in_table,
+            |s, p| {
+                let g = target(s, p, "table.textCell")?;
+                edit_table(s, &g, "table.textCell", |t| {
+                    for r in g.range.r0..=g.range.r1 {
+                        for c in g.range.c0..=g.range.c1 {
+                            if let Some(cell) = t.cell_mut(r, c) {
+                                cell.graphic = None;
+                            }
+                        }
+                    }
+                    ok()
+                })
+            }
+        ),
+        cmd!(
             "table.moveRow",
             "Move Row",
             [],
@@ -1102,6 +1132,53 @@ mod style_tests {
     }
 }
 
+fn place_graphic(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "table.placeGraphic";
+    let g = target(s, p, ID)?;
+    let (bytes, name, link) = super::file::read_source(p)?;
+    let (pw, ph) = designcraft_render::image_size(&bytes).ok_or_else(|| bad(ID, "unsupported or corrupt image"))?;
+    let fill = p.get("fit").and_then(Value::as_str) == Some("fill");
+    s.edit(|d, sel| {
+        let aid = designcraft_doc::AssetId(d.alloc());
+        let mime = designcraft_render::image_mime(&bytes).to_string();
+        d.assets.insert(
+            aid,
+            std::sync::Arc::new(designcraft_doc::Asset {
+                page: 0,
+                id: aid,
+                name,
+                mime,
+                link,
+                data: std::sync::Arc::new(bytes),
+                pixels: Some((pw, ph)),
+            }),
+        );
+        let st = d.story_mut(g.story).ok_or_else(|| bad(ID, "no story"))?;
+        let t = st.table_mut(g.table).ok_or_else(|| bad(ID, "no table"))?;
+        let (r, c) = t.owner(g.range.r0, g.range.c0);
+        let cell = t.cell(r, c).ok_or_else(|| bad(ID, "no cell"))?;
+        let (rs, cs) = (cell.row_span.max(1) as usize, cell.col_span.max(1) as usize);
+        let w: f64 = t.columns[c..(c + cs).min(t.ncols())].iter().map(|x| x.width).sum();
+        let h: f64 = t.rows[r..(r + rs).min(t.nrows())].iter().map(|x| x.height).sum();
+        let ins = cell.insets;
+        let (bw, bh) = ((w - ins[1] - ins[3]).max(1.0), (h - ins[0] - ins[2]).max(1.0));
+        let (nw, nh) = (pw as f64, ph as f64);
+        let k = if fill { (bw / nw).max(bh / nh) } else { (bw / nw).min(bh / nh) };
+        let xf = designcraft_geom::Affine::translate(((bw - nw * k) / 2.0, (bh - nh * k) / 2.0)) * designcraft_geom::Affine::scale(k);
+        let cell = t.cell_mut(r, c).expect("exists");
+        cell.graphic = Some(designcraft_doc::Graphic {
+            asset: aid,
+            size: (nw, nh),
+            xf,
+            auto_fit: if fill { designcraft_doc::Fitting::FillProportionally } else { designcraft_doc::Fitting::FitProportionally },
+            fit_align: 4,
+            crop: [0.0; 4],
+        });
+        clamp_selection(d, sel);
+        Ok(json!({"asset": aid.0, "row": r, "col": c}))
+    })
+}
+
 fn move_rc(s: &mut Session, p: &Value, rows: bool) -> Result<Value> {
     const ID: &str = "table.move";
     let g = target(s, p, ID)?;
@@ -1180,6 +1257,38 @@ mod sort_tests {
         s.execute("table.splitVertically", &json!({"rows": [1, 1], "cols": [0, 0]})).unwrap();
         let r = s.execute("table.splitHorizontally", &json!({"rows": [0, 0], "cols": [1, 1]})).unwrap();
         assert_eq!((r["rows"].as_u64(), r["cols"].as_u64()), (Some(5), Some(3)));
+    }
+
+    #[test]
+    fn graphic_cells_draw_their_image() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 500, 400], "content": "text", "text": ""})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+        s.execute("table.insert", &json!({"rows": 2, "cols": 2})).unwrap();
+        s.execute("table.rowHeight", &json!({"height": 100})).ok();
+        // A red image into the first cell.
+        let px: Vec<u8> = (0..40 * 40).flat_map(|_| [255, 0, 0, 255]).collect();
+        let png = designcraft_render::Rendered { width: 40, height: 40, pixels: px }.to_png();
+        s.execute("table.setCell", &json!({"rows": [0, 0], "cols": [0, 0], "text": ""})).ok();
+        let g = s.execute("table.placeGraphic", &json!({"base64": super::super::file::base64_encode(&png), "name": "r.png", "fit": "fill"})).unwrap();
+        assert_eq!((g["row"].as_u64(), g["col"].as_u64()), (Some(0), Some(0)));
+        let d = s.doc().unwrap().doc.clone();
+        let st = d.stories.values().find(|st| !st.tables.is_empty()).unwrap();
+        let t = st.tables.values().next().unwrap();
+        let cs = s.cache.get(&d, st.id, None);
+        let cell = cs.frames[0].tables[0].cells.iter().find(|c| c.row == 0 && c.col == 0).unwrap().clone();
+        let fx = d.item(cs.frames[0].frame).unwrap().xf;
+        let centre = fx * cell.clip.center();
+        let mut rr = designcraft_render::Renderer::new();
+        rr.threads = 0;
+        let img = rr.render_page(&d, &s.cache, 0, 1.0, false, &Default::default()).unwrap();
+        let p = img.pixel(centre.x as u32, centre.y as u32);
+        assert!(p[0] > 200 && p[1] < 60, "red in the graphic cell: {p:?}");
+        assert!(t.cell(0, 0).unwrap().graphic.is_some());
+        s.execute("table.textCell", &json!({})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        assert!(d.stories.values().flat_map(|st| st.tables.values()).all(|t| t.cell(0, 0).unwrap().graphic.is_none()));
     }
 
     #[test]

@@ -28,6 +28,17 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let run = |app: &mut DesignApp, id: &str, p: Value| {
         let _ = app.run(id, p);
     };
+    ui.horizontal(|ui| {
+        caption(ui, "Cell Type");
+        if ui.small_button("Graphic…").clicked()
+            && let Err(e) = app.run("app.graphicCell", json!({}))
+        {
+            app.status(format!("Table: {e}"));
+        }
+        if ui.small_button("Text").clicked() {
+            let _ = app.run("table.textCell", json!({}));
+        }
+    });
     // Move the target row / column (InDesign drags them).
     ui.horizontal(|ui| {
         caption(ui, "Move");
