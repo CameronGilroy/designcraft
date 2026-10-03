@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 mod docx;
+pub mod export;
 mod rtf;
 
 use designcraft_doc::{CharAttrs, ParaAttrs, Story};

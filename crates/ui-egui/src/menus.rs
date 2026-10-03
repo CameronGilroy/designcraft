@@ -17,6 +17,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.saveSwatches", "Save Swatches for Exchange…", None, "{path?} — write the colour swatches as .ase"),
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
     ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
+    ("app.exportEpub", "Export EPUB…", None, "{path?} — reflowable EPUB 3"),
+    ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
     ("app.preferences", "Preferences…", Some("Cmd+K"), "{}"),
@@ -102,7 +104,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:app.packageDialog",
             "ui:app.exportPng",
             "ui:app.exportIdml",
-            "cmd:file.exportEpub",
+            "ui:app.exportEpub",
+            "ui:app.exportText",
             ">Export",
             "cmd:snippet.export",
             "<",
@@ -492,6 +495,8 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "app.exportPng" => export_png(app, p),
         "app.exportIdml" => export_idml(app, p),
+        "app.exportEpub" => export_bytes(app, p, "epub", "file.exportEpub"),
+        "app.exportText" => export_bytes(app, p, "rtf", "file.exportText"),
         "app.packageDialog" => {
             let name = app.session.active().map(|d| format!("{} Folder", d.doc.title)).unwrap_or_default();
             match app.services.pick_save.as_mut().and_then(|f| f(&name)) {
@@ -886,6 +891,34 @@ fn export_idml(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
     let Some(path) = path else { return Ok(Value::Null) };
     let r = app.run("file.exportIdml", json!({}))?;
     let bytes = designcraft_engine::cmd::base64_decode(r["base64"].as_str().unwrap_or_default());
+    match app.services.write.as_mut() {
+        Some(w) => w(&path, &bytes).map(|_| json!({"path": path, "bytes": bytes.len()})),
+        None => Err("no writer".into()),
+    }
+}
+
+/// Export EPUB / Text: ask for a path (default extension `ext`), run `cmd` without one and write
+/// what it returns (`base64` or `text`) with the platform writer.
+fn export_bytes(app: &mut DesignApp, p: &Value, ext: &str, cmd: &str) -> Result<Value, String> {
+    let st = app.session.active().ok_or("no document")?;
+    let path = match p.get("path").and_then(Value::as_str) {
+        Some(s) => Some(s.to_string()),
+        None => {
+            let name = format!("{}.{ext}", st.doc.title);
+            app.services.pick_save.as_mut().and_then(|f| f(&name))
+        }
+    };
+    let Some(path) = path else { return Ok(Value::Null) };
+    let mut params = json!({});
+    if cmd == "file.exportText" {
+        let txt = path.to_ascii_lowercase().ends_with(".txt");
+        params["format"] = json!(if txt { "txt" } else { "rtf" });
+    }
+    let r = app.run(cmd, params)?;
+    let bytes = match r["text"].as_str() {
+        Some(t) => t.as_bytes().to_vec(),
+        None => designcraft_engine::cmd::base64_decode(r["base64"].as_str().unwrap_or_default()),
+    };
     match app.services.write.as_mut() {
         Some(w) => w(&path, &bytes).map(|_| json!({"path": path, "bytes": bytes.len()})),
         None => Err("no writer".into()),

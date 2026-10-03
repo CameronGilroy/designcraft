@@ -14,7 +14,37 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "file.exportEpub", "Export EPUB (Reflowable)…", ["File"], None,
         "{path?, title?, author?, language?: \"en\"} → {path, bytes} (no path: {base64, bytes})",
         has_doc, export_epub),
+        cmd!(noundo "file.exportText", "Export Text…", ["File"], None,
+        "{path?, format?: \"txt\"|\"rtf\" (default from the path, else txt), story?, frame?} — the story being edited or of the selected frame → {path, bytes} (no path: {text, bytes})",
+        has_story_target, export_text),
     ]
+}
+
+fn has_story_target(s: &Session) -> std::result::Result<(), String> {
+    super::text::story_of(s, &Value::Null).map(|_| ()).ok_or_else(|| "edit text or select a text frame".into())
+}
+
+fn export_text(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "file.exportText";
+    let sid = super::text::story_of(s, p).ok_or_else(|| bad(ID, "edit text or select a text frame"))?;
+    let doc = &s.doc()?.doc;
+    let story = doc.stories.get(&sid).ok_or_else(|| bad(ID, format!("no story {}", sid.0)))?;
+    let path = str_param(p, "path");
+    let rtf = match str_param(p, "format") {
+        Some("rtf") => true,
+        Some("txt") | Some("text") => false,
+        Some(f) => return Err(bad(ID, format!("unknown format `{f}` (txt, rtf)"))),
+        None => path.is_some_and(|x| x.to_ascii_lowercase().ends_with(".rtf")),
+    };
+    let text = if rtf { designcraft_textimport::export::rtf(doc, story) } else { designcraft_textimport::export::plain_text(story) };
+    match path {
+        Some(path) => {
+            #[cfg(not(target_arch = "wasm32"))]
+            std::fs::write(path, text.as_bytes()).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+            Ok(json!({"path": path, "bytes": text.len()}))
+        }
+        None => Ok(json!({"bytes": text.len(), "text": text})),
+    }
 }
 
 fn export_epub(s: &mut Session, p: &Value) -> Result<Value> {
@@ -109,4 +139,27 @@ fn write_file(path: &str, bytes: &[u8]) -> Result<()> {
 #[cfg(target_arch = "wasm32")]
 fn write_file(path: &str, _bytes: &[u8]) -> Result<()> {
     Err(EngineError::Other(format!("{path}: no file system on the web; omit `path` to get the bytes")))
+}
+
+#[cfg(test)]
+mod text_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn export_story_as_text_and_rtf() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "One\nTwo"})).unwrap();
+        assert!(s.execute("file.exportText", &json!({"frame": r["id"]})).unwrap()["text"] == "One\r\nTwo");
+        let rtf = s.execute("file.exportText", &json!({"frame": r["id"], "format": "rtf"})).unwrap();
+        assert!(rtf["text"].as_str().unwrap().starts_with("{\\rtf1"));
+        let dir = std::env::temp_dir().join(format!("dc-export-text-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("story.rtf");
+        s.execute("file.exportText", &json!({"frame": r["id"], "path": path.to_string_lossy()})).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().starts_with("{\\rtf1"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

@@ -171,7 +171,7 @@ pub fn specs() -> Vec<CommandSpec> {
     ]
 }
 
-fn story_of(s: &Session, p: &Value) -> Option<StoryId> {
+pub(crate) fn story_of(s: &Session, p: &Value) -> Option<StoryId> {
     let st = s.active()?;
     if let Some(v) = p.get("story").and_then(Value::as_u64) {
         return Some(StoryId(v));
