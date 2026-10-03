@@ -47,6 +47,7 @@ mod style;
 pub mod table;
 pub mod text;
 mod toc;
+mod transitions;
 mod variables;
 mod xml;
 mod xref;
@@ -165,6 +166,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(xml::specs());
         v.extend(strokes::specs());
         v.extend(states::specs());
+        v.extend(transitions::specs());
         v.extend(path_type::specs());
         v.extend(qr::specs());
         v.extend(select::specs());

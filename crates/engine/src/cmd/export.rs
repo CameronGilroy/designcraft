@@ -247,6 +247,17 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
     let doc: &designcraft_doc::Document = flattened.as_ref().map_or(&st.doc, |f| &f.0);
     let r = designcraft_pdf::export_pdf_with_report(doc, &s.cache, &opts).map_err(|e| EngineError::Other(e.to_string()))?;
     let mut r = r;
+    // Page transitions (each spread's first page holds them).
+    let trans: Vec<Option<designcraft_doc::PageTransition>> = designcraft_pdf::sheet_spreads(doc, &opts)
+        .into_iter()
+        .map(|si| doc.spreads.get(si).and_then(|sp| sp.pages.first()).and_then(|pg| pg.transition))
+        .collect();
+    if trans.iter().any(Option::is_some) {
+        match designcraft_pdf::add_transitions(&r.bytes, &trans) {
+            Some(b) => r.bytes = b,
+            None => r.warnings.push("page transitions couldn't be added to this PDF".into()),
+        }
+    }
     if let Some((_, n)) = &flattened
         && *n > 0
     {

@@ -44,6 +44,11 @@ fn bleed_lr(side: PageSide, b: [f64; 4]) -> (f64, f64) {
     if side == PageSide::Left { (b[3], b[2]) } else { (b[2], b[3]) }
 }
 
+/// The spread each exported PDF page shows (in page order).
+pub fn sheet_spreads(doc: &Document, opts: &PdfOptions) -> Vec<usize> {
+    sheets(doc, opts).map(|v| v.iter().map(|s| s.spread).collect()).unwrap_or_default()
+}
+
 fn sheets(doc: &Document, opts: &PdfOptions) -> Result<Vec<Sheet>> {
     let count = doc.page_count();
     let pages: Vec<usize> = match &opts.pages {

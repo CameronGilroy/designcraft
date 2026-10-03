@@ -114,6 +114,76 @@ pub struct Page {
     /// Liquid page rule: how objects follow when the page changes size.
     #[serde(default, skip_serializing_if = "LiquidRule::is_off")]
     pub liquid: LiquidRule,
+    /// Window › Interactive › Page Transitions (the spread's first page holds the spread's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<PageTransition>,
+}
+
+/// A page transition for interactive PDF.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageTransition {
+    pub kind: TransitionKind,
+    /// Seconds.
+    #[serde(default = "one_second")]
+    pub duration: f64,
+    /// Horizontal (else vertical) for blinds, split; inward (else outward) for box, split.
+    #[serde(default)]
+    pub horizontal: bool,
+}
+
+fn one_second() -> f64 {
+    1.0
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TransitionKind {
+    Blinds,
+    Box,
+    Comb,
+    Cover,
+    Dissolve,
+    Fade,
+    Push,
+    Split,
+    Uncover,
+    Wipe,
+    ZoomIn,
+    ZoomOut,
+}
+
+impl TransitionKind {
+    pub const ALL: [TransitionKind; 12] = [
+        TransitionKind::Blinds,
+        TransitionKind::Box,
+        TransitionKind::Comb,
+        TransitionKind::Cover,
+        TransitionKind::Dissolve,
+        TransitionKind::Fade,
+        TransitionKind::Push,
+        TransitionKind::Split,
+        TransitionKind::Uncover,
+        TransitionKind::Wipe,
+        TransitionKind::ZoomIn,
+        TransitionKind::ZoomOut,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            TransitionKind::Blinds => "Blinds",
+            TransitionKind::Box => "Box",
+            TransitionKind::Comb => "Comb",
+            TransitionKind::Cover => "Cover",
+            TransitionKind::Dissolve => "Dissolve",
+            TransitionKind::Fade => "Fade",
+            TransitionKind::Push => "Push",
+            TransitionKind::Split => "Split",
+            TransitionKind::Uncover => "Uncover",
+            TransitionKind::Wipe => "Wipe",
+            TransitionKind::ZoomIn => "Zoom In",
+            TransitionKind::ZoomOut => "Zoom Out",
+        }
+    }
 }
 
 /// Liquid Layout page rules.
@@ -273,6 +343,7 @@ mod tests {
             guides: vec![],
             show_parent_items: true,
             liquid: Default::default(),
+            transition: None,
         }
     }
 

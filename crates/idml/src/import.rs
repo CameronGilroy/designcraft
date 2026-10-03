@@ -1654,6 +1654,7 @@ impl<'r> Importer<'r> {
                 guides: Vec::<Guide>::new(),
                 show_parent_items: show,
                 liquid: Default::default(),
+                transition: None,
             });
         }
         let overrides: Vec<Vec<String>> =
