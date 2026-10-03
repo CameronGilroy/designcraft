@@ -214,3 +214,24 @@ fn page_tool_opens_page_size() {
     let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 200.0 + off.x + d.spreads[0].pages[0].x, 200.0 + off.y));
     assert_eq!(a, vec![Action::Dialog("cmd:layout.pageSize".into(), serde_json::json!({"pages": [1], "width": 612.0, "height": 792.0}))]);
 }
+
+#[test]
+fn type_on_path_tool_targets_paths() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let id = designcraft_doc::ItemId(d.alloc());
+    let mut it = designcraft_doc::Item::new(
+        id,
+        lid,
+        designcraft_doc::Shape::GraphicLine,
+        designcraft_geom::shapes::line(designcraft_geom::Point::new(100.0, 100.0), designcraft_geom::Point::new(300.0, 100.0)),
+    );
+    it.stroke = designcraft_doc::Stroke::default();
+    d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
+    let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
+    let cx = ctx(&d, &s, &c, &l);
+    let off = l.offset(SpreadRef::Doc(0));
+    let mut t = create("typeOnPath");
+    let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 200.0 + off.x, 100.0 + off.y));
+    assert_eq!(a, vec![Action::Exec("type.onPath".into(), serde_json::json!({"id": id.0})), Action::SwitchTool("type".into())]);
+}

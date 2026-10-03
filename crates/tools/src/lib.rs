@@ -274,6 +274,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "placeGun" => Box::new(nav::PlaceGun::default()),
         "zoom" => Box::new(nav::ZoomTool::default()),
         "page" => Box::new(nav::PageTool),
+        "typeOnPath" => Box::new(nav::PathTypeTool),
         other => Box::new(NoopTool(tool_info(other).map(|t| t.id).unwrap_or("selection"))),
     }
 }

@@ -172,3 +172,27 @@ impl Tool for PageTool {
         Cursor::Arrow
     }
 }
+
+/// Type on a Path tool (Shift+T): click a path to put type on it; typing goes there.
+#[derive(Default)]
+pub struct PathTypeTool;
+
+impl Tool for PathTypeTool {
+    fn id(&self) -> &'static str {
+        "typeOnPath"
+    }
+    fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
+        if ev.kind != PointerKind::Up {
+            return vec![];
+        }
+        let Some((_, id)) = cx.hit(ev.pos) else { return vec![] };
+        let Some(it) = cx.doc.item(id) else { return vec![] };
+        match &it.content {
+            designcraft_doc::Content::Unassigned => vec![Action::Exec("type.onPath".into(), json!({"id": id.0})), Action::SwitchTool("type".into())],
+            _ => vec![],
+        }
+    }
+    fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
+        Cursor::Text
+    }
+}

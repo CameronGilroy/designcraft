@@ -15,6 +15,7 @@ pub mod pathfinder;
 pub mod shapes;
 pub mod snap;
 pub mod units;
+pub mod warp;
 
 pub use kurbo;
 pub use kurbo::{Affine, BezPath, CubicBez, Line, ParamCurve, PathEl, PathSeg, Point, Rect, Shape, Size, Vec2};

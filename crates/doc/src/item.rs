@@ -282,6 +282,31 @@ pub struct TextFrameOptions {
     /// Use a custom baseline grid for this frame.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub baseline_grid: Option<(f64, f64)>,
+    /// Type on a Path: the text runs along the item's path instead of filling it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathType>,
+}
+
+/// Type on a Path Options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PathType {
+    /// Where the text starts, as a distance along the path.
+    pub start: f64,
+    /// Run the other way (the text sits on the other side).
+    pub flip: bool,
+    pub align: PathAlign,
+}
+
+/// Which part of the type sits on the path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PathAlign {
+    #[default]
+    Baseline,
+    Ascender,
+    Descender,
+    Center,
 }
 
 impl Default for TextFrameOptions {
@@ -304,6 +329,7 @@ impl Default for TextFrameOptions {
             column_rule_weight: 1.0,
             column_rule_color: designcraft_color::swatch::BLACK.into(),
             baseline_grid: None,
+            path: None,
         }
     }
 }

@@ -330,3 +330,36 @@ fn cell_stroke(s: &designcraft_doc::CellStroke) -> kurbo::Stroke {
         _ => st,
     }
 }
+
+impl Renderer {
+    /// Type on a path: glyphs follow the frame's path.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_path_text(
+        &mut self,
+        ctx: &mut RenderContext,
+        f: &Frame,
+        cs: &Arc<ComposedStory>,
+        ft: &FrameText,
+        xf: Affine,
+        path: &BezPath,
+        pt: &designcraft_doc::PathType,
+    ) {
+        let doc = f.doc;
+        ctx.set_transform(f.view * xf);
+        for (si, bp) in designcraft_compose::path_glyphs(cs, ft, path, pt) {
+            let st = &cs.styles[si as usize];
+            if let Some(c) = doc.resolve_color(&st.fill, st.fill_tint) {
+                ctx.set_paint(color_of(&c, 1.0));
+                ctx.fill_path(&bp);
+            }
+            if st.stroke != designcraft_color::swatch::NONE
+                && let Some(c) = doc.resolve_color(&st.stroke, st.stroke_tint)
+            {
+                ctx.set_paint(color_of(&c, 1.0));
+                ctx.set_stroke(kurbo::Stroke::new(st.stroke_weight));
+                ctx.stroke_path(&bp);
+            }
+            self.stats.glyphs += 1;
+        }
+    }
+}

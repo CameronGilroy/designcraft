@@ -515,7 +515,17 @@ impl Exporter<'_> {
             }
             Content::Text(tfr) => {
                 let cs = self.cache.get(doc, tfr.story, page_name);
-                if let Some(ft) = cs.frame(it.id) {
+                if let (Some(ft), Some(pt)) = (cs.frame(it.id), &tfr.options.path) {
+                    // Type on a path: the glyphs as outlines along the path.
+                    for (si, gp) in designcraft_compose::path_glyphs(&cs, ft, &bp, pt) {
+                        let st = &cs.styles[si as usize];
+                        if let (Some(c), Some(p)) = (self.swatch_color(&st.fill, st.fill_tint), to_path(&gp)) {
+                            s.set_fill(Some(Fill { paint: c.into(), opacity: NormalizedF32::ONE, rule: FillRule::NonZero }));
+                            s.draw_path(&p);
+                            s.set_fill(None);
+                        }
+                    }
+                } else if let Some(ft) = cs.frame(it.id) {
                     let text = doc.story(tfr.story).map(|st| st.text.as_str()).unwrap_or("");
                     self.frame_text(s, &cs, ft, text);
                 }

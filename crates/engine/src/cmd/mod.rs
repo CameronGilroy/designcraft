@@ -19,6 +19,7 @@ mod notes;
 mod object;
 mod overrides;
 mod package;
+mod path_type;
 mod paths;
 mod place_text;
 pub mod preflight;
@@ -130,6 +131,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(object::specs());
         v.extend(anchors::specs());
         v.extend(paths::specs());
+        v.extend(path_type::specs());
         v.extend(package::specs());
         v.extend(print::specs());
         v.extend(text::specs());

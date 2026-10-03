@@ -469,7 +469,10 @@ impl Renderer {
             Content::Text(tf) => {
                 let cs = self.story(f, tf.story, page_name);
                 if let Some(ft) = cs.frame(it.id) {
-                    self.draw_text(ctx, f, &cs, ft, xf);
+                    match &tf.options.path {
+                        Some(pt) => self.draw_path_text(ctx, f, &cs, ft, xf, bp, pt),
+                        None => self.draw_text(ctx, f, &cs, ft, xf),
+                    }
                 }
             }
             _ => {}
