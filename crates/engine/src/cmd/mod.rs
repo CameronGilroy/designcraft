@@ -4,6 +4,7 @@ mod anchored;
 pub mod anchors;
 mod articles;
 pub mod book;
+mod buttons;
 mod captions;
 mod changes;
 mod conditions;
@@ -150,6 +151,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(articles::specs());
         v.extend(paths::specs());
         v.extend(book::specs());
+        v.extend(buttons::specs());
         v.extend(captions::specs());
         v.extend(changes::specs());
         v.extend(conditions::specs());

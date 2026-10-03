@@ -204,3 +204,72 @@ pub fn states(app: &mut DesignApp, ui: &mut egui::Ui) {
         let _ = app.run("states.release", json!({}));
     }
 }
+
+/// Buttons and Forms panel: the selected objects' On Release action.
+pub fn buttons(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let Some(id) = app.session.active().and_then(|d| d.selection.items.first().copied()) else {
+        ui.label(egui::RichText::new("Select an object to make it a button.").size(11.0).color(t.text_dim));
+        return;
+    };
+    let cur = app.session.active().and_then(|d| d.doc.item(id)).and_then(|it| it.button.clone());
+    use designcraft_doc::ButtonAction as B;
+    let (kind, page, url) = match &cur {
+        None => ("none", 0, String::new()),
+        Some(B::GoToPage { page }) => ("page", *page, String::new()),
+        Some(B::GoToFirstPage) => ("firstPage", 0, String::new()),
+        Some(B::GoToLastPage) => ("lastPage", 0, String::new()),
+        Some(B::GoToNextPage) => ("nextPage", 0, String::new()),
+        Some(B::GoToPreviousPage) => ("previousPage", 0, String::new()),
+        Some(B::GoToUrl { url }) => ("url", 0, url.clone()),
+    };
+    let labels = [
+        ("none", "Not a button"),
+        ("nextPage", "Go To Next Page"),
+        ("previousPage", "Go To Previous Page"),
+        ("firstPage", "Go To First Page"),
+        ("lastPage", "Go To Last Page"),
+        ("page", "Go To Page"),
+        ("url", "Go To URL"),
+    ];
+    let mut pick = None;
+    ui.horizontal(|ui| {
+        ui.label("On Release");
+        egui::ComboBox::from_id_salt("button_action").selected_text(labels.iter().find(|l| l.0 == kind).map_or("", |l| l.1)).show_ui(ui, |ui| {
+            for (k, l) in labels {
+                if ui.selectable_label(k == kind, l).clicked() {
+                    pick = Some(k);
+                }
+            }
+        });
+    });
+    let mut params = None;
+    if let Some(k) = pick {
+        params = Some(json!({"action": k, "page": page, "url": if url.is_empty() { "https://" } else { &url }}));
+    }
+    if kind == "page" {
+        let total = app.session.active().map_or(1, |d| d.doc.page_count());
+        let mut n = page + 1;
+        ui.horizontal(|ui| {
+            ui.label("Page");
+            if ui.add(egui::DragValue::new(&mut n).range(1..=total)).changed() {
+                params = Some(json!({"action": "page", "page": n - 1}));
+            }
+        });
+    }
+    if kind == "url" {
+        let key = egui::Id::new(("button_url", id.0));
+        let mut u: String = ui.data(|d| d.get_temp(key)).unwrap_or(url.clone());
+        let r = ui.add(egui::TextEdit::singleline(&mut u).desired_width(f32::INFINITY));
+        if r.lost_focus() && u != url {
+            params = Some(json!({"action": "url", "url": u}));
+        }
+        ui.data_mut(|d| d.insert_temp(key, u));
+    }
+    if let Some(p) = params
+        && let Err(e) = app.run("button.set", p)
+    {
+        app.status(format!("Buttons: {e}"));
+    }
+    ui.label(egui::RichText::new("Buttons act in interactive PDF export.").size(10.5).color(t.text_dim));
+}

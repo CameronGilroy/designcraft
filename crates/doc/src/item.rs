@@ -450,6 +450,18 @@ fn center_ref() -> u8 {
     4
 }
 
+/// A button's On Release action.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum ButtonAction {
+    GoToPage { page: usize },
+    GoToFirstPage,
+    GoToLastPage,
+    GoToNextPage,
+    GoToPreviousPage,
+    GoToUrl { url: String },
+}
+
 fn is_zero_usize(v: &usize) -> bool {
     *v == 0
 }
@@ -716,6 +728,9 @@ pub struct Item {
     /// Alternative text (Object Export Options) for tagged PDF and EPUB.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub alt_text: String,
+    /// Buttons and Forms: what clicking this object does in an interactive PDF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<ButtonAction>,
     /// Object States: a group whose children are states (named here); only `active_state` shows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub states: Vec<String>,
@@ -764,6 +779,7 @@ impl Item {
             label: String::new(),
             alt_text: String::new(),
             xml_tag: String::new(),
+            button: None,
             states: Vec::new(),
             active_state: 0,
             isolate: false,
