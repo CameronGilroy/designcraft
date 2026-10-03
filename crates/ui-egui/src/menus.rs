@@ -26,6 +26,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.fittingOptions", "Frame Fitting Options…", None, "{} — the dialog for object.fittingOptions"),
     ("app.menus", "Menus…", None, "{} — show or hide menu items"),
     ("window.hideMenuItem", "Hide Menu Item", None, "{item: \"Menu/Label\", hidden?: bool}"),
+    ("app.language", "Interface Language", None, "{lang: \"\"|de|fr|es|ja} — menus and panel names (the macOS menu bar follows on the next launch)"),
     (
         "app.flattener",
         "Transparency Flattener Presets",
@@ -175,6 +176,13 @@ pub const MENUS: &[(&str, &[&str])] = &[
             ">Transparency Blend Space",
             "cmd:edit.transparencyBlendSpace|Document RGB|{\"space\": \"rgb\"}",
             "cmd:edit.transparencyBlendSpace|Document CMYK|{\"space\": \"cmyk\"}",
+            "<",
+            ">Interface Language",
+            "ui:app.language|English|{\"lang\": \"\"}",
+            "ui:app.language|Deutsch|{\"lang\": \"de\"}",
+            "ui:app.language|Français|{\"lang\": \"fr\"}",
+            "ui:app.language|Español|{\"lang\": \"es\"}",
+            "ui:app.language|日本語|{\"lang\": \"ja\"}",
             "<",
             ">Transparency Flattener Presets",
             "ui:app.flattener|None (keep transparency)|{\"preset\": \"\"}",
@@ -702,6 +710,14 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 }
                 None => Ok(Value::Null),
             }
+        }
+        "app.language" => {
+            let v = p.get("lang").and_then(Value::as_str).unwrap_or("");
+            if !crate::i18n::LANGUAGES.iter().any(|(c, _)| *c == v) {
+                return Some(Err(format!("unknown language `{v}`")));
+            }
+            app.ui.language = v.to_string();
+            Ok(json!(v))
         }
         "app.flattener" => {
             let v = p.get("preset").and_then(Value::as_str).unwrap_or("");
@@ -1413,6 +1429,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "changes.track" => app.session.active().is_some_and(|d| d.doc.settings.track_changes),
         "window.controlBar" => app.ui.control_bar,
         "window.split" => app.split,
+        "app.language" => app.ui.language == params.get("lang").and_then(Value::as_str).unwrap_or(""),
         "app.flattener" => app.ui.flattener == params.get("preset").and_then(Value::as_str).unwrap_or(""),
         "window.taskBar" => app.ui.task_bar,
         "window.toolsDoubleColumn" => app.ui.tools_double_column,
@@ -1460,13 +1477,14 @@ pub fn activate(app: &mut DesignApp, id: &str, params: &Value) {
 
 /// The menu bar contents (inside the app bar; macOS uses the native menu instead).
 pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let lang = app.ui.language.clone();
     for (menu, entries) in menu_tree() {
-        ui.menu_button(menu, |ui| {
+        ui.menu_button(crate::i18n::tr(&lang, menu), |ui| {
             ui.set_min_width(240.0);
             let hidden = menu_items(app, ui, &entries, menu);
             if hidden > 0 && !app.ui.show_full_menus {
                 ui.separator();
-                if ui.button("Show All Menu Items").clicked() {
+                if ui.button(crate::i18n::tr(&lang, "Show All Menu Items")).clicked() {
                     app.ui.show_full_menus = true;
                 }
             }
@@ -1489,16 +1507,18 @@ fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item], path: &str
             }
             Item::Sub(name, children) => {
                 let sub = format!("{path}/{name}");
-                ui.menu_button(name, |ui| {
+                let shown = crate::i18n::tr(&app.ui.language, name).into_owned();
+                ui.menu_button(shown, |ui| {
                     hidden += menu_items(app, ui, children, &sub);
                 });
             }
             Item::Cmd { label, .. } if !app.ui.show_full_menus && app.ui.hidden_menu_items.contains(&menu_key(path, label)) => hidden += 1,
             Item::Cmd { label, id, params, shortcut: _ } => {
+                let label = crate::i18n::tr(&app.ui.language, label);
                 let text = match checked(app, id, params) {
                     Some(true) => format!("✓ {label}"),
                     Some(false) => format!("   {label}"),
-                    None => label.clone(),
+                    None => label.into_owned(),
                 };
                 let mut b = egui::Button::new(text);
                 if let Some(sc) = shortcut_of(app, id) {
@@ -1775,6 +1795,20 @@ mod tests {
         assert_eq!(run_ui(&mut app, "window.split", &json!({})).unwrap().unwrap(), json!(false));
         assert_eq!(app.pane, 0);
         frame(&mut app);
+    }
+
+    #[test]
+    fn interface_language_switches_and_validates() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        run_ui(&mut app, "app.language", &json!({"lang": "de"})).unwrap().unwrap();
+        assert_eq!(app.ui.language, "de");
+        assert_eq!(checked(&app, "app.language", &json!({"lang": "de"})), Some(true));
+        assert_eq!(crate::i18n::tr(&app.ui.language, "Window"), "Fenster");
+        assert!(run_ui(&mut app, "app.language", &json!({"lang": "xx"})).unwrap().is_err());
+        // Every menu title has a translation (Japanese never matches the English).
+        for (title, _) in menu_tree() {
+            assert_ne!(crate::i18n::tr("ja", title), title, "{title}");
+        }
     }
 
     #[test]

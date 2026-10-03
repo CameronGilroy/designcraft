@@ -95,7 +95,7 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
             for (id, label, icon) in ICON_PANELS {
                 let open = app.ui.open_panel.as_deref() == Some(*id);
                 let floats = app.ui.floating.iter().any(|(p, _)| p == id);
-                if icons::button(ui, icon, 28.0, open || floats, label).clicked() {
+                if icons::button(ui, icon, 28.0, open || floats, &crate::i18n::tr(&app.ui.language, label)).clicked() {
                     if floats {
                         ui.ctx().move_to_top(egui::LayerId::new(egui::Order::Middle, egui::Id::new(("floating_panel", *id))));
                     } else {
@@ -120,7 +120,7 @@ fn dock_header(ui: &mut egui::Ui, t: &Tokens, chevron: &str) {
 pub fn flyout(app: &mut DesignApp, ctx: &egui::Context) {
     let Some(id) = app.ui.open_panel.clone() else { return };
     let t = Tokens::get(ctx);
-    let label = ICON_PANELS.iter().find(|p| p.0 == id).map(|p| p.1).unwrap_or("Panel");
+    let label = crate::i18n::tr(&app.ui.language, ICON_PANELS.iter().find(|p| p.0 == id).map(|p| p.1).unwrap_or("Panel")).into_owned();
     let screen = ctx.content_rect();
     let dock_w = if app.ui.dock_expanded { ctx.memory(|m| m.area_rect(egui::Id::new("dock")).map(|r| r.width())).unwrap_or(280.0) } else { 0.0 };
     let pos = egui::pos2(screen.max.x - 37.0 - dock_w - 262.0, 120.0);
@@ -212,10 +212,10 @@ pub fn dock_panel(app: &mut DesignApp, id: &str) {
 pub fn floating(app: &mut DesignApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     for (id, at) in app.ui.floating.clone() {
-        let label = ICON_PANELS.iter().find(|p| p.0 == id).map(|p| p.1).unwrap_or("Panel");
+        let label = crate::i18n::tr(&app.ui.language, ICON_PANELS.iter().find(|p| p.0 == id).map(|p| p.1).unwrap_or("Panel")).into_owned();
         let mut open = true;
         let mut dock = false;
-        let r = egui::Window::new(label)
+        let r = egui::Window::new(label.clone())
             .id(egui::Id::new(("floating_panel", &id)))
             .title_bar(false)
             .default_pos(egui::pos2(at[0], at[1]))

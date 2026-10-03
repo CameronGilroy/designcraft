@@ -56,7 +56,7 @@ impl NativeMenu {
         items.insert("dc-discord".into(), ("help.discord".into(), serde_json::Value::Null, Handle::Plain(discord)));
         let _ = menu.append(&app_menu);
         for (title, entries) in menus::menu_tree() {
-            let sub = Submenu::new(title, true);
+            let sub = Submenu::new(designcraft_ui_egui::i18n::tr(&app.ui.language, title), true);
             build(app, &sub, &entries, &mut items, &mut counter);
             let _ = menu.append(&sub);
         }
@@ -103,7 +103,7 @@ fn build(app: &DesignApp, parent: &Submenu, entries: &[Item], items: &mut HashMa
                 let _ = parent.append(&PredefinedMenuItem::separator());
             }
             Item::Sub(label, children) => {
-                let sub = Submenu::new(label, true);
+                let sub = Submenu::new(designcraft_ui_egui::i18n::tr(&app.ui.language, label), true);
                 build(app, &sub, children, items, counter);
                 let _ = parent.append(&sub);
             }
@@ -111,6 +111,7 @@ fn build(app: &DesignApp, parent: &Submenu, entries: &[Item], items: &mut HashMa
                 *counter += 1;
                 let mid = format!("dc{counter}");
                 let sc = if params.is_null() { shortcut.and_then(accel) } else { None };
+                let label = designcraft_ui_egui::i18n::tr(&app.ui.language, label);
                 let handle = if menus::checked(app, id, params).is_some() {
                     let c = CheckMenuItem::with_id(mid.clone(), label, true, false, sc);
                     let _ = parent.append(&c);

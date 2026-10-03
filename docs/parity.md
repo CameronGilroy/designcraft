@@ -11,11 +11,11 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 92 | 5 | 0 | 97% |
-| P2 | 76 | 40 | 28 | 8 | 71% |
+| P2 | 76 | 40 | 29 | 7 | 72% |
 
 | Area | Parity |
 |---|---|
-| Application shell & workspace | 91% |
+| Application shell & workspace | 92% |
 | Documents, pages, spreads | 94% |
 | Layers | 95% |
 | Frames, shapes & paths | 100% |
@@ -56,7 +56,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Application shell & workspace | Show Full Menus | P2 | D |
 | Application shell & workspace | Recovery / autosave | P0 | D |
 | Application shell & workspace | Preferences | P0 | P |
-| Application shell & workspace | Localization | P2 | M |
+| Application shell & workspace | Localization | P2 | P |
 | Application shell & workspace | Scripting (own API: commands, scripts, MCP) | P2 | D |
 | Documents, pages, spreads | New Document dialog | P0 | D |
 | Documents, pages, spreads | Document Setup | P0 | D |

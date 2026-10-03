@@ -11,6 +11,7 @@ pub mod chrome;
 pub mod control;
 pub mod dialogs;
 pub mod dock;
+pub mod i18n;
 pub mod icons;
 pub mod menus;
 pub mod panels;
@@ -102,6 +103,8 @@ pub struct UiState {
     /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
     pub hidden_menu_items: Vec<String>,
     pub show_full_menus: bool,
+    /// Edit › Interface Language: "" (English), "de", "fr", "es" or "ja".
+    pub language: String,
     /// Edit › Transparency Flattener Presets: "" (none), "high", "medium" or "low" for PDF export.
     pub flattener: String,
     /// View › Separations Preview: a process plate (0–3) and/or an ink limit (total, 0–4).
@@ -171,6 +174,7 @@ impl Default for UiState {
             tagged_frames: false,
             hidden_menu_items: Vec::new(),
             show_full_menus: false,
+            language: String::new(),
             flattener: String::new(),
             separation: None,
             ink_limit: None,
