@@ -310,6 +310,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.circle(10.0, 10.0, 7.0);
             pen.line(&[(6.5, 10.0), (9.0, 12.5), (13.5, 7.5)]);
         }
+        "panel-library" => {
+            // Books on a shelf.
+            pen.rect(3.0, 4.0, 7.0, 16.0);
+            pen.rect(8.0, 6.0, 12.0, 16.0);
+            pen.line(&[(13.0, 6.5), (17.0, 5.0), (17.5, 15.5), (13.5, 16.5)]);
+        }
         "panel-notes" => {
             // A note with a folded corner.
             pen.closed(&[(4.0, 3.0), (16.0, 3.0), (16.0, 13.0), (12.0, 17.0), (4.0, 17.0)]);

@@ -192,6 +192,8 @@ pub struct Session {
     pub(crate) transforms: (Vec<(String, Value)>, Vec<designcraft_doc::ItemId>, bool),
     /// Drag and drop text editing: the press landed in the selected text.
     pub(crate) text_drag: bool,
+    /// The open Object Library (File › New / Open Library).
+    pub library: Option<cmd::library::Library>,
 }
 
 impl Default for Session {
@@ -216,6 +218,7 @@ impl Session {
             loaded: None,
             transforms: Default::default(),
             text_drag: false,
+            library: None,
             untitled: 0,
         }
     }

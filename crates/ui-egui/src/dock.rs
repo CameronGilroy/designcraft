@@ -32,6 +32,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     ("attributes", "Attributes", "panel-attributes"),
     ("conditions", "Conditional Text", "panel-conditions"),
     ("notes", "Notes", "panel-notes"),
+    ("library", "Library", "panel-library"),
 ];
 
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
@@ -169,6 +170,7 @@ pub fn panel_body(app: &mut DesignApp, ui: &mut egui::Ui, id: &str) {
         "attributes" => panels::properties::attributes_panel(app, ui),
         "conditions" => panels::conditions::show(app, ui),
         "notes" => panels::notes::show(app, ui),
+        "library" => panels::library::show(app, ui),
         "table" => panels::table::show(app, ui),
         _ => panels::properties::info_panel(app, ui),
     }

@@ -394,6 +394,11 @@ fn place_drop(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(r)
 }
 
+/// The selection as `.designcraft` snippet bytes.
+pub(crate) fn snippet_bytes(s: &mut Session) -> Result<Vec<u8>> {
+    Ok(to_bytes(&super::edit::clip_doc(s)?))
+}
+
 fn snippet_export(s: &mut Session, p: &Value) -> Result<Value> {
     let d = super::edit::clip_doc(s)?;
     let bytes = to_bytes(&d);
@@ -407,7 +412,7 @@ fn snippet_export(s: &mut Session, p: &Value) -> Result<Value> {
     }
 }
 
-fn snippet_place(s: &mut Session, p: &Value) -> Result<Value> {
+pub(crate) fn snippet_place(s: &mut Session, p: &Value) -> Result<Value> {
     let (bytes, _, _) = read_source(p)?;
     let src = from_bytes(&bytes)?;
     let ids: Vec<ItemId> = src.spreads.first().map(|sp| sp.items.iter().map(|i| i.id).collect()).unwrap_or_default();
