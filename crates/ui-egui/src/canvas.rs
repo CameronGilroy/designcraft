@@ -1262,7 +1262,7 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
     }
     // Space-drag = hand (unless a tool drag is under way: then Space is a modifier, e.g. Live
     // Distribute while resizing).
-    let tool_drag: bool = ui.data(|d| d.get_temp(egui::Id::new("canvas_pointer_down"))).unwrap_or(false);
+    let tool_drag: bool = ui.data(|d| d.get_temp(egui::Id::new(("canvas_pointer_down", app.pane)))).unwrap_or(false);
     if space && !tool_drag && resp.dragged() {
         let d = resp.drag_delta();
         if let Some(v) = app.view_mut() {
@@ -1277,7 +1277,7 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
     let vi = app.view_info();
     let pos = |p: Pos2| xf.to_canvas(p);
     let mut events: Vec<PointerEvent> = Vec::new();
-    let down_id = egui::Id::new("canvas_pointer_down");
+    let down_id = egui::Id::new(("canvas_pointer_down", app.pane));
     let mut down: bool = ui.data(|d| d.get_temp(down_id)).unwrap_or(false);
     let (pressed, released, origin, latest, dbl) = ui.input(|i| {
         (

@@ -227,6 +227,34 @@ pub struct Shown {
     pub size: (f32, f32),
 }
 
+impl CanvasCache {
+    pub fn new() -> Self {
+        let mut renderer = designcraft_render::Renderer::new();
+        renderer.threads = designcraft_render::default_threads();
+        CanvasCache {
+            renderer,
+            texture: None,
+            shown: None,
+            pending: None,
+            token: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            worker: None,
+            worker_started: false,
+            last_ms: 0.0,
+            shown_doc: None,
+            pending_doc: None,
+            patcher: designcraft_render::Renderer::new(),
+            patches: 0,
+        }
+    }
+}
+
+impl Default for CanvasCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct CanvasCache {
     pub renderer: designcraft_render::Renderer,
     pub texture: Option<egui::TextureHandle>,
@@ -260,8 +288,16 @@ pub struct DesignApp {
     pub ui: UiState,
     pub services: Services,
     pub views: HashMap<u64, View>,
+    /// The canvas cache and rect of the pane in `pane` (the other pane's are in `other_pane`).
     pub canvas: CanvasCache,
     pub canvas_rect: Option<egui::Rect>,
+    /// Window › Arrange › Split Window: two views of the document side by side.
+    pub split: bool,
+    /// The current pane (0 or 1): views, cache and rect refer to it.
+    pub pane: u8,
+    /// The pane last clicked (menu zoom and scroll go there).
+    pub focus_pane: u8,
+    pub other_pane: Option<(CanvasCache, Option<egui::Rect>)>,
     /// Power Zoom in progress: the zoom to return to and the canvas point it will centre on.
     pub power_zoom: Option<(f64, designcraft_geom::Point)>,
     pub perf: Perf,
@@ -287,29 +323,17 @@ pub struct DesignApp {
 
 impl DesignApp {
     pub fn new(session: Session, services: Services) -> Self {
-        let mut renderer = designcraft_render::Renderer::new();
-        renderer.threads = designcraft_render::default_threads();
         DesignApp {
             session,
             ui: UiState::default(),
             services,
             views: HashMap::new(),
-            canvas: CanvasCache {
-                renderer,
-                texture: None,
-                shown: None,
-                pending: None,
-                token: 0,
-                #[cfg(not(target_arch = "wasm32"))]
-                worker: None,
-                worker_started: false,
-                last_ms: 0.0,
-                shown_doc: None,
-                pending_doc: None,
-                patcher: designcraft_render::Renderer::new(),
-                patches: 0,
-            },
+            canvas: CanvasCache::new(),
             canvas_rect: None,
+            split: false,
+            pane: 0,
+            focus_pane: 0,
+            other_pane: None,
             power_zoom: None,
             perf: Perf::default(),
             synthetic: vec![],
@@ -334,13 +358,27 @@ impl DesignApp {
         self
     }
 
-    pub fn view(&self) -> Option<&View> {
+    /// The view key of the active document in the current pane.
+    fn view_key(&self) -> Option<u64> {
         let uid = self.session.active()?.uid;
-        self.views.get(&uid)
+        Some(if self.pane == 1 { uid ^ (1 << 63) } else { uid })
+    }
+    pub fn view(&self) -> Option<&View> {
+        self.views.get(&self.view_key()?)
     }
     pub fn view_mut(&mut self) -> Option<&mut View> {
-        let uid = self.session.active()?.uid;
-        Some(self.views.entry(uid).or_default())
+        let k = self.view_key()?;
+        Some(self.views.entry(k).or_default())
+    }
+    /// Make `pane` current: its canvas cache and rect move in.
+    pub fn switch_pane(&mut self, pane: u8) {
+        if pane == self.pane {
+            return;
+        }
+        let (c, r) = self.other_pane.take().unwrap_or_default();
+        let old = (std::mem::replace(&mut self.canvas, c), std::mem::replace(&mut self.canvas_rect, r));
+        self.other_pane = Some(old);
+        self.pane = pane;
     }
     pub fn view_info(&self) -> ViewInfo {
         ViewInfo { zoom: self.view().map(|v| v.zoom).unwrap_or(1.0) }
@@ -547,7 +585,38 @@ impl DesignApp {
             if !presenting {
                 chrome::doc_tabs(self, ui);
             }
-            canvas::show(self, ui);
+            if self.split && !presenting {
+                // Two panes with a divider; each has its own view (zoom, scroll) and render cache.
+                let r = ui.available_rect_before_wrap();
+                let mid = r.center().x;
+                let halves = [
+                    egui::Rect::from_min_max(r.min, egui::pos2(mid - 1.0, r.max.y)),
+                    egui::Rect::from_min_max(egui::pos2(mid + 1.0, r.min.y), r.max),
+                ];
+                ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(mid - 1.0, r.min.y), egui::pos2(mid + 1.0, r.max.y)), 0.0, t.border);
+                for (k, half) in halves.into_iter().enumerate() {
+                    self.switch_pane(k as u8);
+                    // A new pane starts at the other pane's view.
+                    if k == 1 && self.view().is_none() {
+                        self.switch_pane(0);
+                        let v = self.view().copied();
+                        self.switch_pane(1);
+                        if let (Some(mut v), Some(m)) = (v, self.view_mut()) {
+                            v.fitted = false;
+                            *m = v;
+                        }
+                    }
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(half), |ui| canvas::show(self, ui));
+                    if ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| half.contains(p))) {
+                        self.focus_pane = k as u8;
+                    }
+                }
+                self.switch_pane(self.focus_pane);
+            } else {
+                self.switch_pane(0);
+                self.focus_pane = 0;
+                canvas::show(self, ui);
+            }
         });
         dock::flyout(self, &ctx);
         dock::floating(self, &ctx);

@@ -10,12 +10,12 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 92 | 4 | 1 | 97% |
-| P2 | 76 | 39 | 25 | 12 | 68% |
+| P1 | 97 | 92 | 5 | 0 | 97% |
+| P2 | 76 | 40 | 25 | 11 | 69% |
 
 | Area | Parity |
 |---|---|
-| Application shell & workspace | 88% |
+| Application shell & workspace | 91% |
 | Documents, pages, spreads | 94% |
 | Layers | 95% |
 | Frames, shapes & paths | 100% |
@@ -31,7 +31,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Interactivity & digital | 90% |
 | Output & production | 80% |
 | XML & automation | 83% |
-| View & navigation | 89% |
+| View & navigation | 93% |
 | Undo, history, saving | 100% |
 | Accessibility | 70% |
 
@@ -43,7 +43,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 |---|---|---|---|
 | Application shell & workspace | Start/Home screen | P0 | D |
 | Application shell & workspace | Multiple documents in tabs | P0 | D |
-| Application shell & workspace | New Window for same document | P1 | M |
+| Application shell & workspace | New Window for same document | P1 | P |
 | Application shell & workspace | Dockable panels | P0 | D |
 | Application shell & workspace | Workspaces | P1 | D |
 | Application shell & workspace | Control panel | P0 | D |
@@ -306,7 +306,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | View & navigation | Structure / tag markers | P2 | P |
 | View & navigation | Display performance | P0 | D |
 | View & navigation | Navigate pages | P0 | D |
-| View & navigation | Split window | P2 | M |
+| View & navigation | Split window | P2 | D |
 | View & navigation | Rotate spread view | P2 | M |
 | View & navigation | Find/zoom to object | P1 | D |
 | Undo, history, saving | Unlimited undo/redo | P0 | D |

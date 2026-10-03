@@ -80,6 +80,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("window.floatPanel", "Float Panel", None, "{panel, x?, y?} — the panel in its own movable window"),
     ("window.dockPanel", "Dock Panel", None, "{panel} — back into the dock's icon column"),
     ("window.controlBar", "Control", Some("Cmd+Alt+6"), "{}"),
+    ("window.split", "Split Window", None, "{on?: bool} — two views of the document side by side, each with its own zoom and scroll"),
+    ("window.newWindow", "New Window", None, "{} — another view of the active document (shown beside the first)"),
     ("window.taskBar", "Contextual Task Bar", None, "{}"),
     ("help.discord", "Join the ArtCraft Discord…", None, "{} — opens https://discord.gg/artcraft in the browser"),
     ("help.appPage", "DesignCraft Website…", None, "{} — opens https://getartcraft.com/apps/designcraft"),
@@ -508,6 +510,11 @@ pub const MENUS: &[(&str, &[&str])] = &[
     (
         "Window",
         &[
+            ">Arrange",
+            "ui:window.newWindow",
+            "ui:window.split",
+            "<",
+            "-",
             "ui:window.controlBar",
             "ui:window.taskBar",
             "ui:window.toolsDoubleColumn",
@@ -994,6 +1001,15 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(json!({"floating": app.ui.floating.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()}))
         }
         "window.controlBar" => flag(&mut app.ui.control_bar),
+        "window.split" | "window.newWindow" => {
+            let on = if id == "window.newWindow" { true } else { p.get("on").and_then(Value::as_bool).unwrap_or(!app.split) };
+            app.split = on;
+            if !on {
+                app.switch_pane(0);
+                app.focus_pane = 0;
+            }
+            Ok(json!(on))
+        }
         "window.taskBar" => flag(&mut app.ui.task_bar),
         "help.about" => {
             app.ui.about = p.get("open").and_then(Value::as_bool).unwrap_or(true);
@@ -1372,6 +1388,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "view.taggedFrames" => app.ui.tagged_frames,
         "changes.track" => app.session.active().is_some_and(|d| d.doc.settings.track_changes),
         "window.controlBar" => app.ui.control_bar,
+        "window.split" => app.split,
         "window.taskBar" => app.ui.task_bar,
         "window.toolsDoubleColumn" => app.ui.tools_double_column,
         "view.togglePreview" => app.ui.screen_mode == crate::ScreenMode::Preview,
@@ -1698,6 +1715,41 @@ mod tests {
         } else {
             assert_eq!(shortcut_text("Cmd+Alt+3"), "Alt+Ctrl+3");
         }
+    }
+
+    #[test]
+    fn split_window_panes_have_their_own_views() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        let ctx = egui::Context::default();
+        let frame = |app: &mut crate::DesignApp| {
+            let input =
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                app.logic(&ui.ctx().clone());
+                app.ui(ui);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut app);
+        assert_eq!(run_ui(&mut app, "window.split", &json!({})).unwrap().unwrap(), json!(true));
+        frame(&mut app);
+        frame(&mut app);
+        // Both panes have a canvas, each half as wide.
+        let r0 = app.canvas_rect.unwrap();
+        let r1 = app.other_pane.as_ref().and_then(|o| o.1).unwrap();
+        assert!(r0.width() < 800.0 && r1.width() < 800.0 && (r0.center().x - r1.center().x).abs() > 300.0, "{r0:?} {r1:?}");
+        // Zooming the right pane leaves the left alone.
+        app.switch_pane(1);
+        let z0 = app.view().unwrap().zoom;
+        crate::canvas::set_zoom(&mut app, z0 * 3.0);
+        app.switch_pane(0);
+        assert!((app.view().unwrap().zoom - z0).abs() < 1e-9);
+        app.switch_pane(1);
+        assert!((app.view().unwrap().zoom - z0 * 3.0).abs() < 1e-6);
+        assert_eq!(run_ui(&mut app, "window.split", &json!({})).unwrap().unwrap(), json!(false));
+        assert_eq!(app.pane, 0);
+        frame(&mut app);
     }
 
     #[test]
