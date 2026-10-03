@@ -74,6 +74,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Articles panel (`article.new/add/remove/options/delete/list`): reading order and content of EPUB and HTML exports.
 - Object ▸ Clipping Path (`object.clippingPath {type: alpha|edges, threshold, tolerance}`): traces the placed image and makes the outline the frame.
 - Gridify: arrow keys while dragging a frame or shape tool add columns/rows (`frame.grid`), one undo step.
+- Gap tool (U, `gap.move`): drag the space between objects (or an object and the page edge) and both sides resize.
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.

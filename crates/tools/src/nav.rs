@@ -196,3 +196,60 @@ impl Tool for PathTypeTool {
         Cursor::Text
     }
 }
+
+/// Gap tool (U): drag the space between objects (or between an object and the page edge); the
+/// objects on both sides resize so the gap moves.
+#[derive(Default)]
+pub struct GapTool {
+    /// Spread, offset and the press point in spread coordinates.
+    start: Option<(designcraft_doc::SpreadRef, designcraft_geom::Vec2, Point)>,
+    active: bool,
+}
+
+impl Tool for GapTool {
+    fn id(&self) -> &'static str {
+        "gap"
+    }
+
+    fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
+        match ev.kind {
+            PointerKind::Down => {
+                if let Some((sr, p)) = cx.layout.spread_at(ev.pos) {
+                    self.start = Some((sr, cx.layout.offset(sr), p));
+                }
+                self.active = false;
+                vec![]
+            }
+            PointerKind::Drag => {
+                let Some((sr, off, p)) = self.start else { return vec![] };
+                let d = (ev.pos - off) - p;
+                let mut out = vec![];
+                if !self.active {
+                    if d.hypot() < cx.tol(2.0) {
+                        return vec![];
+                    }
+                    self.active = true;
+                    out.push(Action::Begin("Move Gap".into()));
+                }
+                out.push(Action::Preview(
+                    "gap.move".into(),
+                    serde_json::json!({"spread": crate::spread_json(sr), "at": [p.x, p.y], "dx": d.x, "dy": d.y}),
+                ));
+                out
+            }
+            PointerKind::Up => {
+                self.start = None;
+                if std::mem::take(&mut self.active) { vec![Action::Commit] } else { vec![] }
+            }
+            _ => vec![],
+        }
+    }
+
+    fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
+        Cursor::Crosshair
+    }
+
+    fn busy(&self) -> bool {
+        self.active
+    }
+}

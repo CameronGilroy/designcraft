@@ -11,14 +11,14 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 92 | 4 | 1 | 97% |
-| P2 | 76 | 26 | 14 | 36 | 43% |
+| P2 | 76 | 27 | 14 | 35 | 45% |
 
 | Area | Parity |
 |---|---|
 | Application shell & workspace | 82% |
 | Documents, pages, spreads | 87% |
 | Layers | 95% |
-| Frames, shapes & paths | 98% |
+| Frames, shapes & paths | 99% |
 | Transform | 100% |
 | Fill, stroke, colour | 95% |
 | Effects & transparency | 71% |
@@ -114,7 +114,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Frames, shapes & paths | Auto-fit | P1 | D |
 | Frames, shapes & paths | Step and Repeat | P1 | D |
 | Frames, shapes & paths | Gridify while drawing | P2 | D |
-| Frames, shapes & paths | Gap tool | P2 | M |
+| Frames, shapes & paths | Gap tool | P2 | D |
 | Frames, shapes & paths | Live Distribute | P2 | M |
 | Frames, shapes & paths | Generate QR Code | P2 | D |
 | Frames, shapes & paths | Placeholder text | P1 | D |

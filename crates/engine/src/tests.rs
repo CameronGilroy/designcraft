@@ -390,3 +390,19 @@ fn gridify_while_drawing_frames() {
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(s.doc().unwrap().doc.spreads[0].items.len(), n0, "one undo step");
 }
+
+#[test]
+fn gap_tool_drag_moves_the_gap() {
+    use designcraft_tools::{PointerEvent, PointerKind};
+    let mut s = session();
+    let a = s.execute("frame.create", &json!({"rect": [100, 100, 200, 300]})).unwrap()["id"].as_u64().unwrap();
+    s.set_tool("gap");
+    let v = ViewInfo { zoom: 1.0 };
+    s.pointer(&PointerEvent::new(PointerKind::Down, 250.0, 200.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 270.0, 205.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 270.0, 205.0), v).unwrap();
+    // The gap between the frame and the page's right edge: the frame's right side moved 20.
+    let b = s.doc().unwrap().doc.item(designcraft_doc::ItemId(a)).unwrap().bounds();
+    assert_eq!(b.x1, 220.0, "{b:?}");
+    assert_eq!(s.doc().unwrap().history.undo.len(), 2, "create + one gap move");
+}
