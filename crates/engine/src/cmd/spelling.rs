@@ -12,6 +12,35 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(query "spelling.check", "Check Spelling…", ["Edit", "Spelling"], Some("Cmd+I"),
             "{story?, suggestions?: true} → [{story, start, end, word, suggestions}]", has_doc, check),
+        cmd!(
+            "hyphenation.addException",
+            "Add Hyphenation Exception",
+            ["Edit", "Spelling", "User Dictionary"],
+            None,
+            "{word: \"ex~am~ple\" (breaks only at ~) or a word with no ~ (never hyphenated)}",
+            has_doc,
+            |s, p| {
+                let w = str_param(p, "word")
+                    .map(str::trim)
+                    .filter(|w| !w.replace('~', "").is_empty())
+                    .ok_or_else(|| bad("hyphenation.addException", "missing word"))?
+                    .to_string();
+                let plain = w.replace('~', "").to_lowercase();
+                s.edit(|d, _| {
+                    d.hyphenation_exceptions.retain(|e| e.replace('~', "").to_lowercase() != plain);
+                    d.hyphenation_exceptions.push(w.clone());
+                    Ok(Value::Null)
+                })
+            }
+        ),
+        cmd!("hyphenation.removeException", "Remove Hyphenation Exception", [], None, "{word} (with or without ~)", has_doc, |s, p| {
+            let plain = str_param(p, "word").unwrap_or("").replace('~', "").to_lowercase();
+            s.edit(|d, _| {
+                d.hyphenation_exceptions.retain(|e| e.replace('~', "").to_lowercase() != plain);
+                Ok(Value::Null)
+            })
+        }),
+        cmd!(query "hyphenation.list", "Hyphenation Exceptions", [], None, "{} → [word]", has_doc, |s, _| Ok(serde_json::to_value(&s.doc()?.doc.hyphenation_exceptions).unwrap_or_default())),
         cmd!("spelling.addWord", "Add to Dictionary", ["Edit", "Spelling"], None, "{word}", has_doc, |s, p| {
             let w = str_param(p, "word").ok_or_else(|| bad("spelling.addWord", "missing word"))?.to_lowercase();
             s.edit(|d, _| {
@@ -186,5 +215,38 @@ mod tests {
         assert!(r[0]["suggestions"].as_array().unwrap().iter().any(|v| v == "the"));
         s.execute("spelling.addWord", &json!({"word": "jumpd"})).unwrap();
         assert_eq!(s.execute("spelling.check", &json!({})).unwrap().as_array().unwrap().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod hyphenation_exception_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    fn first_line(s: &Session, sid: designcraft_doc::StoryId) -> String {
+        let d = &s.doc().unwrap().doc;
+        let cs = s.cache.get(d, sid, None);
+        let l = &cs.frames[0].lines[0];
+        let mut t = d.stories[&sid].text[l.range.clone()].to_string();
+        if l.hyphenated {
+            t.push('-');
+        }
+        t
+    }
+
+    #[test]
+    fn user_exceptions_decide_where_words_break() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 172, 400], "content": "text", "text": "a internationalization"})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+        s.execute("type.para", &json!({"hyphenate": true, "hyphLastWord": true})).unwrap();
+        s.execute("hyphenation.addException", &json!({"word": "in~ternationalization"})).unwrap();
+        assert_eq!(first_line(&s, sid), "a in-", "the only break allowed");
+        s.execute("hyphenation.addException", &json!({"word": "internationalization"})).unwrap();
+        assert_eq!(s.execute("hyphenation.list", &json!({})).unwrap().as_array().unwrap().len(), 1, "replaces the earlier entry");
+        assert!(!first_line(&s, sid).ends_with('-'), "never hyphenated");
     }
 }

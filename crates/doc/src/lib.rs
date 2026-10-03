@@ -153,6 +153,29 @@ pub struct Condition {
 }
 
 impl Document {
+    /// Hyphenation exceptions by lowercase word: the break positions (char indices; empty = never
+    /// hyphenate).
+    pub fn hyphenation_exception_map(&self) -> std::collections::HashMap<String, Vec<usize>> {
+        self.hyphenation_exceptions
+            .iter()
+            .map(|e| {
+                let mut word = String::new();
+                let mut breaks = Vec::new();
+                for c in e.trim().chars() {
+                    if c == '~' {
+                        if breaks.last() != Some(&word.chars().count()) && !word.is_empty() {
+                            breaks.push(word.chars().count());
+                        }
+                    } else {
+                        word.extend(c.to_lowercase());
+                    }
+                }
+                breaks.retain(|b| *b < word.chars().count());
+                (word, breaks)
+            })
+            .collect()
+    }
+
     /// Is text with these conditions hidden? (Conditioned text shows while any of its conditions
     /// is visible.)
     pub fn conditions_hide(&self, conds: &[String]) -> bool {
@@ -394,6 +417,10 @@ pub struct Document {
     /// Words added to the document's user dictionary (spelling).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_words: Vec<String>,
+    /// User dictionary hyphenation exceptions: `ex~am~ple` (breaks only at `~`), or a word with
+    /// no `~` that never hyphenates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hyphenation_exceptions: Vec<String>,
     /// The generated table of contents (Layout → Table of Contents), kept for Update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toc: Option<Toc>,

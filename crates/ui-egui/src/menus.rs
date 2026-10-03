@@ -21,6 +21,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportHtml", "Export HTML…", None, "{path?} — one self-contained web page"),
     ("app.printBooklet", "Print Booklet…", None, "{path?} — saddle-stitched printer spreads as PDF"),
     ("app.qrCode", "Generate QR Code…", None, "{} — the QR Code dialog (object.qrCode does the work)"),
+    ("app.userDictionary", "User Dictionary…", None, "{} — hyphenation exceptions (hyphenation.* commands)"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
@@ -145,6 +146,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             ">Spelling",
             "cmd:spelling.check",
             "cmd:spelling.addWord",
+            "ui:app.userDictionary",
             "<",
             ">Transparency Blend Space",
             "cmd:edit.transparencyBlendSpace|Document RGB|{\"space\": \"rgb\"}",
@@ -550,6 +552,10 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "app.exportEpub" => export_bytes(app, p, "epub", "file.exportEpub"),
         "app.exportHtml" => export_bytes(app, p, "html", "file.exportHtml"),
         "app.printBooklet" => export_bytes(app, p, "pdf", "file.printBooklet"),
+        "app.userDictionary" => {
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("userDictionary", json!({"word": ""})));
+            Ok(Value::Null)
+        }
         "app.qrCode" => {
             app.ui.dialog = Some(crate::dialogs::Dialog::new("qrCode", json!({})));
             Ok(Value::Null)

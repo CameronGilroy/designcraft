@@ -105,6 +105,38 @@ fn text_field(ui: &mut egui::Ui, d: &mut Dialog, key: &str, w: f32) {
 
 /// Edit › Keyboard Shortcuts: every command and its shortcut; click a shortcut, then press the
 /// new keys (Esc cancels, Backspace clears).
+/// Edit › Spelling › User Dictionary: added words and hyphenation exceptions (applied at once).
+fn user_dictionary(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    ui.label(egui::RichText::new("Hyphenation Exceptions").font(semibold(12.0)));
+    ui.label(egui::RichText::new("Type a word with ~ at each allowed break (ex~am~ple); without ~ the word is never hyphenated.").size(10.5));
+    ui.horizontal(|ui| {
+        text_field(ui, d, "word", 200.0);
+        if ui.button("Add").clicked() {
+            let w = d.s("word");
+            if !w.trim().is_empty() {
+                match app.run("hyphenation.addException", json!({"word": w.trim()})) {
+                    Ok(_) => {
+                        d.fields.insert("word".into(), json!(""));
+                    }
+                    Err(e) => app.status(format!("User Dictionary: {e}")),
+                }
+            }
+        }
+    });
+    let list = app.session.execute("hyphenation.list", &json!({})).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+        for w in list {
+            let w = w.as_str().unwrap_or("").to_string();
+            ui.horizontal(|ui| {
+                ui.label(&w);
+                if ui.small_button("Remove").clicked() {
+                    let _ = app.run("hyphenation.removeException", json!({"word": w}));
+                }
+            });
+        }
+    });
+}
+
 fn keyboard_shortcuts(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
     let mut q = d.s("query");
     ui.add(egui::TextEdit::singleline(&mut q).hint_text("Search commands").desired_width(f32::INFINITY));
@@ -608,6 +640,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "insertXref" => "New Cross-Reference",
         "findFont" => "Find/Replace Font",
         "polygonSettings" => "Polygon Settings",
+        "userDictionary" => "User Dictionary",
         "qrCode" => "Generate QR Code",
         "preferences" => "Preferences",
         "print" => "Print",
@@ -759,6 +792,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                 });
             }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
+            "userDictionary" => user_dictionary(app, ui, &mut d),
             "qrCode" => {
                 let cur = d.s("type");
                 ui.horizontal(|ui| {

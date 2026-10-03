@@ -144,6 +144,7 @@ impl Document {
             hyperlinks: vec![],
             bookmarks: vec![],
             user_words: vec![],
+            hyphenation_exceptions: vec![],
             toc: None,
             text_variables: crate::vars::defaults(),
             footnote_options: Default::default(),

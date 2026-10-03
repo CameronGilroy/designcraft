@@ -92,6 +92,13 @@ impl Cache {
         if !story.endnotes.is_empty() {
             sig.push(doc.endnote_start(sid) as usize);
         }
+        // User hyphenation exceptions.
+        if !doc.hyphenation_exceptions.is_empty() {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            doc.hyphenation_exceptions.hash(&mut h);
+            sig.push(h.finish() as usize);
+        }
         // Hidden conditions take their text out of the layout.
         for (i, c) in doc.conditions.iter().enumerate() {
             if !c.visible {

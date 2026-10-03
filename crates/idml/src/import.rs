@@ -2029,6 +2029,7 @@ impl<'r> Importer<'r> {
             hyperlinks: vec![],
             bookmarks: vec![],
             user_words: vec![],
+            hyphenation_exceptions: vec![],
             toc: None,
             text_variables: designcraft_doc::vars::defaults(),
             footnote_options: std::mem::take(&mut self.footnote_options),

@@ -369,6 +369,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
     let mut cur = Cursor { fi: 0, col: 0, last_baseline: None, last_descent: 0.0, pending: 0.0 };
     let para_ranges = story.para_ranges();
     let np = para_ranges.len();
+    let hyph_exceptions = doc.hyphenation_exception_map();
     let mut list_counter: u32 = 0;
     // Named lists number independently of layout: one pass up front.
     let named_numbers: Vec<Option<u32>> = {
@@ -512,7 +513,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 // The same spacing, hyphenation and breaker as the layout below.
                 let mut gl = sp.glyphs.clone();
                 apply_desired_spacing(&mut gl, &pp);
-                let hy = hyphenation_points(&story.text, &gl, &pp);
+                let hy = hyphenation_points(&story.text, &gl, &pp, &hyph_exceptions);
                 let breaks = if pp.composer == Composer::SingleLine || gl.iter().any(|g| g.ch == '\t') || gl.len() > 4000 {
                     breaker::greedy(&gl, &hy, &spacing, &width)
                 } else if pp.balance_ragged && !spacing.justify {
@@ -580,7 +581,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         }
         let mut glyphs = sp.glyphs;
         apply_desired_spacing(&mut glyphs, &pp);
-        let hyph_after = hyphenation_points(&story.text, &glyphs, &pp);
+        let hyph_after = hyphenation_points(&story.text, &glyphs, &pp, &hyph_exceptions);
         let base_size = base_chars.size;
         let base_leading = match base_chars.leading {
             designcraft_doc::Leading::Auto => base_size * pp.auto_leading,
@@ -1629,7 +1630,7 @@ type LimitsKey = (usize, usize, usize, bool);
 
 /// Mark glyphs after which a hyphen may be inserted (dictionary/pattern points within the
 /// paragraph's limits; words with discretionary hyphens break only there).
-fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps) -> Vec<bool> {
+fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps, exceptions: &HashMap<String, Vec<usize>>) -> Vec<bool> {
     let mut out = vec![false; glyphs.len()];
     if !pp.hyphenate {
         return out;
@@ -1676,7 +1677,12 @@ fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps) -> Vec<bool>
             // Do not hyphenate the paragraph's last word unless allowed.
             let is_last_word = !pp.hyph_last_word && glyphs[j..].iter().all(|g| !g.is_letter());
             if !is_last_word {
-                let pts = cache.entry(word.into()).or_insert_with(|| hyphen::hyphen_points(word, &lim).into_boxed_slice());
+                let user = (!exceptions.is_empty()).then(|| exceptions.get(&word.to_lowercase())).flatten();
+                let pts: &[usize] = match user {
+                    // User dictionary exceptions win over the patterns and the built-in list.
+                    Some(v) => v,
+                    None => cache.entry(word.into()).or_insert_with(|| hyphen::hyphen_points(word, &lim).into_boxed_slice()),
+                };
                 for &p in pts.iter() {
                     // char index p → byte → glyph whose cluster ends at that byte.
                     let byte = a + word.char_indices().nth(p).map(|(bi, _)| bi).unwrap_or(word.len());
