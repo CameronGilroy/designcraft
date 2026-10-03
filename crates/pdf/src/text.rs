@@ -17,6 +17,7 @@ use designcraft_geom::{Affine, BezPath, Rect};
 use krilla::geom::Point;
 use krilla::paint::Stroke;
 use krilla::surface::Surface;
+use krilla::tagging::{Artifact, ArtifactType, ContentTag, SpanTag};
 use krilla::text::{Font, GlyphId, KrillaGlyph};
 
 use crate::export::{Exporter, solid_fill, tf, to_path};
@@ -65,16 +66,45 @@ impl Exporter<'_> {
             .clone()
     }
 
+    /// Draw `f` as an artifact while a story is being tagged (nested text isn't tagged).
+    fn as_artifact(&mut self, s: &mut Surface, f: impl FnOnce(&mut Self, &mut Surface)) {
+        match self.tag_story.take() {
+            Some(sid) => {
+                s.start_tagged(ContentTag::Artifact(Artifact::new(ArtifactType::Other, None)));
+                f(self, s);
+                s.end_tagged();
+                self.tag_story = Some(sid);
+            }
+            None => f(self, s),
+        }
+    }
+
+    /// A glyph run, tagged under its paragraph while a story is being tagged.
+    fn tagged_run(&mut self, s: &mut Surface, cs: &ComposedStory, gs: &[PlacedGlyph], baseline: f64, story: &str) {
+        match self.tag_story {
+            Some(sid) => {
+                let pi = self.doc.story(sid).map_or(0, |st| st.para_at(gs[0].byte.min(st.len())));
+                let id = s.start_tagged(ContentTag::Span(SpanTag::empty()));
+                self.run(s, cs, gs, baseline, story);
+                s.end_tagged();
+                self.para_tags.entry((sid, pi)).or_default().push(id);
+            }
+            None => self.run(s, cs, gs, baseline, story),
+        }
+    }
+
     pub(crate) fn frame_text(&mut self, s: &mut Surface, cs: &ComposedStory, ft: &FrameText, story: &str) {
         // Paragraph shading and rules under the text.
-        for d in &ft.decos {
-            if let Some(c) = self.swatch_color(&d.color, d.tint) {
-                self.fill_rect(s, d.rect, c);
+        self.as_artifact(s, |me, s| {
+            for d in &ft.decos {
+                if let Some(c) = me.swatch_color(&d.color, d.tint) {
+                    me.fill_rect(s, d.rect, c);
+                }
             }
-        }
-        if !ft.tables.is_empty() {
-            self.tables(s, ft);
-        }
+            if !ft.tables.is_empty() {
+                me.tables(s, ft);
+            }
+        });
         let mut deco: Vec<(designcraft_compose::Rule, Rect)> = Vec::new();
         for l in &ft.lines {
             let gs = &l.glyphs;
@@ -89,7 +119,7 @@ impl Exporter<'_> {
                 if ft.vertical && g.upright {
                     let c = designcraft_geom::Point::new(g.x + g.adv / 2.0, l.baseline + g.y - g.adv * 0.38);
                     s.push_transform(&crate::export::tf(Affine::rotate_about(-std::f64::consts::FRAC_PI_2, c)));
-                    self.run(s, cs, &gs[i..i + 1], l.baseline, story);
+                    self.tagged_run(s, cs, &gs[i..i + 1], l.baseline, story);
                     s.pop();
                     i += 1;
                     continue;
@@ -98,7 +128,7 @@ impl Exporter<'_> {
                 while j < gs.len() && same_run(g, &gs[j]) && !(ft.vertical && gs[j].upright) {
                     j += 1;
                 }
-                self.run(s, cs, &gs[i..j], l.baseline, story);
+                self.tagged_run(s, cs, &gs[i..j], l.baseline, story);
                 i = j;
             }
             // Underline / strikethrough, merged per style along the line.
@@ -114,18 +144,20 @@ impl Exporter<'_> {
                 }
             }
         }
-        for (rule, r) in deco {
-            if let Some(c) = self.swatch_color(&rule.color, rule.tint) {
-                self.fill_rect(s, r, c);
+        self.as_artifact(s, |me, s| {
+            for (rule, r) in deco {
+                if let Some(c) = me.swatch_color(&rule.color, rule.tint) {
+                    me.fill_rect(s, r, c);
+                }
             }
-        }
-        for n in &ft.notes {
-            if let Some(nft) = n.text.frames.first() {
-                s.push_transform(&tf(Affine::translate(n.origin.to_vec2())));
-                self.frame_text(s, &n.text, nft, &n.source);
-                s.pop();
+            for n in &ft.notes {
+                if let Some(nft) = n.text.frames.first() {
+                    s.push_transform(&tf(Affine::translate(n.origin.to_vec2())));
+                    me.frame_text(s, &n.text, nft, &n.source);
+                    s.pop();
+                }
             }
-        }
+        });
     }
 
     /// Table fragments: cell fills, cell text (real text), edges and the border.

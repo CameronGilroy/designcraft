@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 100 | 2 | 0 | 99% |
 | P1 | 97 | 94 | 3 | 0 | 98% |
-| P2 | 76 | 55 | 21 | 0 | 86% |
+| P2 | 76 | 56 | 20 | 0 | 87% |
 
 | Area | Parity |
 |---|---|
@@ -33,7 +33,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | XML & automation | 83% |
 | View & navigation | 96% |
 | Undo, history, saving | 100% |
-| Accessibility | 90% |
+| Accessibility | 100% |
 
 Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print).
 
@@ -312,7 +312,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Undo, history, saving | Unlimited undo/redo | P0 | D |
 | Undo, history, saving | Revert | P0 | D |
 | Undo, history, saving | Save / Save As / Save a Copy | P0 | D |
-| Accessibility | Tagged PDF export | P2 | P |
+| Accessibility | Tagged PDF export | P2 | D |
 | Accessibility | Alt text | P2 | D |
 | Accessibility | Keyboard navigation of UI | P1 | D |
 | Accessibility | High contrast | P2 | D |

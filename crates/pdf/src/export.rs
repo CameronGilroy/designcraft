@@ -18,7 +18,7 @@ use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
 use krilla::paint::{Fill, FillRule, LinearGradient, RadialGradient, SpreadMethod, Stop, Stroke, StrokeDash};
 use krilla::surface::Surface;
-use krilla::tagging::{Artifact, ArtifactType, ContentTag, Identifier, SpanTag, Tag, TagGroup, TagTree};
+use krilla::tagging::{Artifact, ArtifactType, ContentTag, Identifier, Tag, TagGroup, TagTree};
 
 use crate::{ExportReport, PdfError, PdfOptions, Result, Standard};
 
@@ -154,6 +154,8 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
         rgb_only: archival.is_some(),
         tags: Vec::new(),
         story_tags: HashMap::new(),
+        tag_story: None,
+        para_tags: HashMap::new(),
     };
     if ex.rgb_only {
         ex.warn("PDF/A: CMYK colours were converted to RGB (no CMYK output intent profile is available yet)");
@@ -302,6 +304,8 @@ pub fn export_booklet(doc: &Document, cache: &Cache, opts: &BookletOptions) -> R
         rgb_only: false,
         tags: Vec::new(),
         story_tags: HashMap::new(),
+        tag_story: None,
+        para_tags: HashMap::new(),
     };
     let pairs = booklet_pairs(n, opts.kind);
     // Sheet size from the largest page.
@@ -387,6 +391,11 @@ pub(crate) struct Exporter<'a> {
     /// Tagged PDF: the structure in reading order (stories gather their frames' content).
     tags: Vec<TagEntry>,
     story_tags: HashMap<designcraft_doc::StoryId, Vec<Identifier>>,
+    /// While drawing a story's frame for the structure tree: the story (text runs are tagged
+    /// per paragraph, everything else in the frame is an artifact).
+    pub(crate) tag_story: Option<designcraft_doc::StoryId>,
+    /// Marked content of each (story, paragraph index).
+    pub(crate) para_tags: HashMap<(designcraft_doc::StoryId, usize), Vec<Identifier>>,
 }
 
 enum TagEntry {
@@ -602,14 +611,14 @@ impl Exporter<'_> {
             return;
         }
         if let Some(sid) = story {
-            let id = s.start_tagged(ContentTag::Span(SpanTag::empty()));
-            self.item(s, it, parent, page_name);
-            s.end_tagged();
-            let v = self.story_tags.entry(sid).or_default();
-            if v.is_empty() {
+            // Text runs tag themselves by paragraph; the rest of the frame is an artifact.
+            if let std::collections::hash_map::Entry::Vacant(e) = self.story_tags.entry(sid) {
+                e.insert(Vec::new());
                 self.tags.push(TagEntry::Story(sid));
             }
-            v.push(id);
+            self.tag_story = Some(sid);
+            self.item(s, it, parent, page_name);
+            self.tag_story = None;
             return;
         }
         let id = s.start_tagged(ContentTag::Other);
@@ -628,11 +637,30 @@ impl Exporter<'_> {
         for e in std::mem::take(&mut self.tags) {
             match e {
                 TagEntry::Story(sid) => {
-                    let mut g = TagGroup::new(Tag::P);
-                    for id in self.story_tags.remove(&sid).unwrap_or_default() {
-                        g.push(id);
+                    // One structure element per paragraph: headings and quotes from the
+                    // paragraph style's Export Tagging, else P.
+                    let mut paras: Vec<usize> = self.para_tags.keys().filter(|(s, _)| *s == sid).map(|(_, p)| *p).collect();
+                    paras.sort_unstable();
+                    let story = self.doc.story(sid);
+                    for pi in paras {
+                        let ids = self.para_tags.remove(&(sid, pi)).unwrap_or_default();
+                        let style = story.and_then(|st| st.paras.get(pi)).map(|p| p.style.clone()).unwrap_or_default();
+                        let tag = self.doc.styles.export_tag(&style, false).map(|e| e.tag.clone()).unwrap_or_default();
+                        let text = || story.and_then(|st| st.para_ranges().get(pi).map(|r| st.text[r.clone()].trim().to_string()));
+                        let kind: krilla::tagging::TagKind = match tag.as_str() {
+                            h if h.len() == 2 && h.starts_with('h') => {
+                                let n = h[1..].parse::<u16>().unwrap_or(1).clamp(1, 6);
+                                Tag::Hn(std::num::NonZeroU16::new(n).expect("1–6"), text()).into()
+                            }
+                            "blockquote" => Tag::BlockQuote.into(),
+                            _ => Tag::P.into(),
+                        };
+                        let mut g = TagGroup::new(kind);
+                        for id in ids {
+                            g.push(id);
+                        }
+                        tree.push(g);
                     }
-                    tree.push(g);
                 }
                 TagEntry::Figure(g) => tree.push(g),
             }
@@ -763,6 +791,10 @@ impl Exporter<'_> {
         let bp = if it.corners.is_none() { it.path.to_bezpath() } else { corners::apply(&it.path, &it.corners) };
         let path = to_path(&bp);
         let pushes = Self::push_group(s, it.opacity, it.blend);
+        let frame_art = self.tag_story.is_some();
+        if frame_art {
+            s.start_tagged(ContentTag::Artifact(Artifact::new(ArtifactType::Other, None)));
+        }
         // Drop shadow (simple offset silhouette, like the renderer).
         if ds.on
             && let Some(p) = &path
@@ -791,6 +823,9 @@ impl Exporter<'_> {
             s.set_fill(Some(Fill { paint, opacity: NormalizedF32::ONE, rule: FillRule::NonZero }));
             s.draw_path(p);
             s.set_fill(None);
+        }
+        if frame_art {
+            s.end_tagged();
         }
         // Content.
         match &it.content {
@@ -832,7 +867,13 @@ impl Exporter<'_> {
         if !it.stroke.is_none()
             && let Some(p) = &path
         {
+            if frame_art {
+                s.start_tagged(ContentTag::Artifact(Artifact::new(ArtifactType::Other, None)));
+            }
             self.stroke(s, it, &bp, p);
+            if frame_art {
+                s.end_tagged();
+            }
         }
         s.pop();
         for _ in 0..pushes {

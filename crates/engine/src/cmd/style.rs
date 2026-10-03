@@ -1094,5 +1094,11 @@ mod export_tag_tests {
         let html = s.execute("file.exportHtml", &json!({})).unwrap()["text"].as_str().unwrap().to_string();
         assert!(html.contains("<h1 class=\"chapter\">Origins</h1>"), "{html}");
         assert!(html.contains("<strong class=\"key-term\">word</strong>"), "{html}");
+        // Tagged PDF: a heading element and a paragraph element.
+        let r = s.execute("file.exportPdf", &json!({"tagged": true, "compress": false})).unwrap();
+        let pdf = super::super::file::base64_decode(r["base64"].as_str().unwrap());
+        let text = String::from_utf8_lossy(&pdf);
+        assert!(text.contains("/S/H1") && text.contains("/S/P"), "structure elements");
+        assert!(designcraft_render::pdf_page_count(&pdf) == Some(1));
     }
 }
