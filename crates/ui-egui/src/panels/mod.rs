@@ -2,6 +2,7 @@
 
 pub mod conditions;
 pub mod glyphs;
+pub mod interactive;
 pub mod layers;
 pub mod library;
 pub mod notes;
