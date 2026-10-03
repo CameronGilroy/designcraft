@@ -229,6 +229,97 @@ fn flatten(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, pp
     (out, n)
 }
 
+/// A text frame in a story that runs through other frames (replacing it would reflow the story).
+fn threaded(d: &designcraft_doc::Document, it: &designcraft_doc::Item) -> bool {
+    it.text_frame().and_then(|t| d.story(t.story)).is_some_and(|st| st.frames.len() > 1)
+}
+
+/// Soft effects other than the gradient feather (which PDF export draws itself).
+fn raster_effects(it: &designcraft_doc::Item) -> bool {
+    let e = &it.effects;
+    e.drop_shadow.on || e.feather > 0.0 || e.inner_shadow.on || e.outer_glow.on || e.inner_glow.on || e.bevel.on || e.satin.on
+}
+
+/// A copy of `d` where spread-level objects with soft effects are 300 ppi images of their whole
+/// appearance (transparent around them, so they composite over what's behind).
+fn rasterize_effects(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache) -> (Option<designcraft_doc::Document>, usize) {
+    use designcraft_doc::{Asset, AssetId, Content, Graphic, Item, ItemId, Shape, SpreadRef};
+    let todo: Vec<(usize, ItemId)> = d
+        .spreads
+        .iter()
+        .enumerate()
+        .flat_map(|(si, sp)| sp.items.iter().filter(|it| !it.hidden && raster_effects(it) && !threaded(d, it)).map(move |it| (si, it.id)))
+        .collect();
+    if todo.is_empty() {
+        return (None, 0);
+    }
+    let mut out = d.clone();
+    let mut rr = designcraft_render::Renderer::new();
+    rr.threads = designcraft_render::default_threads();
+    let k = 300.0 / 72.0;
+    let mut n = 0;
+    for (si, id) in todo {
+        let Some(it) = d.item(id) else { continue };
+        let reach = it.bounds().inflate(
+            designcraft_render::effect_outset(it) + it.stroke.extent() + 2.0,
+            designcraft_render::effect_outset(it) + it.stroke.extent() + 2.0,
+        );
+        // Just this object on its spread, no paper.
+        let mut solo = d.clone();
+        let sp = std::sync::Arc::make_mut(&mut solo.spreads[si]);
+        sp.items.retain(|x| x.id == id);
+        for pg in &mut sp.pages {
+            pg.show_parent_items = false;
+        }
+        let (w, h) = ((reach.width() * k).ceil().max(1.0) as u32, (reach.height() * k).ceil().max(1.0) as u32);
+        if w as u64 * h as u64 > 60_000_000 {
+            continue;
+        }
+        let view = designcraft_geom::Affine::scale(k) * designcraft_geom::Affine::translate((-reach.x0, -reach.y0));
+        let opts = designcraft_render::RenderOptions { paper: false, background: None, printing_only: true, ..Default::default() };
+        let img = rr.render(
+            &solo,
+            cache,
+            &[designcraft_render::Placed { spread: SpreadRef::Doc(si), offset: designcraft_geom::Vec2::ZERO }],
+            w,
+            h,
+            view,
+            &opts,
+        );
+        let aid = AssetId(out.alloc());
+        out.assets.insert(
+            aid,
+            std::sync::Arc::new(Asset {
+                page: 0,
+                id: aid,
+                name: format!("effects-{}.png", id.0),
+                mime: "image/png".into(),
+                link: None,
+                data: std::sync::Arc::new(img.to_png()),
+                pixels: Some((w, h)),
+            }),
+        );
+        let mut img_item = Item::new(ItemId(out.alloc()), it.layer, Shape::Rectangle, designcraft_geom::shapes::rectangle(reach));
+        img_item.content = Content::Graphic(Graphic {
+            asset: aid,
+            size: (w as f64, h as f64),
+            xf: designcraft_geom::Affine::translate((reach.x0, reach.y0)) * designcraft_geom::Affine::scale(1.0 / k),
+            auto_fit: Default::default(),
+            fit_align: 4,
+            crop: [0.0; 4],
+        });
+        img_item.stroke.weight = 0.0;
+        img_item.alt_text = it.alt_text.clone();
+        // Same place in the stacking order.
+        let osp = std::sync::Arc::make_mut(&mut out.spreads[si]);
+        if let Some(pos) = osp.items.iter().position(|x| x.id == id) {
+            osp.items[pos] = std::sync::Arc::new(img_item);
+            n += 1;
+        }
+    }
+    (Some(out), n)
+}
+
 /// A copy of `d` where placed PDFs with Object Layer Options hidden layers are 300 ppi images.
 fn rasterize_layered(d: &designcraft_doc::Document) -> (Option<designcraft_doc::Document>, usize) {
     let ids: Vec<designcraft_doc::ItemId> =
@@ -286,7 +377,9 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
     // Placed PDFs with hidden layers go out as images showing just their visible layers.
     let base: &designcraft_doc::Document = flattened.as_ref().map_or(&st.doc, |f| &f.0);
     let (layered, layer_count) = rasterize_layered(base);
-    let doc: &designcraft_doc::Document = layered.as_ref().unwrap_or(base);
+    let base2: &designcraft_doc::Document = layered.as_ref().unwrap_or(base);
+    let (fx_doc, fx_count) = rasterize_effects(base2, &s.cache);
+    let doc: &designcraft_doc::Document = fx_doc.as_ref().unwrap_or(base2);
     let r = designcraft_pdf::export_pdf_with_report(doc, &s.cache, &opts).map_err(|e| EngineError::Other(e.to_string()))?;
     let mut r = r;
     // Transparency Blend Space: the page group of pages with transparency.
@@ -306,6 +399,9 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
             Some(b) => r.bytes = b,
             None => r.warnings.push("page transitions couldn't be added to this PDF".into()),
         }
+    }
+    if fx_count > 0 {
+        r.warnings.push(format!("{fx_count} object(s) with soft effects (shadows, glows, feathers, bevels) exported as images"));
     }
     if layer_count > 0 {
         r.warnings.push(format!("{layer_count} placed PDF(s) with hidden layers exported as images"));

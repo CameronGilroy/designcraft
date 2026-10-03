@@ -712,6 +712,84 @@ pub struct Effects {
     pub outer_glow: OuterGlow,
     #[serde(skip_serializing_if = "is_default")]
     pub gradient_feather: GradientFeather,
+    #[serde(skip_serializing_if = "is_default")]
+    pub inner_glow: InnerGlow,
+    #[serde(skip_serializing_if = "is_default")]
+    pub bevel: Bevel,
+    #[serde(skip_serializing_if = "is_default")]
+    pub satin: Satin,
+}
+
+/// Inner Glow: a glow inside the edge (or from the centre).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct InnerGlow {
+    pub on: bool,
+    pub color: String,
+    pub opacity: f32,
+    pub size: f64,
+    /// Percentage (0–100) of `size` that hardens the glow.
+    pub choke: f64,
+    /// Glow from the centre instead of the edges.
+    pub center: bool,
+}
+
+impl Default for InnerGlow {
+    fn default() -> Self {
+        InnerGlow { on: false, color: designcraft_color::swatch::PAPER.into(), opacity: 0.75, size: 7.0, choke: 0.0, center: false }
+    }
+}
+
+/// Bevel and Emboss (inner bevel): a highlight on the lit edges, a shadow on the others.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Bevel {
+    pub on: bool,
+    pub size: f64,
+    /// Depth in percent (scales the highlight and shadow offset).
+    pub depth: f64,
+    pub angle: f64,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub global_light: bool,
+    pub highlight: String,
+    pub highlight_opacity: f32,
+    pub shadow: String,
+    pub shadow_opacity: f32,
+}
+
+impl Default for Bevel {
+    fn default() -> Self {
+        Bevel {
+            on: false,
+            size: 7.0,
+            depth: 100.0,
+            angle: 120.0,
+            global_light: true,
+            highlight: designcraft_color::swatch::PAPER.into(),
+            highlight_opacity: 0.75,
+            shadow: designcraft_color::swatch::BLACK.into(),
+            shadow_opacity: 0.75,
+        }
+    }
+}
+
+/// Satin: soft interior shading from two offset copies of the shape.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Satin {
+    pub on: bool,
+    pub color: String,
+    pub opacity: f32,
+    pub angle: f64,
+    pub distance: f64,
+    pub size: f64,
+    pub invert: bool,
+}
+
+impl Default for Satin {
+    fn default() -> Self {
+        Satin { on: false, color: designcraft_color::swatch::BLACK.into(), opacity: 0.5, angle: 120.0, distance: 7.0, size: 7.0, invert: false }
+    }
 }
 
 /// Gradient Feather: the object fades from `start` to `end` opacity along a gradient.
@@ -757,7 +835,14 @@ impl GradientFeather {
 impl Effects {
     /// Any effect drawn with soft (raster) filters?
     pub fn any(&self) -> bool {
-        self.drop_shadow.on || self.feather > 0.0 || self.inner_shadow.on || self.outer_glow.on || self.gradient_feather.on
+        self.drop_shadow.on
+            || self.feather > 0.0
+            || self.inner_shadow.on
+            || self.outer_glow.on
+            || self.gradient_feather.on
+            || self.inner_glow.on
+            || self.bevel.on
+            || self.satin.on
     }
 }
 

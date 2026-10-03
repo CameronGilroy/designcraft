@@ -316,6 +316,93 @@ pub fn specs() -> Vec<CommandSpec> {
                 )
             }
         ),
+        cmd!(
+            "object.innerGlow",
+            "Inner Glow",
+            ["Object", "Effects"],
+            None,
+            "{on?: bool, opacity?, size?, choke? (%), center?: bool (glow from the centre), color?, ids?}",
+            has_selection,
+            |s, p| {
+                let p2 = p.clone();
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        let e = &mut i.effects.inner_glow;
+                        e.on = p2.get("on").and_then(Value::as_bool).unwrap_or(!e.on);
+                        e.opacity = f64_or(&p2, "opacity", e.opacity as f64) as f32;
+                        e.size = f64_or(&p2, "size", e.size);
+                        e.choke = f64_or(&p2, "choke", e.choke);
+                        e.center = p2.get("center").and_then(Value::as_bool).unwrap_or(e.center);
+                        if let Some(c) = str_param(&p2, "color") {
+                            e.color = c.into();
+                        }
+                    },
+                    false,
+                )
+            }
+        ),
+        cmd!(
+            "object.bevel",
+            "Bevel and Emboss",
+            ["Object", "Effects"],
+            None,
+            "{on?: bool, size?, depth? (%), angle?, globalLight?: bool, highlight?, highlightOpacity?, shadow?, shadowOpacity?, ids?}",
+            has_selection,
+            |s, p| {
+                let p2 = p.clone();
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        let e = &mut i.effects.bevel;
+                        e.on = p2.get("on").and_then(Value::as_bool).unwrap_or(!e.on);
+                        e.size = f64_or(&p2, "size", e.size);
+                        e.depth = f64_or(&p2, "depth", e.depth);
+                        e.angle = f64_or(&p2, "angle", e.angle);
+                        e.global_light = p2.get("globalLight").and_then(Value::as_bool).unwrap_or(e.global_light);
+                        e.highlight_opacity = f64_or(&p2, "highlightOpacity", e.highlight_opacity as f64) as f32;
+                        e.shadow_opacity = f64_or(&p2, "shadowOpacity", e.shadow_opacity as f64) as f32;
+                        if let Some(c) = str_param(&p2, "highlight") {
+                            e.highlight = c.into();
+                        }
+                        if let Some(c) = str_param(&p2, "shadow") {
+                            e.shadow = c.into();
+                        }
+                    },
+                    false,
+                )
+            }
+        ),
+        cmd!(
+            "object.satin",
+            "Satin",
+            ["Object", "Effects"],
+            None,
+            "{on?: bool, opacity?, angle?, distance?, size?, invert?: bool, color?, ids?}",
+            has_selection,
+            |s, p| {
+                let p2 = p.clone();
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        let e = &mut i.effects.satin;
+                        e.on = p2.get("on").and_then(Value::as_bool).unwrap_or(!e.on);
+                        e.opacity = f64_or(&p2, "opacity", e.opacity as f64) as f32;
+                        e.angle = f64_or(&p2, "angle", e.angle);
+                        e.distance = f64_or(&p2, "distance", e.distance);
+                        e.size = f64_or(&p2, "size", e.size);
+                        e.invert = p2.get("invert").and_then(Value::as_bool).unwrap_or(e.invert);
+                        if let Some(c) = str_param(&p2, "color") {
+                            e.color = c.into();
+                        }
+                    },
+                    false,
+                )
+            }
+        ),
         cmd!("object.feather", "Basic Feather", ["Object", "Effects"], None, "{width (0 = off), ids?}", has_selection, |s, p| {
             let w = f64_or(p, "width", 9.0).max(0.0);
             set_flag(s, p, move |i| i.effects.feather = w, false)
@@ -2029,6 +2116,46 @@ mod attributes_tests {
 #[cfg(test)]
 mod fitting_tests {
     use super::*;
+
+    #[test]
+    fn inner_glow_bevel_and_satin_change_the_inside() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let id = s.execute("frame.create", &json!({"rect": [100, 100, 300, 300]})).unwrap()["id"].clone();
+        s.execute("object.fill", &json!({"swatch": "C=100 M=0 Y=0 K=0", "ids": [id]})).unwrap();
+        let shot = |s: &Session| {
+            let d = s.doc().unwrap().doc.clone();
+            let mut rr = designcraft_render::Renderer::new();
+            rr.threads = 0;
+            rr.render_page(&d, &s.cache, 0, 1.0, false, &Default::default()).unwrap()
+        };
+        let plain = shot(&s);
+        // Inner glow (paper colour, screened): the edge lightens, the centre doesn't.
+        s.execute("object.innerGlow", &json!({"ids": [id], "on": true, "size": 20})).unwrap();
+        let g = shot(&s);
+        assert!(g.pixel(103, 200)[0] > plain.pixel(103, 200)[0] + 30, "edge lighter");
+        assert_eq!(g.pixel(200, 200), plain.pixel(200, 200));
+        s.execute("object.innerGlow", &json!({"ids": [id], "on": false})).unwrap();
+        // Bevel: lit and shaded sides differ.
+        s.execute("object.bevel", &json!({"ids": [id], "on": true, "size": 20, "angle": 120, "globalLight": false})).unwrap();
+        let b = shot(&s);
+        let (top_left, bottom_right) = (b.pixel(104, 104), b.pixel(296, 296));
+        assert!(top_left[1] as i32 > bottom_right[1] as i32 + 30, "{top_left:?} {bottom_right:?}");
+        s.execute("object.bevel", &json!({"ids": [id], "on": false})).unwrap();
+        // Satin darkens somewhere inside.
+        s.execute("object.satin", &json!({"ids": [id], "on": true, "distance": 40, "size": 10})).unwrap();
+        let st = shot(&s);
+        let darker = (110..290)
+            .step_by(10)
+            .flat_map(|x| (110..290).step_by(10).map(move |y| (x, y)))
+            .any(|(x, y)| (st.pixel(x, y)[1] as i32) < plain.pixel(x, y)[1] as i32 - 30);
+        assert!(darker);
+        // PDF export carries effects (as an image of the object).
+        let r = s.execute("file.exportPdf", &json!({})).unwrap();
+        assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("soft effects")), "{r}");
+        let bytes = super::super::file::base64_decode(r["base64"].as_str().unwrap());
+        assert!(String::from_utf8_lossy(&bytes).contains("/Subtype/Image"));
+    }
 
     #[test]
     fn live_distribute_spreads_objects_without_resizing() {

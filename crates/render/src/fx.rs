@@ -11,6 +11,8 @@
 //!   `spread`/`choke` (percent of size) grow the silhouette instead of blurring it. The shadow's
 //!   opacity rides on the filter colour's alpha.
 //! - Inner shadow: the inverse of the offset shape, blurred, clipped to the shape, on top.
+//! - Inner glow, bevel and emboss, satin: built like the inner shadow (an offset inverse of the
+//!   shape, blurred and clipped) with screen / multiply blending; satin XORs two offset copies.
 //! - Feather: the object is masked by its shape inset by half the width and blurred, so the
 //!   edge fades from ~0 at the path to full strength `width` inside.
 
@@ -157,39 +159,150 @@ impl Renderer {
             ctx.pop_layer();
             ctx.pop_layer();
         }
+        if !it.path.is_closed() {
+            return;
+        }
         // Inner shadow, clipped to the shape.
         if e.inner_shadow.on
-            && it.path.is_closed()
             && let Some(c) = doc.resolve_color(&e.inner_shadow.color, 1.0)
         {
             let s = &e.inner_shadow;
             let (sigma, choke) = split(s.size, s.choke);
             let off = offset(doc.light_angle(s.angle, s.global_light), s.distance);
-            let paint = color_of(&c, s.opacity.clamp(0.0, 1.0));
+            self.inner_edge(ctx, f, reach, bp, xf, off, sigma, choke, color_of(&c, s.opacity.clamp(0.0, 1.0)), Mix::Normal);
+        }
+        // Inner glow: from the edges inwards (or out from the centre), screened over the object.
+        if e.inner_glow.on
+            && let Some(c) = doc.resolve_color(&e.inner_glow.color, 1.0)
+        {
+            let g = &e.inner_glow;
+            let (sigma, choke) = split(g.size, g.choke);
+            let paint = color_of(&c, g.opacity.clamp(0.0, 1.0));
+            if g.center {
+                self.with_filters(ctx, f, reach, sigma, |_, c, fr| {
+                    c.set_transform(fr.view * xf);
+                    c.push_clip_layer(bp);
+                    c.set_transform(Affine::IDENTITY);
+                    c.push_layer(None, Some(BlendMode::new(Mix::Screen, Compose::SrcOver)), None, None, None);
+                    c.set_transform(fr.view);
+                    c.push_layer(None, None, None, None, Some(blur(sigma)));
+                    c.set_transform(fr.view * xf);
+                    c.set_paint(paint);
+                    c.fill_path(bp);
+                    // Fade towards the edge: cut a band of the glow's size away.
+                    c.set_transform(Affine::IDENTITY);
+                    c.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestOut)), None, None, None);
+                    c.set_transform(fr.view * xf);
+                    c.set_paint(peniko::Color::BLACK);
+                    c.set_stroke(kurbo::Stroke::new((g.size - choke).max(0.5) * 2.0).with_join(kurbo::Join::Round));
+                    c.stroke_path(bp);
+                    c.pop_layer();
+                    c.pop_layer();
+                    c.pop_layer();
+                    c.pop_layer();
+                });
+            } else {
+                self.inner_edge(ctx, f, reach, bp, xf, Vec2::ZERO, sigma, choke, paint, Mix::Screen);
+            }
+        }
+        // Satin: the shape shifted both ways along the angle, blurred, where exactly one covers.
+        if e.satin.on
+            && let Some(c) = doc.resolve_color(&e.satin.color, 1.0)
+        {
+            let st = &e.satin;
+            let off = offset(st.angle, st.distance / 2.0);
+            let sigma = st.size.max(0.0) / 2.0;
+            let paint = color_of(&c, st.opacity.clamp(0.0, 1.0));
+            let invert = st.invert;
             self.with_filters(ctx, f, reach, sigma, |_, c, fr| {
                 c.set_transform(fr.view * xf);
                 c.push_clip_layer(bp);
+                c.set_transform(Affine::IDENTITY);
+                c.push_layer(None, Some(BlendMode::new(Mix::Multiply, Compose::SrcOver)), None, None, None);
                 c.set_transform(fr.view);
                 c.push_layer(None, None, None, None, Some(blur(sigma)));
-                // Everything outside the offset shape, so the shadow bleeds in from the edges.
-                let m = Affine::translate(off) * xf;
-                let pad = sigma * 4.0 + choke + off.hypot() + 4.0 * fr.px;
-                let mut inv = m.transform_rect_bbox(bp.bounding_box()).inflate(pad, pad).to_path(0.1);
-                let mut shape = bp.clone();
-                shape.apply_affine(m);
-                inv.extend(shape.iter());
-                c.set_paint(paint);
-                c.set_fill_rule(peniko::Fill::EvenOdd);
-                c.fill_path(&inv);
-                c.set_fill_rule(peniko::Fill::NonZero);
-                if choke > 0.0 {
-                    c.set_stroke(kurbo::Stroke::new(choke * 2.0).with_join(kurbo::Join::Round));
-                    c.stroke_path(&shape);
+                if invert {
+                    c.set_transform(fr.view * xf);
+                    c.set_paint(paint);
+                    c.fill_path(bp);
                 }
+                c.set_transform(Affine::IDENTITY);
+                c.push_layer(None, Some(BlendMode::new(Mix::Normal, if invert { Compose::DestOut } else { Compose::SrcOver })), None, None, None);
+                c.set_transform(fr.view * Affine::translate(off) * xf);
+                c.set_paint(paint);
+                c.fill_path(bp);
+                c.set_transform(Affine::IDENTITY);
+                c.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::Xor)), None, None, None);
+                c.set_transform(fr.view * Affine::translate(-off) * xf);
+                c.fill_path(bp);
+                c.pop_layer();
+                c.pop_layer();
+                c.pop_layer();
                 c.pop_layer();
                 c.pop_layer();
             });
         }
+        // Bevel and Emboss (inner bevel): highlight from the lit side, shadow from the other.
+        if e.bevel.on {
+            let b = &e.bevel;
+            let off = offset(doc.light_angle(b.angle, b.global_light), b.size * (b.depth / 100.0).clamp(0.01, 10.0) * 0.5);
+            let sigma = b.size.max(0.0) / 2.0;
+            if let Some(c) = doc.resolve_color(&b.highlight, 1.0) {
+                // The inverse shape moved away from the light lights the edges facing it.
+                self.inner_edge(ctx, f, reach, bp, xf, off, sigma, 0.0, color_of(&c, b.highlight_opacity.clamp(0.0, 1.0)), Mix::Screen);
+            }
+            if let Some(c) = doc.resolve_color(&b.shadow, 1.0) {
+                self.inner_edge(ctx, f, reach, bp, xf, -off, sigma, 0.0, color_of(&c, b.shadow_opacity.clamp(0.0, 1.0)), Mix::Multiply);
+            }
+        }
+    }
+
+    /// An inner shadow-like edge: everything outside the shape moved by `off`, blurred by
+    /// `sigma`, clipped to the shape and blended with `mix`.
+    #[allow(clippy::too_many_arguments)]
+    fn inner_edge(
+        &mut self,
+        ctx: &mut RenderContext,
+        f: &Frame,
+        reach: Rect,
+        bp: &BezPath,
+        xf: Affine,
+        off: Vec2,
+        sigma: f64,
+        choke: f64,
+        paint: peniko::Color,
+        mix: Mix,
+    ) {
+        self.with_filters(ctx, f, reach, sigma, |_, c, fr| {
+            c.set_transform(fr.view * xf);
+            c.push_clip_layer(bp);
+            if mix != Mix::Normal {
+                c.set_transform(Affine::IDENTITY);
+                c.push_layer(None, Some(BlendMode::new(mix, Compose::SrcOver)), None, None, None);
+            }
+            c.set_transform(fr.view);
+            c.push_layer(None, None, None, None, Some(blur(sigma)));
+            // Everything outside the offset shape, so the colour bleeds in from the edges.
+            let m = Affine::translate(off) * xf;
+            let pad = sigma * 4.0 + choke + off.hypot() + 4.0 * fr.px;
+            let mut inv = m.transform_rect_bbox(bp.bounding_box()).inflate(pad, pad).to_path(0.1);
+            let mut shape = bp.clone();
+            shape.apply_affine(m);
+            inv.extend(shape.iter());
+            c.set_paint(paint);
+            c.set_fill_rule(peniko::Fill::EvenOdd);
+            c.fill_path(&inv);
+            c.set_fill_rule(peniko::Fill::NonZero);
+            if choke > 0.0 {
+                c.set_stroke(kurbo::Stroke::new(choke * 2.0).with_join(kurbo::Join::Round));
+                c.stroke_path(&shape);
+            }
+            c.pop_layer();
+            if mix != Mix::Normal {
+                c.pop_layer();
+            }
+            c.pop_layer();
+        });
     }
 
     /// Run `draw`, which pushes filter layers. Single-threaded contexts draw directly. On a

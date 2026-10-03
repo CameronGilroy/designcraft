@@ -24,6 +24,11 @@ pub use vello_cpu;
 
 pub mod damage;
 mod fx;
+
+/// How far (points) an object's soft effects reach outside its geometry.
+pub fn effect_outset(it: &Item) -> f64 {
+    fx::outset(it)
+}
 pub mod glyphs;
 mod pdf_layers;
 pub use pdf_layers::{pdf_hide_layers, pdf_layers};

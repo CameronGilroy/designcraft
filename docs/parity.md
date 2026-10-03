@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 100 | 2 | 0 | 99% |
 | P1 | 97 | 94 | 3 | 0 | 98% |
-| P2 | 76 | 45 | 31 | 0 | 80% |
+| P2 | 76 | 46 | 30 | 0 | 80% |
 
 | Area | Parity |
 |---|---|
@@ -21,7 +21,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Frames, shapes & paths | 100% |
 | Transform | 100% |
 | Fill, stroke, colour | 99% |
-| Effects & transparency | 75% |
+| Effects & transparency | 79% |
 | Placing & links | 91% |
 | Type & text frames | 99% |
 | Typography | 98% |
@@ -161,7 +161,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Effects & transparency | Opacity & blend modes | P0 | D |
 | Effects & transparency | Isolate Blending / Knockout Group | P2 | P |
 | Effects & transparency | Drop Shadow | P1 | D |
-| Effects & transparency | Inner Shadow, Outer Glow, Inner Glow, Bevel, Satin | P2 | P |
+| Effects & transparency | Inner Shadow, Outer Glow, Inner Glow, Bevel, Satin | P2 | D |
 | Effects & transparency | Basic/Directional/Gradient Feather | P2 | P |
 | Effects & transparency | Global Light | P2 | D |
 | Effects & transparency | Transparency blend space | P1 | P |
