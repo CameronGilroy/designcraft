@@ -131,6 +131,10 @@ pub struct Prefs {
     pub scale_strokes: bool,
     /// X/Y/W/H in the Control and Properties panels measure the stroke's outer edge.
     pub dimensions_include_stroke: bool,
+    /// Preferences › General › Transformations are Totals: rotation, shear and scale of nested
+    /// objects (a graphic in a frame, objects in groups) are measured on the pasteboard rather
+    /// than relative to their container.
+    pub transformations_are_totals: bool,
     /// Preferences › Type › Smart Text Reflow: pages follow the primary text frame's story
     /// (added while it oversets, empty ones at the end removed).
     pub smart_text_reflow: bool,
@@ -145,6 +149,7 @@ impl Default for Prefs {
             star_inset: 0.0,
             scale_strokes: true,
             dimensions_include_stroke: true,
+            transformations_are_totals: true,
             smart_text_reflow: true,
         }
     }

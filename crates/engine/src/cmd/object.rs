@@ -106,10 +106,11 @@ pub fn specs() -> Vec<CommandSpec> {
             "Transform Panel",
             [],
             None,
-            "{x?, y?, width?, height?, ref?: 0..8} — reference-point based geometry",
+            "{x?, y?, width?, height?, scaleX? (%), scaleY? (%), rotation? (°), shear? (°), ref?: 0..8} — reference-point based geometry; rotation and shear are absolute (Transformations are Totals decides whether nested objects measure them on the pasteboard)",
             has_selection,
             transform_set
         ),
+        cmd!(query "transform.info", "Transform Values", [], None, "{ids?} → {scaleX, scaleY (%), rotation, shear (°), content?: the same for a placed graphic} of the first target", has_selection, transform_info),
         cmd!("object.arrange", "Arrange", ["Object", "Arrange"], None, "{to: front|forward|backward|back}", has_selection, arrange),
         cmd!("object.bringToFront", "Bring to Front", ["Object", "Arrange"], Some("Cmd+Shift+]"), "{}", has_selection, |s, _| s
             .execute("object.arrange", &json!({"to": "front"}))),
@@ -837,8 +838,89 @@ fn transform_rotate(s: &mut Session, p: &Value) -> Result<Value> {
     apply_about_center(s, p, Affine::rotate(-a.to_radians()))
 }
 
+/// The transform an item's panel values are measured from: its own (relative to its container)
+/// or, with Transformations are Totals, the whole chain to the pasteboard.
+fn measured_xf(d: &designcraft_doc::Document, id: ItemId, totals: bool) -> Option<(Affine, Affine)> {
+    let loc = d.find(id)?;
+    let it = d.item_at(&loc)?;
+    let parent = if totals { d.parent_xf(&loc) } else { Affine::IDENTITY };
+    Some((parent, parent * it.xf))
+}
+
+fn values_json(m: Affine) -> Value {
+    let v = designcraft_geom::decompose::decompose(m);
+    let r = |x: f64| (x * 1e4).round() / 1e4;
+    json!({"scaleX": r(v.scale_x * 100.0), "scaleY": r(v.scale_y * 100.0), "rotation": r(v.rotation), "shear": r(v.shear)})
+}
+
+fn transform_info(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = targets(s, p)?;
+    let totals = s.prefs.transformations_are_totals;
+    let d = &s.doc()?.doc;
+    let id = *ids.first().ok_or_else(|| bad("transform.info", "nothing selected"))?;
+    let (_, m) = measured_xf(d, id, totals).ok_or_else(|| bad("transform.info", "no such object"))?;
+    let mut out = values_json(m);
+    if let Some(g) = d.item(id).and_then(Item::graphic) {
+        out["content"] = values_json(if totals { m * g.xf } else { g.xf });
+    }
+    Ok(out)
+}
+
+/// Absolute rotation / shear / scale from the Transform panel, about the reference point.
+fn transform_values(s: &mut Session, p: &Value, ids: &[ItemId], rf: usize) -> Result<Value> {
+    let totals = s.prefs.transformations_are_totals;
+    let strokes = s.prefs.scale_strokes;
+    let get = |k: &str| p.get(k).and_then(Value::as_f64);
+    let (rot, shear, sx, sy) = (get("rotation"), get("shear").map(|v| v.clamp(-85.0, 85.0)), get("scaleX"), get("scaleY"));
+    if [sx, sy].iter().flatten().any(|v| v.abs() < 0.01) {
+        return Err(bad("transform.set", "scale too small"));
+    }
+    s.edit(|d, _| {
+        for id in ids {
+            let Some((parent, cur)) = measured_xf(d, *id, totals) else { continue };
+            let Some(it) = d.item(*id) else { continue };
+            // The reference point, on the pasteboard, then in the measuring space.
+            let full = d.find(*id).map_or(Affine::IDENTITY, |l| d.parent_xf(&l));
+            let spread_a = designcraft_geom::reference_point((full * it.xf).transform_rect_bbox(it.inner_bounds()), rf);
+            let a = if totals { spread_a } else { full.inverse() * spread_a };
+            let v = designcraft_geom::decompose::decompose(cur);
+            let mut t = v;
+            if let Some(r) = rot {
+                t.rotation = r;
+            }
+            if let Some(k) = shear {
+                t.shear = k;
+            }
+            let lin = |m: Affine| {
+                let c = m.as_coeffs();
+                Affine::new([c[0], c[1], c[2], c[3], 0.0, 0.0])
+            };
+            let delta = designcraft_geom::decompose::compose(&t) * lin(cur).inverse();
+            // Δ in measuring space about `a`, brought into the item's container space.
+            let m = parent.inverse() * Affine::translate(a.to_vec2()) * delta * Affine::translate(-a.to_vec2()) * parent;
+            let it = d.item_mut(*id).expect("found");
+            it.xf = m * it.xf;
+            // Scale: relative to what is shown (frames show 100% — their scale lives in the geometry).
+            if sx.is_some() || sy.is_some() {
+                let (fx, fy) = (sx.map_or(1.0, |x| x / 100.0 / v.scale_x), sy.map_or(1.0, |y| y / 100.0 / v.scale_y));
+                let m = Affine::translate(a.to_vec2()) * Affine::scale_non_uniform(fx, fy) * Affine::translate(-a.to_vec2());
+                let m = parent.inverse() * m * parent;
+                scale_item(it, m, (fx * fy).abs().sqrt(), strokes);
+            }
+        }
+        ok()
+    })
+}
+
 fn transform_set(s: &mut Session, p: &Value) -> Result<Value> {
     let ids = targets(s, p)?;
+    if ["rotation", "shear", "scaleX", "scaleY"].iter().any(|k| p.get(*k).is_some()) {
+        let rf = p.get("ref").and_then(Value::as_u64).unwrap_or(4) as usize;
+        if !["x", "y", "width", "height"].iter().any(|k| p.get(*k).is_some()) {
+            return transform_values(s, p, &ids, rf);
+        }
+        transform_values(s, p, &ids, rf)?;
+    }
     let rf = p.get("ref").and_then(Value::as_u64).unwrap_or(0) as usize;
     let with_stroke = s.prefs.dimensions_include_stroke;
     s.edit(|d, _| {
@@ -1535,5 +1617,41 @@ mod light_tests {
         assert_eq!(angle(&s), -160.0, "normalised to -180..180");
         s.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(angle(&s), 45.0);
+    }
+}
+
+#[cfg(test)]
+mod transform_values_tests {
+    use super::*;
+
+    #[test]
+    fn absolute_rotation_shear_and_totals() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [100, 100, 200, 150]})).unwrap()["id"].as_u64().unwrap();
+        let info = |s: &mut Session, id: u64| s.execute("transform.info", &json!({"ids": [id]})).unwrap();
+        let centre = |s: &Session| s.doc().unwrap().doc.item(ItemId(a)).unwrap().bounds().center();
+        let c0 = centre(&s);
+        s.execute("transform.set", &json!({"rotation": 30, "ids": [a]})).unwrap();
+        s.execute("transform.set", &json!({"rotation": 30, "ids": [a]})).unwrap();
+        assert_eq!(info(&mut s, a)["rotation"], 30.0, "absolute, not cumulative");
+        assert!((centre(&s) - c0).hypot() < 1e-9, "about the centre reference point");
+        s.execute("transform.set", &json!({"shear": 20, "ids": [a]})).unwrap();
+        let i = info(&mut s, a);
+        assert_eq!((i["rotation"].as_f64(), i["shear"].as_f64()), (Some(30.0), Some(20.0)));
+        assert_eq!(i["scaleX"], 100.0);
+        // Nested: a group rotated 10° around the rotated frame.
+        let b = s.execute("frame.create", &json!({"rect": [300, 100, 350, 150]})).unwrap()["id"].as_u64().unwrap();
+        let g = s.execute("object.group", &json!({"ids": [a, b]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("transform.rotate", &json!({"angle": 10, "ids": [g]})).unwrap();
+        assert_eq!(info(&mut s, a)["rotation"], 40.0, "totals");
+        s.execute("prefs.set", &json!({"transformationsAreTotals": false})).unwrap();
+        assert_eq!(info(&mut s, a)["rotation"], 30.0, "relative to the group");
+        s.execute("transform.set", &json!({"rotation": 0, "shear": 0, "ids": [a]})).unwrap();
+        s.execute("prefs.set", &json!({"transformationsAreTotals": true})).unwrap();
+        assert_eq!(info(&mut s, a)["rotation"], 10.0);
+        // Scale is relative to what's shown: a frame always shows 100%.
+        s.execute("transform.set", &json!({"scaleX": 200, "ids": [b]})).unwrap();
+        assert_eq!(info(&mut s, b)["scaleX"], 100.0);
     }
 }

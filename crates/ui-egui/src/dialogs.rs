@@ -518,6 +518,7 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new("Transform").font(semibold(12.0)));
                     check(ui, d, "dimensionsIncludeStroke", "Dimensions Include Stroke Weight");
+                    check(ui, d, "transformationsAreTotals", "Transformations are Totals");
                 }
             }
         });
@@ -881,7 +882,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "preferences" => {
             app.run(
                 "prefs.set",
-                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
+                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
             )?;
             let view = match d.s("displayQuality").as_str() {
                 "fast" => "view.fastDisplay",

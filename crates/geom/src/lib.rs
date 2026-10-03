@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod corners;
+pub mod decompose;
 pub mod edit_path;
 pub mod freehand;
 pub mod hit;

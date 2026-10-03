@@ -114,6 +114,13 @@ pub fn control_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
         });
 }
 
+/// A field label drawn as a tool icon (hover for its name).
+fn icon_caption(ui: &mut egui::Ui, icon: &str, tip: &str) {
+    let (r, resp) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+    icons::paint(ui.painter(), r, icon, Tokens::get(ui.ctx()).icon);
+    resp.on_hover_text(tip);
+}
+
 fn control_object(app: &mut DesignApp, ui: &mut egui::Ui) {
     let units = app.session.active().map(|d| d.doc.settings.horizontal_units).unwrap_or(Unit::Picas);
     let info = panels::sel_info(app);
@@ -143,6 +150,30 @@ fn control_object(app: &mut DesignApp, ui: &mut egui::Ui) {
         caption(ui, "H:");
         if let Some(v) = measure(ui, "ch", h, units, 64.0) {
             let _ = app.run("transform.set", json!({"height": v}));
+        }
+        ui.end_row();
+    });
+    vsep(ui);
+    // Scale, rotation and shear (absolute; see Transformations are Totals).
+    let tv = if info.is_some() { app.session.execute("transform.info", &json!({})).ok() } else { None };
+    let tv_get = |k: &str| tv.as_ref().and_then(|v| v[k].as_f64());
+    egui::Grid::new("ctl_srs").num_columns(4).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
+        icon_caption(ui, "tool-scale", "Scale X Percentage");
+        if let Some(v) = number(ui, "csx", tv_get("scaleX"), "%", 56.0, 1) {
+            let _ = app.run("transform.set", json!({"scaleX": v}));
+        }
+        icon_caption(ui, "tool-rotate", "Rotation Angle");
+        if let Some(v) = number(ui, "crot", tv_get("rotation"), "°", 50.0, 1) {
+            let _ = app.run("transform.set", json!({"rotation": v}));
+        }
+        ui.end_row();
+        icon_caption(ui, "tool-scale", "Scale Y Percentage");
+        if let Some(v) = number(ui, "csy", tv_get("scaleY"), "%", 56.0, 1) {
+            let _ = app.run("transform.set", json!({"scaleY": v}));
+        }
+        icon_caption(ui, "tool-shear", "Shear X Angle");
+        if let Some(v) = number(ui, "cshr", tv_get("shear"), "°", 50.0, 1) {
+            let _ = app.run("transform.set", json!({"shear": v}));
         }
         ui.end_row();
     });
