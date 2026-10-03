@@ -156,7 +156,7 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
             // Drag and drop: pages reorder, parents apply.
             resp.dnd_set_drag_payload(PageDrag::Page(abs));
             if resp.dragged() {
-                drag_ghost(ui, &doc.page_name(abs), &t);
+                drag_ghost(ui, &app.session.page_label(abs), &t);
             }
             if dragging && resp.contains_pointer() {
                 ui.painter().rect_stroke(pr.expand(1.5), 0.0, Stroke::new(2.0, BADGE), StrokeKind::Outside);
@@ -173,7 +173,7 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
             }
             resp.context_menu(|ui| page_menu(app, ui, &doc, abs, si));
             // Page number under the page: white on a blue badge when selected.
-            let name = doc.page_name(abs);
+            let name = app.session.page_label(abs);
             let g = ui.painter().layout_no_wrap(name, crate::theme::semibold(11.0), Color32::WHITE);
             let c = egui::pos2(pr.center().x, pr.max.y + 11.0);
             if selected {

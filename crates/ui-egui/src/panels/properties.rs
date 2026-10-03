@@ -296,8 +296,10 @@ fn document_sections(app: &mut DesignApp, ui: &mut Ui) {
     // Page.
     section(ui, "Page", true);
     let b = block(ui, FIELD_H);
-    let names: Vec<String> = (0..d.page_count()).map(|i| d.page_name(i)).collect();
-    let picked = place(ui, sub(b, 0.0, 0.0, 93.0, FIELD_H), |ui| widgets::dropdown_list(ui, &d.page_name(cur), 93.0, &names, Some(cur)));
+    let names: Vec<String> = (0..d.page_count()).map(|i| app.session.page_label(i)).collect();
+    let picked = place(ui, sub(b, 0.0, 0.0, 93.0, FIELD_H), |ui| {
+        widgets::dropdown_list(ui, &names[cur.min(names.len().saturating_sub(1))], 93.0, &names, Some(cur))
+    });
     if let Some(pg) = picked {
         crate::canvas::go_to_page(app, pg);
     }
@@ -1758,7 +1760,7 @@ pub fn preflight_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     });
     divider(ui);
     for i in issues {
-        let page = i.page.and_then(|p| app.session.active().map(|d| d.doc.page_name(p)));
+        let page = i.page.filter(|_| app.session.active().is_some()).map(|p| app.session.page_label(p));
         let text = format!("{}  {}", if i.severity == "error" { "⛔" } else { "⚠" }, i.message);
         let resp = ui.add(egui::Button::new(egui::RichText::new(text).size(11.0)).frame(false));
         if let Some(pg) = &page {

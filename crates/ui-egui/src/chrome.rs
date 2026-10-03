@@ -466,13 +466,13 @@ pub fn status_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
                 if icons::button(ui, "prev", 14.0, false, "Previous Spread").clicked() {
                     crate::canvas::go_to_page(app, cur.saturating_sub(1));
                 }
-                let name = app.session.active().map(|d| d.doc.page_name(cur)).unwrap_or_default();
+                let name = app.session.page_label(cur);
                 let (fr, fresp) = ui.allocate_exact_size(vec2(80.0, 14.0), Sense::click());
                 ui.painter().rect(fr, 0.0, t.input, Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
                 ui.painter().text(fr.left_center() + vec2(5.0, 0.0), egui::Align2::LEFT_CENTER, &name, small.clone(), t.text);
                 ui.painter().text(fr.right_center() - vec2(5.0, 0.0), egui::Align2::RIGHT_CENTER, "▾", small.clone(), t.text);
                 egui::Popup::menu(&fresp).show(|ui| {
-                    let names: Vec<String> = app.session.active().map(|d| (0..n).map(|i| d.doc.page_name(i)).collect()).unwrap_or_default();
+                    let names: Vec<String> = (0..n).map(|i| app.session.page_label(i)).collect();
                     egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                         for (i, nm) in names.iter().enumerate() {
                             if ui.button(nm).clicked() {

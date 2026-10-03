@@ -25,7 +25,7 @@ impl Dialog {
                 json!({"preset": "Letter", "width": "51p0", "height": "66p0", "pages": 1, "facingPages": true, "columns": 1, "gutter": "1p0",
                 "marginTop": "3p0", "marginBottom": "3p0", "marginInside": "3p0", "marginOutside": "3p0", "bleed": "0p0", "primaryTextFrame": false})
             }
-            "goToPage" => json!({"page": 1}),
+            "goToPage" => json!({"page": "1"}),
             "insertTable" => json!({"bodyRows": 4, "columns": 4, "headerRows": 0, "footerRows": 0}),
             "insertXref" => json!({"linkTo": "paragraph", "style": "", "target": "", "format": ""}),
             "findChange" => json!({"find": "", "change": "", "grep": false, "caseSensitive": false, "wholeWord": false, "scope": "document"}),
@@ -519,6 +519,9 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                     ui.label(egui::RichText::new("Transform").font(semibold(12.0)));
                     check(ui, d, "dimensionsIncludeStroke", "Dimensions Include Stroke Weight");
                     check(ui, d, "transformationsAreTotals", "Transformations are Totals");
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Page Numbering").font(semibold(12.0)));
+                    check(ui, d, "absolutePageNumbers", "Absolute Numbering (instead of Section Numbering)");
                 }
             }
         });
@@ -821,8 +824,19 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             )
         }
         "goToPage" => {
-            crate::canvas::go_to_page(app, (d.n("page").unwrap_or(1.0) as usize).saturating_sub(1));
-            Ok(Value::Null)
+            // A page name ("iv", "A-3"), a number, or "+n" for an absolute position.
+            let typed = match d.fields.get("page") {
+                Some(Value::String(s)) => s.clone(),
+                Some(v) => v.to_string(),
+                None => "1".into(),
+            };
+            match app.session.resolve_page(&typed) {
+                Some(abs) => {
+                    crate::canvas::go_to_page(app, abs);
+                    Ok(Value::Null)
+                }
+                None => Err(format!("no page \"{typed}\"")),
+            }
         }
         "insertTable" => app.run(
             "table.insert",
@@ -882,7 +896,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "preferences" => {
             app.run(
                 "prefs.set",
-                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
+                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
             )?;
             let view = match d.s("displayQuality").as_str() {
                 "fast" => "view.fastDisplay",

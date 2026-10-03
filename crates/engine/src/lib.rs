@@ -135,6 +135,9 @@ pub struct Prefs {
     /// objects (a graphic in a frame, objects in groups) are measured on the pasteboard rather
     /// than relative to their container.
     pub transformations_are_totals: bool,
+    /// Preferences › General › Page Numbering View: Absolute (1, 2, 3… from the first page) instead
+    /// of section numbering (the page names, e.g. "iv", "A-3").
+    pub absolute_page_numbers: bool,
     /// Preferences › Type › Smart Text Reflow: pages follow the primary text frame's story
     /// (added while it oversets, empty ones at the end removed).
     pub smart_text_reflow: bool,
@@ -150,6 +153,7 @@ impl Default for Prefs {
             scale_strokes: true,
             dimensions_include_stroke: true,
             transformations_are_totals: true,
+            absolute_page_numbers: false,
             smart_text_reflow: true,
         }
     }
@@ -212,6 +216,32 @@ impl Session {
     pub fn active_index(&self) -> Option<usize> {
         self.active
     }
+    /// A page's label as the UI shows it (Page Numbering View).
+    pub fn page_label(&self, abs: usize) -> String {
+        match self.active() {
+            Some(d) if !self.prefs.absolute_page_numbers => d.doc.page_name(abs),
+            _ => (abs + 1).to_string(),
+        }
+    }
+
+    /// The page a typed page reference means: `+n` is always absolute; otherwise a section page
+    /// name (section numbering) or a position (absolute numbering, or no page has that name).
+    pub fn resolve_page(&self, s: &str) -> Option<usize> {
+        let d = self.active()?;
+        let n = d.doc.page_count();
+        let s = s.trim();
+        let pos = |t: &str| t.parse::<usize>().ok().filter(|k| (1..=n).contains(k)).map(|k| k - 1);
+        if let Some(t) = s.strip_prefix('+') {
+            return pos(t);
+        }
+        if !self.prefs.absolute_page_numbers
+            && let Some(i) = (0..n).find(|i| d.doc.page_name(*i).eq_ignore_ascii_case(s))
+        {
+            return Some(i);
+        }
+        pos(s)
+    }
+
     pub fn active(&self) -> Option<&DocState> {
         self.active.and_then(|i| self.docs.get(i))
     }

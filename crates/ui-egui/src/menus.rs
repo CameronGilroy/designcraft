@@ -56,7 +56,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.fastDisplay", "Fast Display", Some("Cmd+Alt+Shift+Z"), "{} — placed graphics as grey boxes, no effects"),
     ("view.typicalDisplay", "Typical Display", Some("Cmd+Alt+Z"), "{} — low-resolution image proxies"),
     ("view.highQualityDisplay", "High Quality Display", Some("Cmd+Alt+H"), "{} — full-resolution images"),
-    ("view.goToPage", "Go to Page…", Some("Cmd+J"), "{page}"),
+    ("view.goToPage", "Go to Page…", Some("Cmd+J"), "{page: number (position) | \"name\" (section page name, or \"+n\" for a position)}"),
     (
         "window.panel",
         "Show Panel",
@@ -748,9 +748,13 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "view.textThreads" => flag(&mut app.ui.text_threads),
         "view.hiddenCharacters" => flag(&mut app.ui.hidden_characters),
         "view.goToPage" => {
-            match p.get("page").and_then(Value::as_u64) {
-                Some(n) => crate::canvas::go_to_page(app, (n as usize).saturating_sub(1)),
-                None => app.ui.dialog = Some(crate::dialogs::Dialog::new("goToPage", json!({}))),
+            match p.get("page") {
+                Some(Value::Number(n)) => crate::canvas::go_to_page(app, (n.as_u64().unwrap_or(1) as usize).saturating_sub(1)),
+                Some(Value::String(s)) => match app.session.resolve_page(s) {
+                    Some(abs) => crate::canvas::go_to_page(app, abs),
+                    None => return Some(Err(format!("no page \"{s}\""))),
+                },
+                _ => app.ui.dialog = Some(crate::dialogs::Dialog::new("goToPage", json!({}))),
             }
             Ok(Value::Null)
         }

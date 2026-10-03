@@ -682,3 +682,26 @@ mod spread_tests {
         d.check().unwrap();
     }
 }
+
+#[cfg(test)]
+mod page_numbering_view_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn section_and_absolute_page_numbering_view() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 4})).unwrap();
+        s.execute("layout.section", &json!({"page": 1, "startNumber": 1, "style": "lowerRoman"})).unwrap();
+        s.execute("layout.section", &json!({"page": 3, "startNumber": 1})).unwrap();
+        assert_eq!((0..4).map(|i| s.page_label(i)).collect::<Vec<_>>(), ["i", "ii", "1", "2"]);
+        assert_eq!(s.resolve_page("ii"), Some(1));
+        assert_eq!(s.resolve_page("1"), Some(2), "section name first");
+        assert_eq!(s.resolve_page("+1"), Some(0), "+n is a position");
+        s.execute("prefs.set", &json!({"absolutePageNumbers": true})).unwrap();
+        assert_eq!((0..4).map(|i| s.page_label(i)).collect::<Vec<_>>(), ["1", "2", "3", "4"]);
+        assert_eq!(s.resolve_page("1"), Some(0));
+        assert_eq!(s.resolve_page("9"), None);
+    }
+}

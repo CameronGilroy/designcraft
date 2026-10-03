@@ -207,9 +207,14 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     ui.spacing_mut().item_spacing.y = 4.0;
     ui.horizontal(|ui| {
         ui.label(
-            egui::RichText::new(format!("Page: {}, {} Layer{}", doc.page_name(cur), doc.layers.len(), if doc.layers.len() == 1 { "" } else { "s" }))
-                .size(11.0)
-                .color(t.text_dim),
+            egui::RichText::new(format!(
+                "Page: {}, {} Layer{}",
+                app.session.page_label(cur),
+                doc.layers.len(),
+                if doc.layers.len() == 1 { "" } else { "s" }
+            ))
+            .size(11.0)
+            .color(t.text_dim),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if icons::button(ui, "trash", 20.0, false, "Delete Layer").clicked() {
