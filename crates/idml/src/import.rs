@@ -219,6 +219,11 @@ impl<'r> Importer<'r> {
         for e in top {
             match e.local() {
                 "DocumentPreference" => self.doc_prefs(e),
+                "TransparencyPreference" => {
+                    if let Some(v) = e.get("BlendingSpace") {
+                        self.settings.blend_space = if v == "RGB" { designcraft_doc::BlendSpace::Rgb } else { designcraft_doc::BlendSpace::Cmyk };
+                    }
+                }
                 "TextPreference" => {
                     let a = &mut self.settings.advanced_type;
                     for (k, v) in [

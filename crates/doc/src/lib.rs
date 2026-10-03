@@ -68,6 +68,16 @@ pub enum DocError {
 
 pub type Result<T> = std::result::Result<T, DocError>;
 
+/// Edit › Transparency Blend Space: the colour space transparency is flattened in (CMYK for
+/// print documents, RGB for screen ones, as InDesign defaults).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlendSpace {
+    #[default]
+    Cmyk,
+    Rgb,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Intent {
@@ -210,6 +220,8 @@ pub struct DocSettings {
     /// Preferences › Advanced Type: superscript and subscript size and position (percent of the
     /// font size).
     pub advanced_type: AdvancedType,
+    /// Edit › Transparency Blend Space.
+    pub blend_space: BlendSpace,
 }
 
 impl Default for DocSettings {
@@ -237,6 +249,7 @@ impl Default for DocSettings {
             chapter_number: 1,
             global_light: 120.0,
             advanced_type: AdvancedType::default(),
+            blend_space: BlendSpace::Cmyk,
         }
     }
 }

@@ -704,6 +704,13 @@ impl<'a> Ex<'a> {
         );
         root.push(El::new("PasteboardPreference").attr("PasteboardMargins", pt(s.pasteboard.0, s.pasteboard.1)));
         root.push(self.footnote_option_el());
+        root.push(El::new("TransparencyPreference").attr(
+            "BlendingSpace",
+            match s.blend_space {
+                designcraft_doc::BlendSpace::Cmyk => "CMYK",
+                designcraft_doc::BlendSpace::Rgb => "RGB",
+            },
+        ));
         let a = &s.advanced_type;
         root.push(
             El::new("TextPreference")

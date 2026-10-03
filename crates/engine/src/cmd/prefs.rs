@@ -24,6 +24,24 @@ const DOC_KEYS: &[&str] = &[
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(
+            "edit.transparencyBlendSpace",
+            "Transparency Blend Space",
+            ["Edit", "Transparency Blend Space"],
+            None,
+            "{space: cmyk|rgb} — the colour space transparency is composited in for output",
+            has_doc,
+            |s, p| {
+                let space: designcraft_doc::BlendSpace = p
+                    .get("space")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    .ok_or_else(|| bad("edit.transparencyBlendSpace", "`space`: cmyk or rgb"))?;
+                s.edit(|d, _| {
+                    d.settings.blend_space = space;
+                    Ok(serde_json::json!({"space": space}))
+                })
+            }
+        ),
+        cmd!(
             noundo "prefs.set",
             "Preferences",
             [],
@@ -225,5 +243,23 @@ mod keep_highlight_tests {
         s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
         s.execute("type.para", &json!({"keepLinesTogether": true, "keepAllLines": true})).unwrap();
         assert!(flagged(&s), "too long to keep together in one column");
+    }
+}
+
+#[cfg(test)]
+mod blend_space_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn blend_space_is_set_and_kept_in_idml() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.settings.blend_space, designcraft_doc::BlendSpace::Cmyk);
+        s.execute("edit.transparencyBlendSpace", &json!({"space": "rgb"})).unwrap();
+        let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&s.doc().unwrap().doc)).unwrap();
+        assert_eq!(back.settings.blend_space, designcraft_doc::BlendSpace::Rgb);
+        assert!(s.execute("edit.transparencyBlendSpace", &json!({"space": "lab"})).is_err());
     }
 }

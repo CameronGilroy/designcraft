@@ -115,6 +115,7 @@ impl Document {
             slug: nd.slug,
             horizontal_units: nd.units,
             vertical_units: nd.units,
+            blend_space: if nd.intent == Intent::Print { crate::BlendSpace::Cmyk } else { crate::BlendSpace::Rgb },
             ..Default::default()
         };
         let mut d = Document {
