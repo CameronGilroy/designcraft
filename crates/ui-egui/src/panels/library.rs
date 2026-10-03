@@ -132,3 +132,63 @@ pub fn book(app: &mut DesignApp, ui: &mut egui::Ui) {
         }
     });
 }
+
+/// Scripts panel: saved command scripts — run (one undo step), edit, add, delete, load.
+pub fn scripts(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let sel_id = egui::Id::new("scripts_sel");
+    let mut sel: usize = ui.data(|d| d.get_temp(sel_id)).unwrap_or(0);
+    if app.ui.scripts.is_empty() {
+        ui.label(egui::RichText::new("No scripts. Add one below.").size(11.0).color(t.text_dim));
+    }
+    let mut run: Option<usize> = None;
+    for (i, (name, _)) in app.ui.scripts.iter().enumerate() {
+        let r = ui.selectable_label(i == sel, name);
+        if r.clicked() {
+            sel = i;
+        }
+        if r.double_clicked() {
+            run = Some(i);
+        }
+    }
+    ui.separator();
+    ui.horizontal(|ui| {
+        if ui.add_enabled(!app.ui.scripts.is_empty(), egui::Button::new("Run")).clicked() {
+            run = Some(sel);
+        }
+        if ui.button("New").clicked() {
+            app.ui.scripts.push((format!("Script {}", app.ui.scripts.len() + 1), "# command.id {json} per line\n".into()));
+            sel = app.ui.scripts.len() - 1;
+        }
+        if ui.button("Load…").clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("script"))
+        {
+            #[cfg(not(target_arch = "wasm32"))]
+            match std::fs::read_to_string(&path) {
+                Ok(text) => {
+                    let name = std::path::Path::new(&path).file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "Script".into());
+                    app.ui.scripts.push((name, text));
+                    sel = app.ui.scripts.len() - 1;
+                }
+                Err(e) => app.status(format!("Scripts: {e}")),
+            }
+        }
+        if ui.add_enabled(!app.ui.scripts.is_empty(), egui::Button::new("Delete")).clicked() && sel < app.ui.scripts.len() {
+            app.ui.scripts.remove(sel);
+            sel = sel.saturating_sub(1);
+        }
+    });
+    if let Some((name, text)) = app.ui.scripts.get_mut(sel) {
+        ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::multiline(text).code_editor().desired_rows(8).desired_width(f32::INFINITY));
+    }
+    if let Some(i) = run
+        && let Some((name, text)) = app.ui.scripts.get(i).cloned()
+    {
+        match app.run("script.run", json!({"text": text})) {
+            Ok(r) => app.status(format!("{name}: {} step(s) done", r["steps"])),
+            Err(e) => app.status(format!("{name}: {e}")),
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(sel_id, sel));
+}

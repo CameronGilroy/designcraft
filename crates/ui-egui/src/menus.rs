@@ -619,6 +619,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:window.panel|Media|{\"panel\": \"media\"}",
             "ui:window.panel|Page Transitions|{\"panel\": \"transitions\"}",
             "ui:window.panel|Track Changes|{\"panel\": \"trackChanges\"}",
+            "ui:window.panel|Scripts|{\"panel\": \"scripts\"}",
             "ui:window.panel|Liquid Layout|{\"panel\": \"liquid\"}",
             "ui:window.panel|Tags|{\"panel\": \"tags\"}",
             "ui:window.panel|Book|{\"panel\": \"book\"}",
@@ -2103,6 +2104,16 @@ mod tests {
         );
         assert!(app.power_zoom.is_none());
         assert!((app.view().unwrap().zoom - z0).abs() < 1e-9, "back at the zoom it started from");
+    }
+
+    #[test]
+    fn sample_scripts_run() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        for (name, text) in app.ui.scripts.clone() {
+            let r = app.session.execute("script.run", &json!({"text": text}));
+            assert!(r.is_ok(), "{name}: {r:?}");
+        }
     }
 
     #[test]

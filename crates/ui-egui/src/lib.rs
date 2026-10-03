@@ -103,6 +103,8 @@ pub struct UiState {
     /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
     pub hidden_menu_items: Vec<String>,
     pub show_full_menus: bool,
+    /// Scripts panel: saved scripts (name, text).
+    pub scripts: Vec<(String, String)>,
     /// View › Structure › Show Tag Markers.
     pub tag_markers: bool,
     /// View › Flattener Preview: objects that involve transparency highlighted in red.
@@ -191,6 +193,10 @@ impl Default for UiState {
             hidden_menu_items: Vec::new(),
             show_full_menus: false,
             story_editor_size: 14.0,
+            scripts: vec![
+                ("Number the pages".into(), "# A page-number frame at the bottom of the current page.\nframe.create {\"rect\": [288, 740, 324, 760], \"content\": \"text\", \"text\": \"\"}\ntext.select {\"story\": \"$0.story\", \"anchor\": 0, \"focus\": 0}\ntext.insert {\"text\": \"\\ue000\", \"raw\": true}".into()),
+                ("Two-column grid".into(), "# Four text frames in a 2 × 2 grid.\nframe.grid {\"rect\": [36, 36, 576, 756], \"cols\": 2, \"rows\": 2, \"gutter\": 12}".into()),
+            ],
             tag_markers: false,
             flattener_preview: false,
             hidden_panels: 0,
