@@ -26,6 +26,7 @@ impl Dialog {
                 "marginTop": "3p0", "marginBottom": "3p0", "marginInside": "3p0", "marginOutside": "3p0", "bleed": "0p0", "primaryTextFrame": false})
             }
             "goToPage" => json!({"page": "1"}),
+            "qrCode" => json!({"type": "url", "content": "https://", "color": "[Black]"}),
             "insertTable" => json!({"bodyRows": 4, "columns": 4, "headerRows": 0, "footerRows": 0}),
             "insertXref" => json!({"linkTo": "paragraph", "style": "", "target": "", "format": ""}),
             "findChange" => json!({"find": "", "change": "", "grep": false, "caseSensitive": false, "wholeWord": false, "scope": "document"}),
@@ -588,6 +589,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "insertXref" => "New Cross-Reference",
         "findFont" => "Find/Replace Font",
         "polygonSettings" => "Polygon Settings",
+        "qrCode" => "Generate QR Code",
         "preferences" => "Preferences",
         "print" => "Print",
         "pdfImport" => "Place PDF",
@@ -738,6 +740,43 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                 });
             }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
+            "qrCode" => {
+                let cur = d.s("type");
+                ui.horizontal(|ui| {
+                    ui.label("Type:");
+                    let label = |v: &str| match v {
+                        "text" => "Plain Text",
+                        "sms" => "Text Message",
+                        "email" => "Email",
+                        "vcard" => "Business Card",
+                        _ => "Web Hyperlink",
+                    };
+                    egui::ComboBox::from_id_salt("qr_type").selected_text(label(&cur)).width(160.0).show_ui(ui, |ui| {
+                        for v in ["url", "text", "sms", "email", "vcard"] {
+                            if ui.selectable_label(cur == v, label(v)).clicked() {
+                                d.fields.insert("type".into(), json!(v));
+                            }
+                        }
+                    });
+                });
+                let fields: &[(&str, &str)] = match cur.as_str() {
+                    "sms" => &[("number", "Cell Number:"), ("message", "Message:")],
+                    "email" => &[("to", "Email Address:"), ("subject", "Subject:"), ("body", "Message:")],
+                    "vcard" => &[("name", "Name:"), ("org", "Organization:"), ("phone", "Phone:"), ("email", "Email:"), ("url", "URL:")],
+                    "text" => &[("content", "Text:")],
+                    _ => &[("content", "URL:")],
+                };
+                egui::Grid::new("qr_fields").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    for (k, l) in fields {
+                        ui.label(*l);
+                        text_field(ui, &mut d, k, 260.0);
+                        ui.end_row();
+                    }
+                    ui.label("Color:");
+                    text_field(ui, &mut d, "color", 160.0);
+                    ui.end_row();
+                });
+            }
             "polygonSettings" => {
                 egui::Grid::new("poly").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     ui.label("Number of Sides:");
@@ -982,6 +1021,19 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             }
             doc["advancedType"] = adv;
             app.run("document.preferences", doc)
+        }
+        "qrCode" => {
+            let mut p = Value::Object(d.fields.clone());
+            // Nothing selected: a 2-inch code at the top left of the page in view.
+            if app.session.active().is_some_and(|s| s.selection.items.is_empty()) {
+                let st = app.session.active().expect("doc");
+                let abs = crate::canvas::current_page(app).unwrap_or(0);
+                let (si, pi) = st.doc.page_loc(abs).unwrap_or((0, 0));
+                let x = st.doc.spreads.get(si).and_then(|sp| sp.pages.get(pi)).map_or(0.0, |pg| pg.x);
+                p["rect"] = json!([x + 36.0, 36.0, x + 180.0, 180.0]);
+                p["spread"] = json!(si);
+            }
+            app.run("object.qrCode", p)
         }
         "polygonSettings" => app.run("tool.polygonSettings", json!({"sides": d.n("sides").unwrap_or(6.0) as u64, "starInset": d.n("starInset").unwrap_or(0.0)})),
         "findFont" => {

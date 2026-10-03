@@ -14,6 +14,7 @@ pub mod freehand;
 pub mod hit;
 pub mod path;
 pub mod pathfinder;
+pub mod qr;
 pub mod shapes;
 pub mod snap;
 pub mod units;

@@ -19,6 +19,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
     ("app.exportEpub", "Export EPUB…", None, "{path?} — reflowable EPUB 3"),
     ("app.exportHtml", "Export HTML…", None, "{path?} — one self-contained web page"),
+    ("app.qrCode", "Generate QR Code…", None, "{} — the QR Code dialog (object.qrCode does the work)"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
@@ -366,6 +367,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:object.convertShape|Open Path|{\"to\": \"openPath\"}",
             "cmd:object.convertShape|Closed Path|{\"to\": \"closedPath\"}",
             "<",
+            "ui:app.qrCode",
             ">Captions",
             "cmd:object.caption",
             "<",
@@ -531,6 +533,10 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "app.exportIdml" => export_idml(app, p),
         "app.exportEpub" => export_bytes(app, p, "epub", "file.exportEpub"),
         "app.exportHtml" => export_bytes(app, p, "html", "file.exportHtml"),
+        "app.qrCode" => {
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("qrCode", json!({})));
+            Ok(Value::Null)
+        }
         "app.exportText" => export_bytes(app, p, "rtf", "file.exportText"),
         "app.packageDialog" => {
             let name = app.session.active().map(|d| format!("{} Folder", d.doc.title)).unwrap_or_default();
