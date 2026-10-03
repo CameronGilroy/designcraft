@@ -1618,6 +1618,24 @@ pub fn align_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
 /// Links: status (missing / modified / embedded), page and effective resolution of every placed
 /// graphic; Relink, Go To Link, Update Link, Embed Link for the chosen row.
 pub fn links_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
+    // Linked stories (Place and Link).
+    let stories = app.session.execute("story.links", &json!({})).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    if !stories.is_empty() {
+        ui.label(egui::RichText::new("Linked Stories").strong());
+        for l in &stories {
+            let out = l["outOfDate"].as_bool().unwrap_or(false);
+            ui.horizontal(|ui| {
+                ui.label(format!("Story {} ← story {}", l["story"], l["parent"]));
+                if out {
+                    ui.label(egui::RichText::new("⚠ out of date").color(egui::Color32::from_rgb(230, 160, 40)));
+                    if ui.small_button("Update").clicked() {
+                        let _ = app.run("story.updateLink", json!({"story": l["story"]}));
+                    }
+                }
+            });
+        }
+        ui.separator();
+    }
     let Some(st) = app.session.active() else { return };
     let t = Tokens::get(ui.ctx());
     // The list checks files on disk: refresh it at most twice a second.

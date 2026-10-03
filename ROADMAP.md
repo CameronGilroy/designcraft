@@ -78,6 +78,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - XML basics (`xml.newTag/deleteTag/tag/mapStyle/structure`, `file.exportXml`, `file.importXml`; Tags panel with structure; View ▸ Show Tagged Frames): tagged frames export in reading order, mapped paragraph styles become elements, imported elements flow into frames with matching tags. Inline text tagging and DTDs aren't there yet.
 - Adjust Layout / Layout Adjustment (`adjustLayout` on Document Setup and Margins and Columns): objects follow each page's margin box to its new size and position.
 - Content Collector and Placer tools (B; `conveyor.collect/place/list/clear`): copies of objects (with stories, styles, images) ride a conveyor between pages and documents; Alt-click keeps them on it.
+- Linked stories (Edit ▸ Place and Link, `story.placeAndLink/links/updateLink/unlink`): child stories copy a parent, show out of date in the Links panel and update.
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.

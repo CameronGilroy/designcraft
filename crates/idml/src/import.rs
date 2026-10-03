@@ -1305,6 +1305,7 @@ impl<'r> Importer<'r> {
             index_refs: index_refs.into_iter().map(Arc::new).collect(),
             objects: objects.into_iter().map(Arc::new).collect(),
             editorial: Vec::new(),
+            link: None,
         };
         st.fix_notes();
         st.fix_marks();

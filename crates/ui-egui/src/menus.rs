@@ -24,6 +24,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.qrCode", "Generate QR Code…", None, "{} — the QR Code dialog (object.qrCode does the work)"),
     ("app.userDictionary", "User Dictionary…", None, "{} — hyphenation exceptions (hyphenation.* commands)"),
     ("app.fittingOptions", "Frame Fitting Options…", None, "{} — the dialog for object.fittingOptions"),
+    ("app.placeAndLink", "Place and Link", None, "{} — a linked copy of the selected frame's story, beside it"),
     ("app.placeWithOptions", "Place with Import Options…", Some("Cmd+Shift+D"), "{} — Word/RTF style mapping before placing"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
@@ -144,6 +145,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:edit.clear",
             "-",
             "cmd:edit.duplicate",
+            "ui:app.placeAndLink",
             "cmd:edit.stepAndRepeat",
             "-",
             "cmd:edit.selectAll",
@@ -591,6 +593,18 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "app.exportHtml" => export_bytes(app, p, "html", "file.exportHtml"),
         "app.exportXml" => export_bytes(app, p, "xml", "file.exportXml"),
         "app.printBooklet" => export_bytes(app, p, "pdf", "file.printBooklet"),
+        "app.placeAndLink" => {
+            let target = app.session.active().and_then(|d| {
+                let id = *d.selection.items.first()?;
+                let it = d.doc.item(id)?;
+                let loc = d.doc.find(id)?;
+                Some((it.text_frame()?.story, it.bounds(), loc.spread))
+            });
+            let Some((sid, b, sr)) = target else { return Some(Err("select a text frame".into())) };
+            Ok(app
+                .run("story.placeAndLink", json!({"story": sid.0, "rect": [b.x0 + 24.0, b.y0 + 24.0, b.x1 + 24.0, b.y1 + 24.0], "spread": sr}))
+                .unwrap_or(Value::Null))
+        }
         "app.fittingOptions" => {
             let g = app.session.active().and_then(|d| d.selection.items.first().and_then(|id| d.doc.item(*id)).and_then(|it| it.graphic().cloned()));
             let Some(g) = g else { return Some(Err("select a frame with a placed graphic".into())) };

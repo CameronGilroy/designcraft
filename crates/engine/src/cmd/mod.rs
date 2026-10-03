@@ -20,6 +20,7 @@ mod interactive;
 pub mod interchange;
 mod layout;
 pub mod library;
+mod linked;
 mod links;
 mod lists;
 mod notes;
@@ -149,6 +150,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(conditions::specs());
         v.extend(library::specs());
         v.extend(lists::specs());
+        v.extend(linked::specs());
         v.extend(xml::specs());
         v.extend(strokes::specs());
         v.extend(path_type::specs());

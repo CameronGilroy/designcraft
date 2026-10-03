@@ -116,6 +116,9 @@ pub struct Story {
     /// Editorial notes, one per [`crate::endnotes::NOTE_MARK`] in text order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub editorial: Vec<Arc<crate::endnotes::EditorialNote>>,
+    /// Place and Link: the parent story this one copies, and the parent's revision when copied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<(StoryId, u64)>,
 }
 
 impl Story {
@@ -135,6 +138,7 @@ impl Story {
             index_refs: Vec::new(),
             objects: Vec::new(),
             editorial: Vec::new(),
+            link: None,
         }
     }
 
