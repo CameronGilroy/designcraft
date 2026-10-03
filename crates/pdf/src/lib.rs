@@ -107,6 +107,9 @@ pub struct PdfOptions {
     pub author: Option<String>,
     /// Creation date as Unix seconds (UTC); `None` = now (native) / omitted (wasm).
     pub created: Option<i64>,
+    /// Tagged PDF: stories become paragraphs in reading order, graphics figures with their alt
+    /// text, parent-page items and printer's marks artifacts.
+    pub tagged: bool,
 }
 
 impl Default for PdfOptions {
@@ -122,6 +125,7 @@ impl Default for PdfOptions {
             title: None,
             author: None,
             created: None,
+            tagged: false,
         }
     }
 }

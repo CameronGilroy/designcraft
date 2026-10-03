@@ -9,7 +9,7 @@ use crate::{EngineError, Result, Session};
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(noundo "file.exportPdf", "Export PDF…", ["File"], None,
-        "{path?, pages?: \"1-3,5\" | [1,3] (1-based positions; default all), spreads?: bool, bleed?: bool (document bleed), marks?: bool | {crop?, bleed?, pageInfo?, weight?, offset?}, standard?: \"none\"|\"x4\"|\"a2b\", compressImages?: bool, title?, author?} → {path, bytes, pages, warnings} (no path: {base64, …})",
+        "{path?, pages?: \"1-3,5\" | [1,3] (1-based positions; default all), spreads?: bool, bleed?: bool (document bleed), marks?: bool | {crop?, bleed?, pageInfo?, weight?, offset?}, standard?: \"none\"|\"x4\"|\"a2b\", compressImages?: bool, tagged?: bool (structure tree: stories as paragraphs, figures with alt text), title?, author?} → {path, bytes, pages, warnings} (no path: {base64, …})",
         has_doc, export_pdf),
         cmd!(noundo "file.exportEpub", "Export EPUB (Reflowable)…", ["File"], None,
         "{path?, title?, author?, language?: \"en\"} → {path, bytes} (no path: {base64, bytes})",
@@ -115,6 +115,7 @@ pub(crate) fn options(p: &Value, page_count: usize) -> Result<PdfOptions> {
         compress_images: p.get("compressImages").and_then(Value::as_bool).unwrap_or(false),
         title: str_param(p, "title").map(str::to_string),
         author: str_param(p, "author").map(str::to_string),
+        tagged: p.get("tagged").and_then(Value::as_bool).unwrap_or(false),
         ..PdfOptions::default()
     })
 }
@@ -161,5 +162,29 @@ mod text_tests {
         s.execute("file.exportText", &json!({"frame": r["id"], "path": path.to_string_lossy()})).unwrap();
         assert!(std::fs::read_to_string(&path).unwrap().starts_with("{\\rtf1"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod tagged_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn tagged_pdf_has_structure_and_alt_text() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "Hello"})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 320, 200, 420]})).unwrap();
+        s.execute("object.altText", &json!({"text": "A plain box", "ids": [r["id"]]})).unwrap();
+        let pdf = |s: &mut Session, tagged: bool| {
+            let b64 = s.execute("file.exportPdf", &json!({"tagged": tagged})).unwrap()["base64"].as_str().unwrap().to_string();
+            String::from_utf8_lossy(&super::super::file::base64_decode(&b64)).into_owned()
+        };
+        let t = pdf(&mut s, true);
+        assert!(t.contains("/StructTreeRoot") && t.contains("/Figure") && t.contains("A plain box"), "tagged");
+        assert!(t.contains("/P") && t.contains("/MarkInfo"));
+        assert!(!pdf(&mut s, false).contains("/StructTreeRoot"));
     }
 }

@@ -18,6 +18,7 @@ use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
 use krilla::paint::{Fill, FillRule, LinearGradient, RadialGradient, SpreadMethod, Stop, Stroke, StrokeDash};
 use krilla::surface::Surface;
+use krilla::tagging::{Artifact, ArtifactType, ContentTag, Identifier, SpanTag, Tag, TagGroup, TagTree};
 
 use crate::{ExportReport, PdfError, PdfOptions, Result, Standard};
 
@@ -151,6 +152,8 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
         fonts: HashMap::new(),
         reverse_cmaps: HashMap::new(),
         rgb_only: archival.is_some(),
+        tags: Vec::new(),
+        story_tags: HashMap::new(),
     };
     if ex.rgb_only {
         ex.warn("PDF/A: CMYK colours were converted to RGB (no CMYK output intent profile is available yet)");
@@ -178,13 +181,22 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
             ex.spread(&mut s, sh.spread);
             s.pop();
         }
+        if opts.tagged {
+            s.start_tagged(ContentTag::Artifact(Artifact::new(ArtifactType::Page, None)));
+        }
         ex.marks(&mut s, sh, &title, created);
+        if opts.tagged {
+            s.end_tagged();
+        }
         s.pop();
         s.finish();
         for a in crate::links::annotations(doc, cache, &sheets, sheet_idx) {
             page.add_annotation(a);
         }
         page.finish();
+    }
+    if opts.tagged {
+        pdf.set_tag_tree(ex.tag_tree());
     }
     let bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
     let mut warnings = ex.warnings;
@@ -234,6 +246,14 @@ pub(crate) struct Exporter<'a> {
     pub reverse_cmaps: HashMap<u32, Arc<HashMap<u32, char>>>,
     /// Convert CMYK to RGB (PDF/A: krilla needs a CMYK output profile we don't ship yet).
     pub rgb_only: bool,
+    /// Tagged PDF: the structure in reading order (stories gather their frames' content).
+    tags: Vec<TagEntry>,
+    story_tags: HashMap<designcraft_doc::StoryId, Vec<Identifier>>,
+}
+
+enum TagEntry {
+    Story(designcraft_doc::StoryId),
+    Figure(TagGroup),
 }
 
 pub(crate) fn tf(a: Affine) -> Transform {
@@ -381,12 +401,12 @@ impl Exporter<'_> {
                     if parent.page_at_x(it.bounds().center().x) != Some(ppage) && parent.pages.len() > 1 {
                         continue;
                     }
-                    self.item(s, it, Affine::translate((dx, 0.0)), Some(&page_name));
+                    self.top_item(s, it, Affine::translate((dx, 0.0)), Some(&page_name), true);
                 }
             }
             for it in &sp.items {
                 if it.layer == layer.id {
-                    self.item(s, it, Affine::IDENTITY, None);
+                    self.top_item(s, it, Affine::IDENTITY, None, false);
                 }
             }
         }
@@ -418,6 +438,60 @@ impl Exporter<'_> {
         } else {
             0
         }
+    }
+
+    /// A spread or parent item, inside its structure tag when tagging.
+    fn top_item(&mut self, s: &mut Surface, it: &Item, parent: Affine, page_name: Option<&str>, on_parent: bool) {
+        if !self.opts.tagged || it.hidden || it.nonprinting {
+            return self.item(s, it, parent, page_name);
+        }
+        let story = it.text_frame().map(|t| t.story);
+        let figure = !it.alt_text.is_empty() || matches!(it.content, Content::Graphic(_)) || it.has_nested_items();
+        if on_parent || (story.is_none() && !figure) {
+            // Page furniture and decoration.
+            let kind = if on_parent { ArtifactType::Page } else { ArtifactType::Other };
+            s.start_tagged(ContentTag::Artifact(Artifact::new(kind, None)));
+            self.item(s, it, parent, page_name);
+            s.end_tagged();
+            return;
+        }
+        if let Some(sid) = story {
+            let id = s.start_tagged(ContentTag::Span(SpanTag::empty()));
+            self.item(s, it, parent, page_name);
+            s.end_tagged();
+            let v = self.story_tags.entry(sid).or_default();
+            if v.is_empty() {
+                self.tags.push(TagEntry::Story(sid));
+            }
+            v.push(id);
+            return;
+        }
+        let id = s.start_tagged(ContentTag::Other);
+        self.item(s, it, parent, page_name);
+        s.end_tagged();
+        let alt = (!it.alt_text.is_empty()).then(|| it.alt_text.clone());
+        let mut g = TagGroup::new(Tag::Figure(alt));
+        g.push(id);
+        self.tags.push(TagEntry::Figure(g));
+    }
+
+    /// The structure tree: stories (one paragraph each, its frames in thread order of appearance)
+    /// and figures, in the order they first appear.
+    fn tag_tree(&mut self) -> TagTree {
+        let mut tree = TagTree::new();
+        for e in std::mem::take(&mut self.tags) {
+            match e {
+                TagEntry::Story(sid) => {
+                    let mut g = TagGroup::new(Tag::P);
+                    for id in self.story_tags.remove(&sid).unwrap_or_default() {
+                        g.push(id);
+                    }
+                    tree.push(g);
+                }
+                TagEntry::Figure(g) => tree.push(g),
+            }
+        }
+        tree
     }
 
     fn item(&mut self, s: &mut Surface, it: &Item, parent: Affine, page_name: Option<&str>) {

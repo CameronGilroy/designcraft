@@ -941,6 +941,7 @@ fn export_pdf(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
     if let Some(o) = params.as_object_mut() {
         o.remove("path");
         o.entry("bleed").or_insert(json!(true));
+        o.entry("tagged").or_insert(json!(true));
     }
     let r = app.run("file.exportPdf", params)?;
     let bytes = designcraft_engine::cmd::base64_decode(r["base64"].as_str().unwrap_or_default());
