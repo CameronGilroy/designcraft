@@ -300,14 +300,15 @@ fn ext(mime: &str) -> &'static str {
     }
 }
 
-/// Export the document as a reflowable EPUB 3.
-pub fn export_epub(doc: &Document, opts: &EpubOptions) -> Result<Vec<u8>, EpubError> {
-    let io = |e: std::io::Error| EpubError(e.to_string());
-    let zerr = |e: zip::result::ZipError| EpubError(e.to_string());
-    let title = opts.title.clone().unwrap_or_else(|| doc.title.clone());
-    let id = opts.identifier.clone().unwrap_or_else(|| format!("urn:designcraft:{}", slug(&title)));
+/// The content in reading order as HTML sections and figures; `img_src` names each image
+/// (a package path, or a data URI for single-file HTML). Returns (body, images by name, table of
+/// contents).
+#[allow(clippy::type_complexity)]
+fn body_html<'a>(
+    doc: &'a Document,
+    img_src: &dyn Fn(&str, &str, &[u8]) -> String,
+) -> (String, BTreeMap<String, (&'a str, &'a [u8])>, Vec<(String, String)>) {
     let order = reading_order(doc);
-    // Body and images.
     let mut body = String::new();
     let mut images: BTreeMap<String, (&str, &[u8])> = BTreeMap::new();
     let mut toc: Vec<(String, String)> = Vec::new();
@@ -333,10 +334,54 @@ pub fn export_epub(doc: &Document, opts: &EpubOptions) -> Result<Vec<u8>, EpubEr
                 }
                 let name = format!("images/{}.{}", g.asset.0, ext(&a.mime));
                 images.insert(name.clone(), (a.mime.as_str(), a.data.as_slice()));
-                let _ = writeln!(body, "<figure><img src=\"{name}\" alt=\"{}\"/></figure>", esc(&a.name));
+                // Alt text from Object Export Options, else the file name.
+                let alt = doc.item(*iid).map(|i| i.alt_text.as_str()).filter(|t| !t.is_empty()).unwrap_or(&a.name);
+                let _ = writeln!(body, "<figure><img src=\"{}\" alt=\"{}\"/></figure>", img_src(&name, &a.mime, &a.data), esc(alt));
             }
         }
     }
+    (body, images, toc)
+}
+
+/// Options for [`export_html`].
+#[derive(Clone, Debug, Default)]
+pub struct HtmlOptions {
+    pub title: Option<String>,
+    pub language: Option<String>,
+}
+
+/// File › Export › HTML: one self-contained page (styles inline, images as data URIs) with the
+/// document's stories and graphics in reading order.
+pub fn export_html(doc: &Document, opts: &HtmlOptions) -> String {
+    let title = opts.title.clone().unwrap_or_else(|| doc.title.clone());
+    let lang = opts.language.clone().unwrap_or_else(|| "en".into());
+    let (body, _, _) = body_html(doc, &|_, mime, data| format!("data:{mime};base64,{}", base64(data)));
+    format!(
+        "<!DOCTYPE html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"generator\" content=\"DesignCraft\">\n<title>{}</title>\n<style>\nbody {{ max-width: 40em; margin: 2em auto; padding: 0 1em; }}\nfigure {{ margin: 1em 0; }} figure img {{ max-width: 100%; height: auto; }}\n{}</style>\n</head>\n<body>\n{body}</body>\n</html>\n",
+        esc(&title),
+        stylesheet(doc)
+    )
+}
+
+fn base64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for c in data.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
+            out.push(if i <= c.len() { T[(n >> shift & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
+}
+
+/// Export the document as a reflowable EPUB 3.
+pub fn export_epub(doc: &Document, opts: &EpubOptions) -> Result<Vec<u8>, EpubError> {
+    let io = |e: std::io::Error| EpubError(e.to_string());
+    let zerr = |e: zip::result::ZipError| EpubError(e.to_string());
+    let title = opts.title.clone().unwrap_or_else(|| doc.title.clone());
+    let id = opts.identifier.clone().unwrap_or_else(|| format!("urn:designcraft:{}", slug(&title)));
+    let (body, images, toc) = body_html(doc, &|name, _, _| name.to_string());
     let lang = &opts.language;
     let chapter = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"{lang}\" lang=\"{lang}\">\n<head><meta charset=\"utf-8\"/><title>{}</title><link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/></head>\n<body>\n{body}</body>\n</html>\n",
@@ -426,5 +471,18 @@ mod tests {
         assert_eq!(slug("[Basic Paragraph]"), "basic-paragraph");
         assert_eq!(slug("Body First"), "body-first");
         assert_eq!(slug("1 Head"), "s-1-head");
+    }
+
+    #[test]
+    fn html_is_one_self_contained_page() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 300.0, 100.0), lid, "Hello <web>", ParaFormat::default()).unwrap();
+        let html = export_html(&d, &HtmlOptions { title: Some("T".into()), language: None });
+        assert!(html.starts_with("<!DOCTYPE html>") && html.contains("<title>T</title>") && html.contains("Hello &lt;web&gt;"));
+        assert!(html.contains("p.basic-paragraph"), "styles inline");
+        assert_eq!(base64(b"Man"), "TWFu");
+        assert_eq!(base64(b"Ma"), "TWE=");
+        assert_eq!(base64(b"M"), "TQ==");
     }
 }

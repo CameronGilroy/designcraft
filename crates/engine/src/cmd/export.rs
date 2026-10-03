@@ -14,10 +14,28 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "file.exportEpub", "Export EPUB (Reflowable)…", ["File"], None,
         "{path?, title?, author?, language?: \"en\"} → {path, bytes} (no path: {base64, bytes})",
         has_doc, export_epub),
+        cmd!(noundo "file.exportHtml", "Export HTML…", ["File"], None,
+        "{path?, title?, language?} — one self-contained page (styles inline, images embedded), stories and graphics in reading order → {path, bytes} (no path: {text, bytes})",
+        has_doc, export_html),
         cmd!(noundo "file.exportText", "Export Text…", ["File"], None,
         "{path?, format?: \"txt\"|\"rtf\" (default from the path, else txt), story?, frame?} — the story being edited or of the selected frame → {path, bytes} (no path: {text, bytes})",
         has_story_target, export_text),
     ]
+}
+
+fn export_html(s: &mut Session, p: &Value) -> Result<Value> {
+    let st = s.doc()?;
+    let opts =
+        designcraft_epub::HtmlOptions { title: str_param(p, "title").map(str::to_string), language: str_param(p, "language").map(str::to_string) };
+    let text = designcraft_epub::export_html(&st.doc, &opts);
+    match str_param(p, "path") {
+        Some(path) => {
+            #[cfg(not(target_arch = "wasm32"))]
+            std::fs::write(path, text.as_bytes()).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+            Ok(json!({"path": path, "bytes": text.len()}))
+        }
+        None => Ok(json!({"bytes": text.len(), "text": text})),
+    }
 }
 
 fn has_story_target(s: &Session) -> std::result::Result<(), String> {
@@ -154,6 +172,8 @@ mod text_tests {
         s.execute("file.new", &json!({})).unwrap();
         let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "One\nTwo"})).unwrap();
         assert!(s.execute("file.exportText", &json!({"frame": r["id"]})).unwrap()["text"] == "One\r\nTwo");
+        let html = s.execute("file.exportHtml", &json!({})).unwrap();
+        assert!(html["text"].as_str().unwrap().contains("One</p>"));
         let rtf = s.execute("file.exportText", &json!({"frame": r["id"], "format": "rtf"})).unwrap();
         assert!(rtf["text"].as_str().unwrap().starts_with("{\\rtf1"));
         let dir = std::env::temp_dir().join(format!("dc-export-text-{}", std::process::id()));

@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 74 | 21 | 2 | 87% |
-| P2 | 76 | 12 | 13 | 51 | 24% |
+| P2 | 76 | 13 | 13 | 50 | 26% |
 
 | Area | Parity |
 |---|---|
@@ -28,7 +28,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Styles | 92% |
 | Tables | 88% |
 | Long documents | 79% |
-| Interactivity & digital | 35% |
+| Interactivity & digital | 45% |
 | Output & production | 70% |
 | XML & automation | 50% |
 | View & navigation | 82% |
@@ -275,7 +275,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Interactivity & digital | Articles panel | P2 | M |
 | Interactivity & digital | Object Export Options | P2 | P |
 | Interactivity & digital | EPUB export | P2 | D |
-| Interactivity & digital | HTML export | P2 | M |
+| Interactivity & digital | HTML export | P2 | D |
 | Output & production | Export to PDF (print) | P0 | P |
 | Output & production | Interactive PDF | P2 | P |
 | Output & production | Print dialog | P1 | D |

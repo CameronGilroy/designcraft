@@ -18,6 +18,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
     ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
     ("app.exportEpub", "Export EPUB…", None, "{path?} — reflowable EPUB 3"),
+    ("app.exportHtml", "Export HTML…", None, "{path?} — one self-contained web page"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
@@ -105,6 +106,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:app.exportPng",
             "ui:app.exportIdml",
             "ui:app.exportEpub",
+            "ui:app.exportHtml",
             "ui:app.exportText",
             ">Export",
             "cmd:snippet.export",
@@ -528,6 +530,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "app.exportPng" => export_png(app, p),
         "app.exportIdml" => export_idml(app, p),
         "app.exportEpub" => export_bytes(app, p, "epub", "file.exportEpub"),
+        "app.exportHtml" => export_bytes(app, p, "html", "file.exportHtml"),
         "app.exportText" => export_bytes(app, p, "rtf", "file.exportText"),
         "app.packageDialog" => {
             let name = app.session.active().map(|d| format!("{} Folder", d.doc.title)).unwrap_or_default();
