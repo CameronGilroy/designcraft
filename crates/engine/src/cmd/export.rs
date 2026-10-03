@@ -188,3 +188,25 @@ mod tagged_tests {
         assert!(!pdf(&mut s, false).contains("/StructTreeRoot"));
     }
 }
+
+#[cfg(test)]
+mod variable_font_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn variable_font_instance_exports_to_pdf() {
+        let Ok(data) = std::fs::read("/System/Library/Fonts/Supplemental/Skia.ttf") else { return };
+        designcraft_fonts::FontDb::global().add_font(data);
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "Variable"})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 8})).unwrap();
+        s.execute("type.char", &json!({"fontFamily": "Skia", "fontStyle": "Black"})).unwrap();
+        let out = s.execute("file.exportPdf", &json!({})).unwrap();
+        assert!(out["bytes"].as_u64().unwrap() > 1000);
+        let fonts = s.execute("font.list", &json!({})).unwrap();
+        assert!(fonts.to_string().contains("Black"), "{fonts}");
+    }
+}

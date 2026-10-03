@@ -13,7 +13,7 @@ pub use harfrust::Feature;
 use harfrust::{Direction, ShapeOptions, Tag, UnicodeBuffer};
 pub use kurbo::BezPath;
 use skrifa::MetadataProvider;
-use skrifa::instance::{LocationRef, Size};
+use skrifa::instance::Size;
 
 /// InDesign's default text font is a serif; ours is Source Serif 4.
 pub const DEFAULT_FAMILY: &str = "Source Serif 4";
@@ -47,7 +47,7 @@ pub fn feature(tag: &str) -> Option<Feature> {
 pub fn shape(face: &FontFace, text: &str, features: &[Feature], map: impl Fn(char) -> char) -> Vec<ShapedGlyph> {
     let mut out = Vec::with_capacity(text.len());
     let shaped = face.hb().map(|hb| {
-        let shaper = face.shaper.shaper(&hb).build();
+        let shaper = face.shaper.shaper(&hb).instance(face.instance.as_ref()).build();
         let mut buf = UnicodeBuffer::new();
         for (i, c) in text.char_indices() {
             buf.add(map(c), i as u32);
@@ -69,7 +69,7 @@ pub fn shape(face: &FontFace, text: &str, features: &[Feature], map: impl Fn(cha
         && let Some(f) = face.skrifa()
     {
         let cmap = f.charmap();
-        let gm = f.glyph_metrics(Size::unscaled(), LocationRef::default());
+        let gm = f.glyph_metrics(Size::unscaled(), face.location());
         for (i, c) in text.char_indices() {
             let g = cmap.map(map(c)).unwrap_or_default();
             let adv = gm.advance_width(g).unwrap_or(face.upem as f32 * 0.5);
@@ -124,6 +124,38 @@ mod tests {
         let g = shape(&face, "ab", &[], |c| c.to_ascii_uppercase());
         assert_eq!(g[0].gid, face.glyph_for('A'));
         assert_eq!(g[1].cluster, 1);
+    }
+
+    #[test]
+    fn variable_font_named_instances_are_styles() {
+        // Uses a variable system font when one is installed (macOS ships several).
+        let Some(data) =
+            ["/System/Library/Fonts/Supplemental/Skia.ttf", "/System/Library/Fonts/NewYork.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+                .iter()
+                .find_map(|p| std::fs::read(p).ok())
+        else {
+            return;
+        };
+        let db = FontDb::global();
+        db.add_font(data.clone());
+        let Some(fam) = skrifa::FontRef::new(&data).ok().and_then(|f| {
+            (f.named_instances().len() > 1)
+                .then(|| f.localized_strings(skrifa::string::StringId::FAMILY_NAME).english_or_first().map(|s| s.to_string()))?
+        }) else {
+            return;
+        };
+        let styles = db.styles(&fam);
+        assert!(styles.len() > 1, "{styles:?}");
+        let faces: Vec<_> = styles.iter().map(|s| db.face(&fam, s)).filter(|f| f.is_variable()).collect();
+        let light = faces.iter().min_by(|a, b| a.weight.total_cmp(&b.weight)).unwrap();
+        let heavy = faces.iter().max_by(|a, b| a.weight.total_cmp(&b.weight)).unwrap();
+        assert!(heavy.weight > light.weight, "{light:?} {heavy:?}");
+        let ink = |f: &FontFace| {
+            let g = shape(f, "H", &[], |c| c);
+            let b = kurbo::Shape::bounding_box(&*db.outline(f, g[0].gid));
+            ((b.area() * 100.0).round() as i64, g[0].x_advance)
+        };
+        assert_ne!(ink(light), ink(heavy), "instances draw differently");
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use kurbo::BezPath;
-use skrifa::instance::{LocationRef, Size};
+use skrifa::instance::{Location, LocationRef, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::raw::FileRef;
 use skrifa::string::StringId;
@@ -62,6 +62,11 @@ pub struct FontFace {
     pub cap_height: f64,
     pub x_height: f64,
     pub shaper: harfrust::ShaperData,
+    /// Variable fonts: the named instance's axis settings (user units; empty = default instance),
+    /// the normalised location and the shaper's view of it.
+    pub coords: Vec<([u8; 4], f32)>,
+    location: Location,
+    pub instance: Option<harfrust::ShaperInstance>,
     /// Basic Multilingual Plane coverage bitset, built on first use.
     bmp: std::sync::OnceLock<Box<[u64]>>,
 }
@@ -134,6 +139,14 @@ impl FontFace {
     pub fn hb(&self) -> Option<harfrust::FontRef<'_>> {
         harfrust::FontRef::from_index(self.data(), self.index).ok()
     }
+    /// Where in the design space glyphs, metrics and outlines come from.
+    pub fn location(&self) -> LocationRef<'_> {
+        (&self.location).into()
+    }
+    /// Is this a named instance of a variable font?
+    pub fn is_variable(&self) -> bool {
+        !self.coords.is_empty()
+    }
     /// Face index within the font file (collections); 0 for plain fonts.
     pub fn index(&self) -> u32 {
         self.index
@@ -180,7 +193,7 @@ impl FontFace {
     /// Advance width of glyph `gid` in font units.
     pub fn advance(&self, gid: u32) -> f64 {
         self.skrifa()
-            .and_then(|f| f.glyph_metrics(Size::unscaled(), LocationRef::default()).advance_width(GlyphId::new(gid)))
+            .and_then(|f| f.glyph_metrics(Size::unscaled(), self.location()).advance_width(GlyphId::new(gid)))
             .map(|a| a as f64)
             .unwrap_or(self.upem * 0.5)
     }
@@ -254,44 +267,77 @@ fn name(font: &skrifa::FontRef<'_>, ids: &[StringId]) -> Option<String> {
     ids.iter().find_map(|id| font.localized_strings(*id).english_or_first().map(|s| s.to_string()).filter(|s| !s.is_empty()))
 }
 
-/// Parse every face in `data` (a font file or collection). Returns `(index, family, style)`.
-fn enumerate_faces(data: &[u8]) -> Vec<(u32, String, String)> {
+/// One face found in a font file: index, family, style and (variable fonts) the named instance's
+/// axis settings.
+type Found = (u32, String, String, Vec<([u8; 4], f32)>);
+
+/// Parse every face in `data` (a font file or collection); a variable font yields one face per
+/// named instance (InDesign lists them as styles).
+fn enumerate_faces(data: &[u8]) -> Vec<Found> {
     let count = match FileRef::new(data) {
         Ok(FileRef::Font(_)) => 1,
         Ok(FileRef::Collection(c)) => c.len(),
         Err(_) => 0,
     };
-    (0..count)
-        .filter_map(|i| {
-            let f = skrifa::FontRef::from_index(data, i).ok()?;
-            let family = name(&f, &[StringId::TYPOGRAPHIC_FAMILY_NAME, StringId::FAMILY_NAME])?;
+    let mut out = Vec::new();
+    for i in 0..count {
+        let Ok(f) = skrifa::FontRef::from_index(data, i) else { continue };
+        let Some(family) = name(&f, &[StringId::TYPOGRAPHIC_FAMILY_NAME, StringId::FAMILY_NAME]) else { continue };
+        let axes = f.axes();
+        let mut named = Vec::new();
+        for ni in f.named_instances().iter() {
+            let Some(style) = name(&f, &[ni.subfamily_name_id()]) else { continue };
+            if named.iter().any(|(_, s, _): &(u32, String, _)| s.eq_ignore_ascii_case(&style)) {
+                continue;
+            }
+            let coords: Vec<([u8; 4], f32)> = axes.iter().zip(ni.user_coords()).map(|(a, v)| (a.tag().to_be_bytes(), v)).collect();
+            named.push((i, style, coords));
+        }
+        if named.is_empty() {
             let style = name(&f, &[StringId::TYPOGRAPHIC_SUBFAMILY_NAME, StringId::SUBFAMILY_NAME]).unwrap_or_else(|| "Regular".into());
-            Some((i, family, style))
-        })
-        .collect()
+            out.push((i, family, style, Vec::new()));
+        } else {
+            out.extend(named.into_iter().map(|(i, s, c)| (i, family.clone(), s, c)));
+        }
+    }
+    out
 }
 
-fn make_face(bytes: FontBytes, index: u32, family: String, style: String) -> Option<FontFace> {
+fn make_face(bytes: FontBytes, index: u32, family: String, style: String, coords: Vec<([u8; 4], f32)>) -> Option<FontFace> {
     let data: &[u8] = match &bytes {
         FontBytes::Static(b) => b,
         FontBytes::Owned(v) => v.as_slice(),
     };
     let f = skrifa::FontRef::from_index(data, index).ok()?;
-    let m = f.metrics(Size::unscaled(), LocationRef::default());
+    let settings: Vec<(skrifa::Tag, f32)> = coords.iter().map(|(t, v)| (skrifa::Tag::new(t), *v)).collect();
+    let location = if coords.is_empty() { Location::default() } else { f.axes().location(settings.iter().copied()) };
+    let m = f.metrics(Size::unscaled(), &location);
     let a = f.attributes();
-    let shaper = harfrust::ShaperData::new(&harfrust::FontRef::from_index(data, index).ok()?);
+    let hb = harfrust::FontRef::from_index(data, index).ok()?;
+    let shaper = harfrust::ShaperData::new(&hb);
+    let instance = (!coords.is_empty())
+        .then(|| harfrust::ShaperInstance::from_variations(&hb, settings.iter().map(|(t, v)| harfrust::Variation { tag: *t, value: *v })));
+    let axis = |tag: &[u8; 4]| coords.iter().find(|(t, _)| t == tag).map(|(_, v)| *v);
+    let weight = axis(b"wght").unwrap_or(if coords.is_empty() { a.weight.value() } else { style_weight(&style) });
+    let italic = axis(b"ital")
+        .map(|v| v >= 0.5)
+        .or(axis(b"slnt").map(|v| v.abs() > 0.1))
+        .unwrap_or(!matches!(a.style, skrifa::attribute::Style::Normal) || style_italic(&style));
     Some(FontFace {
         id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
         family,
         style,
-        weight: a.weight.value(),
-        italic: !matches!(a.style, skrifa::attribute::Style::Normal),
+        weight,
+        italic,
         upem: m.units_per_em.max(1) as f64,
         ascent: m.ascent as f64,
         descent: -(m.descent as f64),
         cap_height: m.cap_height.map(|v| v as f64).filter(|v| *v > 0.0).unwrap_or(m.ascent as f64 * 0.72),
         x_height: m.x_height.map(|v| v as f64).filter(|v| *v > 0.0).unwrap_or(m.ascent as f64 * 0.5),
         shaper,
+        coords,
+        location,
+        instance,
         bytes,
         index,
         bmp: std::sync::OnceLock::new(),
@@ -332,8 +378,8 @@ impl FontDb {
     fn new_bundled() -> Self {
         let mut faces = Vec::new();
         for data in BUNDLED {
-            for (i, family, style) in enumerate_faces(data) {
-                if let Some(f) = make_face(FontBytes::Static(data), i, family, style) {
+            for (i, family, style, coords) in enumerate_faces(data) {
+                if let Some(f) = make_face(FontBytes::Static(data), i, family, style, coords) {
                     faces.push(Arc::new(f));
                 }
             }
@@ -399,11 +445,11 @@ impl FontDb {
     pub fn add_font(&self, bytes: Vec<u8>) -> usize {
         let data = Arc::new(bytes);
         let mut added = 0;
-        for (i, family, style) in enumerate_faces(&data) {
+        for (i, family, style, coords) in enumerate_faces(&data) {
             if self.read_faces().iter().any(|f| f.family.eq_ignore_ascii_case(&family) && f.style.eq_ignore_ascii_case(&style)) {
                 continue;
             }
-            if let Some(f) = make_face(FontBytes::Owned(data.clone()), i, family, style) {
+            if let Some(f) = make_face(FontBytes::Owned(data.clone()), i, family, style, coords) {
                 self.faces.write().unwrap_or_else(|e| e.into_inner()).push(Arc::new(f));
                 added += 1;
             }
@@ -451,7 +497,7 @@ impl FontDb {
                     continue;
                 }
                 let Ok(data) = std::fs::read(&p) else { continue };
-                for (_, family, style) in enumerate_faces(&data) {
+                for (_, family, style, _) in enumerate_faces(&data) {
                     found.push(CatalogEntry { family, style, path: p.clone() });
                 }
             }
@@ -582,7 +628,7 @@ impl FontDb {
             }
             let Ok(data) = std::fs::read(&p) else { continue };
             let hit =
-                enumerate_faces(&data).iter().any(|(i, _, _)| skrifa::FontRef::from_index(&data, *i).is_ok_and(|f| f.charmap().map(c).is_some()));
+                enumerate_faces(&data).iter().any(|(i, _, _, _)| skrifa::FontRef::from_index(&data, *i).is_ok_and(|f| f.charmap().map(c).is_some()));
             if hit && self.add_font(data) > 0 && covered(self) {
                 return true;
             }
@@ -601,7 +647,7 @@ impl FontDb {
         if let Some(f) = face.skrifa()
             && let Some(g) = f.outline_glyphs().get(GlyphId::new(gid))
         {
-            let _ = g.draw(DrawSettings::unhinted(Size::unscaled(), LocationRef::default()), &mut pen);
+            let _ = g.draw(DrawSettings::unhinted(Size::unscaled(), face.location()), &mut pen);
         }
         let p = Arc::new(pen.0);
         let mut cache = self.outlines.lock().unwrap_or_else(|e| e.into_inner());

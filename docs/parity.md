@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 68 | 26 | 3 | 84% |
+| P1 | 97 | 68 | 27 | 2 | 84% |
 | P2 | 76 | 12 | 13 | 51 | 24% |
 
 | Area | Parity |
@@ -24,7 +24,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Effects & transparency | 62% |
 | Placing & links | 82% |
 | Type & text frames | 88% |
-| Typography | 85% |
+| Typography | 87% |
 | Styles | 92% |
 | Tables | 85% |
 | Long documents | 79% |
@@ -218,7 +218,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Typography | Character attributes | P0 | D |
 | Typography | Underline/Strikethrough options | P1 | D |
 | Typography | OpenType features | P0 | D |
-| Typography | Variable fonts | P1 | M |
+| Typography | Variable fonts | P1 | P |
 | Typography | Paragraph attributes | P0 | D |
 | Typography | Paragraph Composer (total-fit) | P0 | D |
 | Typography | Single-line Composer | P0 | D |

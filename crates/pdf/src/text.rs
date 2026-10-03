@@ -37,7 +37,18 @@ fn same_run(a: &PlacedGlyph, b: &PlacedGlyph) -> bool {
 
 impl Exporter<'_> {
     pub(crate) fn font(&mut self, face: &FontFace) -> Option<Font> {
-        self.fonts.entry(face.id()).or_insert_with(|| Font::new(face.data().to_vec().into(), face.index())).clone()
+        self.fonts
+            .entry(face.id())
+            .or_insert_with(|| {
+                if face.is_variable() {
+                    // A named instance: krilla embeds the font at these axis settings.
+                    let coords: Vec<(krilla::text::Tag, f32)> = face.coords.iter().map(|(t, v)| (krilla::text::Tag::new(t), *v)).collect();
+                    Font::new_variable(face.data().to_vec().into(), face.index(), &coords)
+                } else {
+                    Font::new(face.data().to_vec().into(), face.index())
+                }
+            })
+            .clone()
     }
 
     fn reverse_cmap(&mut self, face: &FontFace) -> Arc<HashMap<u32, char>> {
