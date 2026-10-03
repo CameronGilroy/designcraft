@@ -94,6 +94,8 @@ pub struct ObjectSpec {
     pub y_offset: Option<f64>,
     /// Above line: space before + after.
     pub space: f64,
+    /// Custom position: takes no space in the text.
+    pub custom: bool,
 }
 
 pub(crate) struct StyleTable<'a> {
@@ -354,7 +356,7 @@ fn shape_run(
                 }
                 designcraft_doc::OBJECT_MARK => {
                     let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
-                    if let Some(o) = sub.objects.get(&i) {
+                    if let Some(o) = sub.objects.get(&i).filter(|o| !o.custom) {
                         let auto = matches!(p.leading, Leading::Auto);
                         match o.y_offset {
                             // Sits on the baseline like a (big) character.

@@ -231,6 +231,8 @@ pub struct FrameSpec {
     pub grid: Option<(f64, f64)>,
     /// The frame is on a left page (for towards/away-from-spine alignment).
     pub left_page: bool,
+    /// The page and its margins in the frame's inner space (custom anchored objects).
+    pub page_rect: Option<(Rect, Rect)>,
 }
 
 impl FrameSpec {
@@ -307,6 +309,14 @@ pub fn frame_specs(doc: &Document, sid: StoryId) -> Vec<FrameSpec> {
             }
             _ => (None, None, false),
         };
+        // The page under the frame and its margins, in inner space (bounding boxes).
+        let page_rect = match (loc.spread, spread) {
+            (_, Some(sp)) => sp
+                .page_at_x(item.bounds().center().x)
+                .and_then(|pi| sp.pages.get(pi))
+                .map(|pg| (inv.transform_rect_bbox(pg.bounds()), inv.transform_rect_bbox(pg.margin_rect()))),
+            _ => None,
+        };
         let g = &doc.settings.baseline_grid;
         let (inc, start) = tf.options.baseline_grid.unwrap_or((g.increment, g.start));
         // Grid lines are at spread y = start + n·inc (page tops are y = 0); map into inner space (translation only).
@@ -342,6 +352,7 @@ pub fn frame_specs(doc: &Document, sid: StoryId) -> Vec<FrameSpec> {
             page,
             grid,
             left_page,
+            page_rect,
         });
     }
     out
@@ -471,11 +482,12 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             for (k, (i, _)) in story.text[prange.clone()].match_indices(designcraft_doc::OBJECT_MARK).enumerate() {
                 let Some(o) = story.objects.get(before + k) else { continue };
                 let (w, h) = o.size();
-                let (y_offset, space) = match &o.position {
-                    designcraft_doc::AnchorPosition::Inline { y_offset } => (Some(*y_offset), 0.0),
-                    designcraft_doc::AnchorPosition::AboveLine { space_before, space_after, .. } => (None, space_before + space_after),
+                let (y_offset, space, custom) = match &o.position {
+                    designcraft_doc::AnchorPosition::Inline { y_offset } => (Some(*y_offset), 0.0, false),
+                    designcraft_doc::AnchorPosition::AboveLine { space_before, space_after, .. } => (None, space_before + space_after, false),
+                    designcraft_doc::AnchorPosition::Custom { .. } => (Some(0.0), 0.0, true),
                 };
-                sub.objects.insert(prange.start + i, shape::ObjectSpec { index: before + k, w, h, y_offset, space });
+                sub.objects.insert(prange.start + i, shape::ObjectSpec { index: before + k, w, h, y_offset, space, custom });
             }
         }
         if !story.xrefs.is_empty() {
@@ -879,6 +891,35 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                             designcraft_doc::anchored::AnchorAlign::Right => l.x1 - w,
                         };
                         Point::new(x, l.baseline - o.text_ascent - space_after - h)
+                    }
+                    designcraft_doc::AnchorPosition::Custom {
+                        x_relative,
+                        y_relative,
+                        x_offset,
+                        y_offset,
+                        object_point,
+                        ref_point,
+                        keep_within_column,
+                    } => {
+                        use designcraft_doc::anchored::AnchorRelative as R;
+                        let col = ft.columns.get(l.column as usize).copied().unwrap_or(f.area);
+                        let area = |r: R| match r {
+                            R::Anchor => None,
+                            R::TextFrame => Some(f.area),
+                            R::ColumnEdge => Some(col),
+                            R::PageMargin => Some(f.page_rect.map_or(f.area, |p| p.1)),
+                            R::PageEdge => Some(f.page_rect.map_or(f.area, |p| p.0)),
+                        };
+                        let frac = |i: u8| ([0.0, 0.5, 1.0][(i % 3) as usize], [0.0, 0.5, 1.0][(i / 3).min(2) as usize]);
+                        let (rfx, rfy) = frac(*ref_point);
+                        let (ofx, ofy) = frac(*object_point);
+                        let rx = area(*x_relative).map_or(o.x, |a| a.x0 + a.width() * rfx);
+                        let ry = area(*y_relative).map_or(l.baseline, |a| a.y0 + a.height() * rfy);
+                        let mut y = ry + y_offset - h * ofy;
+                        if *keep_within_column {
+                            y = y.clamp(col.y0, (col.y1 - h).max(col.y0));
+                        }
+                        Point::new(rx + x_offset - w * ofx, y)
                     }
                 };
             }

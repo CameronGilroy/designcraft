@@ -18,7 +18,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Insert Anchored Object…",
             ["Object", "Anchored Object"],
             None,
-            "{ids, story?, pos? (default: the text insertion point), position?: inline|aboveLine, yOffset?, align?: left|center|right, spaceBefore?, spaceAfter?} — moves the items into the text",
+            "{ids, story?, pos? (default: the text insertion point), position?: inline|aboveLine|custom, yOffset?, align?: left|center|right, spaceBefore?, spaceAfter?, xRelative?/yRelative?: anchor|textFrame|columnEdge|pageMargin|pageEdge, xOffset?, objectPoint?/refPoint?: 0..8, keepWithinColumn?} — moves the items into the text",
             has_doc,
             insert
         ),
@@ -27,7 +27,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Anchored Object Options…",
             ["Object", "Anchored Object"],
             None,
-            "{story?, index? (default: the object at the insertion point), position?: inline|aboveLine, yOffset?, align?: left|center|right, spaceBefore?, spaceAfter?}",
+            "{story?, index? (default: the object at the insertion point), position?: inline|aboveLine|custom, yOffset?, align?: left|center|right, spaceBefore?, spaceAfter?, xRelative?/yRelative?: anchor|textFrame|columnEdge|pageMargin|pageEdge, xOffset?, objectPoint?/refPoint?: 0..8, keepWithinColumn?}",
             has_doc,
             options
         ),
@@ -59,6 +59,7 @@ fn position_param(p: &Value, base: &AnchorPosition) -> Result<AnchorPosition> {
     let kind = str_param(p, "position").unwrap_or(match base {
         AnchorPosition::Inline { .. } => "inline",
         AnchorPosition::AboveLine { .. } => "aboveLine",
+        AnchorPosition::Custom { .. } => "custom",
     });
     Ok(match (kind, base) {
         ("inline", AnchorPosition::Inline { y_offset }) => AnchorPosition::Inline { y_offset: f("yOffset", *y_offset) },
@@ -76,6 +77,32 @@ fn position_param(p: &Value, base: &AnchorPosition) -> Result<AnchorPosition> {
                 None => a0,
             };
             AnchorPosition::AboveLine { align, space_before: f("spaceBefore", sb0), space_after: f("spaceAfter", sa0) }
+        }
+        ("custom", b) => {
+            use designcraft_doc::anchored::AnchorRelative as R;
+            let (xr0, yr0, xo0, yo0, op0, rp0, k0) = match b {
+                AnchorPosition::Custom { x_relative, y_relative, x_offset, y_offset, object_point, ref_point, keep_within_column } => {
+                    (*x_relative, *y_relative, *x_offset, *y_offset, *object_point, *ref_point, *keep_within_column)
+                }
+                _ => (R::TextFrame, R::Anchor, 0.0, 0.0, 0, 0, false),
+            };
+            let rel = |k: &str, d: R| -> Result<R> {
+                match p.get(k) {
+                    Some(v) => serde_json::from_value(v.clone())
+                        .map_err(|_| bad("anchored", format!("`{k}`: anchor|textFrame|columnEdge|pageMargin|pageEdge"))),
+                    None => Ok(d),
+                }
+            };
+            let pt = |k: &str, d: u8| p.get(k).and_then(Value::as_u64).map_or(d, |v| v.min(8) as u8);
+            AnchorPosition::Custom {
+                x_relative: rel("xRelative", xr0)?,
+                y_relative: rel("yRelative", yr0)?,
+                x_offset: f("xOffset", xo0),
+                y_offset: f("yOffset", yo0),
+                object_point: pt("objectPoint", op0),
+                ref_point: pt("refPoint", rp0),
+                keep_within_column: p.get("keepWithinColumn").and_then(Value::as_bool).unwrap_or(k0),
+            }
         }
         (o, _) => return Err(bad("anchored", format!("unknown position `{o}`"))),
     })
@@ -251,5 +278,43 @@ mod tests {
         // (The frame's inner space is spread space here.)
         assert!((b.width() - 24.0).abs() < 1e-6 && (b.x0 - o.origin.x).abs() < 1e-6 && (b.y0 - o.origin.y).abs() < 1e-6, "{b:?}");
         d.check().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod custom_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn custom_anchored_object_sits_in_the_page_margin_and_takes_no_space() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "Side note here"})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        let end_before = s.cache.get(&s.doc().unwrap().doc, sid, None).frames[0].lines[0].end_x;
+        let box_id = s.execute("frame.create", &json!({"rect": [0, 0, 30, 20], "content": "unassigned"})).unwrap()["id"].clone();
+        // To the left of the page margin, top of the box on the anchor's baseline.
+        s.execute(
+            "anchored.insert",
+            &json!({"ids": [box_id], "story": sid.0, "pos": 4, "position": "custom", "xRelative": "pageMargin", "yRelative": "anchor", "refPoint": 0, "objectPoint": 2, "xOffset": -6}),
+        )
+        .unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let cs = s.cache.get(&d, sid, None);
+        let ft = &cs.frames[0];
+        assert!((ft.lines[0].end_x - end_before).abs() < 1e-6, "the marker takes no space");
+        let o = &ft.objects[0];
+        // The frame's inner space is the spread's here (no rotation or offset).
+        let margin_x = d.spreads[0].pages[0].margin_rect().x0;
+        assert!((o.origin.x + o.size.0 - (margin_x - 6.0)).abs() < 1e-6, "right edge 6 pt left of the margin: {:?}", o.origin);
+        assert!((o.origin.y - ft.lines[0].baseline).abs() < 1e-6);
+        let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&d)).unwrap();
+        let obj = back.stories.values().flat_map(|st| st.objects.iter()).next().unwrap();
+        assert!(
+            matches!(obj.position, designcraft_doc::AnchorPosition::Custom { x_offset, object_point: 2, .. } if x_offset == -6.0),
+            "IDML Anchored position"
+        );
     }
 }

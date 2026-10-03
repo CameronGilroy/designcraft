@@ -1763,6 +1763,24 @@ impl<'a> Ex<'a> {
                                     )
                                     .attr("AnchorSpaceAbove", num(*space_before))
                                     .attr("AnchorYoffset", num(*space_after)),
+                                designcraft_doc::AnchorPosition::Custom {
+                                    x_relative,
+                                    y_relative,
+                                    x_offset,
+                                    y_offset,
+                                    object_point,
+                                    ref_point,
+                                    keep_within_column,
+                                } => El::new("AnchoredObjectSetting")
+                                    .attr("AnchoredPosition", "Anchored")
+                                    .attr("AnchorPoint", names::anchor_out(*object_point))
+                                    .attr("HorizontalReferencePoint", names::anchor_rel_out(*x_relative, false))
+                                    .attr("VerticalReferencePoint", names::anchor_rel_out(*y_relative, true))
+                                    .attr("HorizontalAlignment", ["LeftAlign", "CenterAlign", "RightAlign"][(*ref_point % 3) as usize])
+                                    .attr("VerticalAlignment", ["TopAlign", "CenterAlign", "BottomAlign"][(*ref_point / 3).min(2) as usize])
+                                    .attr("AnchorXoffset", num(*x_offset))
+                                    .attr("AnchorYoffset", num(*y_offset))
+                                    .attr("PinPosition", bool_s(*keep_within_column)),
                             };
                             e.push(setting);
                             out.push(Node::El(e));

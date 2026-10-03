@@ -1539,6 +1539,28 @@ impl<'r> Importer<'r> {
                                     space_before: get("AnchorSpaceAbove"),
                                     space_after: get("AnchorYoffset"),
                                 },
+                                Some("Anchored") => {
+                                    let s = |k: &str| set.and_then(|x| x.get(k)).unwrap_or("");
+                                    let col = match s("HorizontalAlignment") {
+                                        "CenterAlign" => 1,
+                                        "RightAlign" => 2,
+                                        _ => 0,
+                                    };
+                                    let row = match s("VerticalAlignment") {
+                                        "CenterAlign" => 1,
+                                        "BottomAlign" => 2,
+                                        _ => 0,
+                                    };
+                                    designcraft_doc::AnchorPosition::Custom {
+                                        x_relative: names::anchor_rel_in(s("HorizontalReferencePoint")),
+                                        y_relative: names::anchor_rel_in(s("VerticalReferencePoint")),
+                                        x_offset: get("AnchorXoffset"),
+                                        y_offset: get("AnchorYoffset"),
+                                        object_point: names::anchor_in(s("AnchorPoint")),
+                                        ref_point: row * 3 + col,
+                                        keep_within_column: s("PinPosition") == "true",
+                                    }
+                                }
                                 _ => designcraft_doc::AnchorPosition::Inline { y_offset: get("AnchorYoffset") },
                             };
                             b.objects.push(designcraft_doc::AnchoredObject::new(item, position));

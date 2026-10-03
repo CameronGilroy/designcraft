@@ -41,6 +41,39 @@ pub enum AnchorPosition {
         #[serde(default)]
         space_after: f64,
     },
+    /// Custom: placed relative to the frame, column, page margins or page edge (or the anchor
+    /// marker / line), taking no space in the text. `object_point` is the point on the object and
+    /// `ref_point` the point on the reference area that meet (0–8, row-major), plus the offsets.
+    Custom {
+        #[serde(default)]
+        x_relative: AnchorRelative,
+        #[serde(default)]
+        y_relative: AnchorRelative,
+        #[serde(default)]
+        x_offset: f64,
+        #[serde(default)]
+        y_offset: f64,
+        #[serde(default)]
+        object_point: u8,
+        #[serde(default)]
+        ref_point: u8,
+        /// Keep Within Top/Bottom Column Boundaries.
+        #[serde(default)]
+        keep_within_column: bool,
+    },
+}
+
+/// What a custom anchored object is positioned against.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AnchorRelative {
+    /// The anchor marker (x) / the anchor's line baseline (y).
+    #[default]
+    Anchor,
+    TextFrame,
+    ColumnEdge,
+    PageMargin,
+    PageEdge,
 }
 
 impl Default for AnchorPosition {

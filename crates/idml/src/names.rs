@@ -21,6 +21,29 @@ const ANCHORS: [&str; 9] = [
     "BottomRightAnchor",
 ];
 
+pub fn anchor_rel_out(r: designcraft_doc::anchored::AnchorRelative, vertical: bool) -> &'static str {
+    use designcraft_doc::anchored::AnchorRelative as R;
+    match r {
+        R::Anchor if vertical => "LineBaseline",
+        R::Anchor => "AnchorLocation",
+        R::TextFrame => "TextFrame",
+        R::ColumnEdge => "ColumnEdge",
+        R::PageMargin => "PageMargins",
+        R::PageEdge => "PageEdge",
+    }
+}
+
+pub fn anchor_rel_in(s: &str) -> designcraft_doc::anchored::AnchorRelative {
+    use designcraft_doc::anchored::AnchorRelative as R;
+    match s {
+        "TextFrame" => R::TextFrame,
+        "ColumnEdge" => R::ColumnEdge,
+        "PageMargins" => R::PageMargin,
+        "PageEdge" => R::PageEdge,
+        _ => R::Anchor,
+    }
+}
+
 pub fn anchor_out(i: u8) -> &'static str {
     ANCHORS[(i as usize).min(8)]
 }
