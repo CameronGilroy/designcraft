@@ -339,6 +339,7 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
             ("general", "General"),
             ("interface", "Interface"),
             ("type", "Type"),
+            ("advancedType", "Advanced Type"),
             ("units", "Units & Increments"),
             ("grids", "Grids"),
             ("guides", "Guides & Pasteboard"),
@@ -371,6 +372,25 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new("Smart Text Reflow").font(semibold(12.0)));
                     check(ui, d, "smartTextReflow", "Add and remove pages as the primary text frame's story grows and shrinks");
+                }
+                "advancedType" => {
+                    ui.label(egui::RichText::new("Character Settings").font(semibold(12.0)));
+                    egui::Grid::new("pref_adv").num_columns(3).spacing([8.0, 6.0]).show(ui, |ui| {
+                        ui.label("");
+                        ui.label("Size");
+                        ui.label("Position");
+                        ui.end_row();
+                        for (k, l) in [("superscript", "Superscript:"), ("subscript", "Subscript:")] {
+                            ui.label(l);
+                            for f in ["Size", "Position"] {
+                                ui.horizontal(|ui| {
+                                    text_field(ui, d, &format!("adv.{k}{f}"), 50.0);
+                                    ui.label("%");
+                                });
+                            }
+                            ui.end_row();
+                        }
+                    });
                 }
                 "black" => {
                     ui.label(egui::RichText::new("Options for Black on RGB and Grayscale Devices").font(semibold(12.0)));
@@ -944,6 +964,13 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             if let Some(v) = d.fields.get("keyboardIncrement").and_then(Value::as_str).and_then(|s| parse_measure(s, Unit::Points).ok()) {
                 doc["keyboardIncrement"] = json!(v.max(0.001));
             }
+            let mut adv = json!({});
+            for k in ["superscriptSize", "superscriptPosition", "subscriptSize", "subscriptPosition"] {
+                if let Some(v) = d.n(&format!("adv.{k}")) {
+                    adv[k] = json!(if k.ends_with("Size") { v.clamp(1.0, 200.0) } else { v.clamp(-500.0, 500.0) });
+                }
+            }
+            doc["advancedType"] = adv;
             app.run("document.preferences", doc)
         }
         "polygonSettings" => app.run("tool.polygonSettings", json!({"sides": d.n("sides").unwrap_or(6.0) as u64, "starInset": d.n("starInset").unwrap_or(0.0)})),

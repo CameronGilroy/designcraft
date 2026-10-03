@@ -88,6 +88,9 @@ impl Cache {
             format!("{:?}", doc.footnote_options).hash(&mut h);
             sig.extend([doc.footnote_start(sid) as usize, h.finish() as usize]);
         }
+        // Advanced Type sizes super/subscripts.
+        let a = doc.settings.advanced_type;
+        sig.extend([a.superscript_size, a.superscript_position, a.subscript_size, a.subscript_position].map(|v| v.to_bits() as usize));
         // Named lists continue from earlier stories.
         for l in &doc.settings.lists {
             sig.push(doc.list_start(sid, &l.name) as usize);

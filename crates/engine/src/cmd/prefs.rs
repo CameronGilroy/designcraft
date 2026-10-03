@@ -18,6 +18,7 @@ const DOC_KEYS: &[&str] = &[
     "columnColor",
     "bleedColor",
     "slugColor",
+    "advancedType",
 ];
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -41,7 +42,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Document Preferences",
             [],
             None,
-            "{horizontalUnits?, verticalUnits?: points|picas|inches|millimeters|…, keyboardIncrement? (pt), baselineGrid?: {start, increment, relativeTo, color, viewThreshold}, grid?: {horizontal, vertical, subdivisions, color, inBack}, pasteboard?: [h, v], marginColor?, columnColor?, bleedColor?, slugColor?: [r, g, b]} → those settings",
+            "{horizontalUnits?, verticalUnits?: points|picas|inches|millimeters|…, keyboardIncrement? (pt), baselineGrid?: {start, increment, relativeTo, color, viewThreshold}, grid?: {horizontal, vertical, subdivisions, color, inBack}, pasteboard?: [h, v], marginColor?, columnColor?, bleedColor?, slugColor?: [r, g, b], advancedType?: {superscriptSize, superscriptPosition, subscriptSize, subscriptPosition} (%)} → those settings",
             has_doc,
             |s, p| {
                 let cur = serde_json::to_value(&s.doc()?.doc.settings).map_err(|e| bad("document.preferences", e.to_string()))?;
@@ -113,5 +114,53 @@ mod tests {
         assert!(s.execute("document.preferences", &json!({"pageWidth": 100})).is_err(), "Document Setup's, not Preferences'");
         s.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(s.doc().unwrap().doc.settings.horizontal_units, designcraft_geom::Unit::Picas);
+    }
+}
+
+#[cfg(test)]
+mod advanced_type_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn advanced_type_sizes_superscripts() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "x2"})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 1, "focus": 2})).unwrap();
+        s.execute("type.char", &json!({"position": "superscript"})).unwrap();
+        let glyph = |s: &Session| {
+            let cs = s.cache.get(&s.doc().unwrap().doc, sid, None);
+            let g = cs.frames[0].lines[0].glyphs.iter().find(|g| g.byte == 1).unwrap().clone();
+            let base = cs.frames[0].lines[0].glyphs.iter().find(|g| g.byte == 0).unwrap().clone();
+            (g.sy / base.sy, base.y - g.y)
+        };
+        let (k, rise) = glyph(&s);
+        assert!((k - 0.583).abs() < 1e-3, "{k}");
+        s.execute("document.preferences", &json!({"advancedType": {"superscriptSize": 80, "superscriptPosition": 50}})).unwrap();
+        let (k2, rise2) = glyph(&s);
+        assert!((k2 - 0.8).abs() < 1e-3, "{k2}");
+        assert!(rise2 > rise, "{rise} → {rise2}");
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert!((glyph(&s).0 - 0.583).abs() < 1e-3);
+    }
+}
+
+#[cfg(test)]
+mod advanced_type_idml_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn advanced_type_round_trips_through_idml() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("document.preferences", &json!({"advancedType": {"subscriptPosition": 12.5}})).unwrap();
+        let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&s.doc().unwrap().doc)).unwrap();
+        assert_eq!(back.settings.advanced_type.subscript_position, 12.5);
+        assert_eq!(back.settings.advanced_type.superscript_size, 58.3);
     }
 }

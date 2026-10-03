@@ -131,6 +131,22 @@ impl Default for NumberedList {
     }
 }
 
+/// Preferences › Advanced Type (stored with the document, like InDesign).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AdvancedType {
+    pub superscript_size: f64,
+    pub superscript_position: f64,
+    pub subscript_size: f64,
+    pub subscript_position: f64,
+}
+
+impl Default for AdvancedType {
+    fn default() -> Self {
+        AdvancedType { superscript_size: 58.3, superscript_position: 33.3, subscript_size: 58.3, subscript_position: 33.3 }
+    }
+}
+
 /// File → Document Setup + the guide/grid/unit preferences stored with the document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -164,6 +180,9 @@ pub struct DocSettings {
     pub chapter_number: u32,
     /// Object › Effects › Global Light: the angle (degrees) shadows that use it share.
     pub global_light: f64,
+    /// Preferences › Advanced Type: superscript and subscript size and position (percent of the
+    /// font size).
+    pub advanced_type: AdvancedType,
 }
 
 impl Default for DocSettings {
@@ -190,6 +209,7 @@ impl Default for DocSettings {
             lists: Vec::new(),
             chapter_number: 1,
             global_light: 120.0,
+            advanced_type: AdvancedType::default(),
         }
     }
 }

@@ -213,6 +213,19 @@ impl<'r> Importer<'r> {
         for e in top {
             match e.local() {
                 "DocumentPreference" => self.doc_prefs(e),
+                "TextPreference" => {
+                    let a = &mut self.settings.advanced_type;
+                    for (k, v) in [
+                        ("SuperscriptSize", &mut a.superscript_size),
+                        ("SuperscriptPosition", &mut a.superscript_position),
+                        ("SubscriptSize", &mut a.subscript_size),
+                        ("SubscriptPosition", &mut a.subscript_position),
+                    ] {
+                        if let Some(x) = e.num(k) {
+                            *v = x;
+                        }
+                    }
+                }
                 "MarginPreference" => {
                     let (m, c) = margins_of(e);
                     self.default_margins = Some((m, c));

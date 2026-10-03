@@ -40,6 +40,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Object ▸ Select (first/next above, next/last below, container, content, previous/next in group), full Object ▸ Convert Shape (`object.convertShape`), Table ▸ Split Cell Horizontally/Vertically.
 - Attributes panel (`object.attributes`: Overprint Fill/Stroke/Gap, Nonprinting), with Overprint Gap in Overprint Preview and IDML.
 - Page Numbering View (Preferences: section or absolute): page labels everywhere follow it; Go to Page takes section names, numbers or `+n`.
+- Preferences › Advanced Type (document `advancedType`: superscript/subscript size and position; IDML TextPreference); subscripts now drop 33.3% like InDesign.
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.
@@ -88,7 +89,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 
 ## How far from full parity (estimate, 2026-10-02, updated)
 
-**Breadth: ~84% weighted** (P0 core 99%, P1 84%, P2 24%) over the 275 features of the InDesign catalogue, scored
+**Breadth: ~85% weighted** (P0 core 99%, P1 87%, P2 24%) over the 275 features of the InDesign catalogue, scored
 row by row in [docs/parity.md](docs/parity.md) (`cargo xtask parity` recomputes it). Many features scored done still
 lack some of InDesign's options or dialog details, so **overall parity including depth is about 70%**.
 

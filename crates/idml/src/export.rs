@@ -681,6 +681,14 @@ impl<'a> Ex<'a> {
         );
         root.push(El::new("PasteboardPreference").attr("PasteboardMargins", pt(s.pasteboard.0, s.pasteboard.1)));
         root.push(self.footnote_option_el());
+        let a = &s.advanced_type;
+        root.push(
+            El::new("TextPreference")
+                .attr("SuperscriptSize", num(a.superscript_size))
+                .attr("SuperscriptPosition", num(a.superscript_position))
+                .attr("SubscriptSize", num(a.subscript_size))
+                .attr("SubscriptPosition", num(a.subscript_position)),
+        );
         document(&root)
     }
 

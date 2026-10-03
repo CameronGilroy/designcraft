@@ -649,6 +649,9 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             if app.session.active().is_some() {
                 let doc = app.session.execute("document.preferences", &json!({})).unwrap_or_default();
                 f["horizontalUnits"] = doc["horizontalUnits"].clone();
+                for k in ["superscriptSize", "superscriptPosition", "subscriptSize", "subscriptPosition"] {
+                    f[format!("adv.{k}")] = json!(format!("{}", doc["advancedType"][k].as_f64().unwrap_or(0.0)));
+                }
                 f["verticalUnits"] = doc["verticalUnits"].clone();
                 let inc = doc["keyboardIncrement"].as_f64().unwrap_or(1.0);
                 f["keyboardIncrement"] = json!(designcraft_geom::format_measure(inc, designcraft_geom::Unit::Points));

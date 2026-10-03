@@ -142,7 +142,7 @@ pub(crate) fn shape_para(
     pi: usize,
     range: std::ops::Range<usize>,
     para_chars: &CharProps,
-    auto_leading: f64,
+    auto_leading: TypeEnv,
     sub: &SubstCtx,
     table: &mut StyleTable<'_>,
     nested: &[designcraft_doc::NestedStyle],
@@ -255,7 +255,7 @@ fn shape_run(
     text: &str,
     range: std::ops::Range<usize>,
     p: &CharProps,
-    auto_leading: f64,
+    auto_leading: TypeEnv,
     style: u32,
     sub: &SubstCtx,
     out: &mut Vec<Glyph>,
@@ -439,27 +439,34 @@ fn shape_cached(face: &FontFace, src: &str, feats: &[Feature], caps: bool) -> Ve
     out
 }
 
-fn metrics(face: &FontFace, p: &CharProps, auto_leading: f64) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
-    let (size, shift) = effective_size(p);
+fn metrics(face: &FontFace, p: &CharProps, auto_leading: TypeEnv) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+    let (size, shift) = effective_size(p, &auto_leading.adv);
     let k = size / face.upem;
     let vs = p.v_scale;
     let leading = match p.leading {
-        Leading::Auto => p.size * auto_leading,
+        Leading::Auto => p.size * auto_leading.auto_leading,
         Leading::Points(v) => v,
     };
     (size, k, face.ascent * k * vs, face.descent * k * vs, leading, face.cap_height * k * vs, face.x_height * k * vs, shift)
 }
 
-/// Super/subscript use 58.3% size and ±33.3% / −10% shift (InDesign's defaults).
-fn effective_size(p: &CharProps) -> (f64, f64) {
+/// Auto leading and the document's Advanced Type settings, for shaping.
+#[derive(Clone, Copy, Debug)]
+pub struct TypeEnv {
+    pub auto_leading: f64,
+    pub adv: designcraft_doc::AdvancedType,
+}
+
+/// Synthesised super/subscript: size and shift from Advanced Type (percent of the font size).
+fn effective_size(p: &CharProps, adv: &designcraft_doc::AdvancedType) -> (f64, f64) {
     match p.position {
-        Position::Superscript => (p.size * 0.583, p.baseline_shift + p.size * 0.333),
-        Position::Subscript => (p.size * 0.583, p.baseline_shift - p.size * 0.333 * 0.3),
+        Position::Superscript => (p.size * adv.superscript_size / 100.0, p.baseline_shift + p.size * adv.superscript_position / 100.0),
+        Position::Subscript => (p.size * adv.subscript_size / 100.0, p.baseline_shift - p.size * adv.subscript_position / 100.0),
         _ => (p.size, p.baseline_shift),
     }
 }
 
-fn control_glyph(face: &Arc<FontFace>, p: &CharProps, auto_leading: f64, style: u32, byte: usize, ch: char) -> Glyph {
+fn control_glyph(face: &Arc<FontFace>, p: &CharProps, auto_leading: TypeEnv, style: u32, byte: usize, ch: char) -> Glyph {
     let (size, k, ascent, descent, leading, cap, xh, shift) = metrics(face, p, auto_leading);
     Glyph {
         face: FaceRef::of(face),
@@ -493,7 +500,7 @@ fn shape_segment(
     replacement: Option<&str>,
     p: &CharProps,
     face: &Arc<FontFace>,
-    auto_leading: f64,
+    auto_leading: TypeEnv,
     style: u32,
     out: &mut Vec<Glyph>,
 ) {
