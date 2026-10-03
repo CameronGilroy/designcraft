@@ -138,18 +138,18 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 
 ## How far from full parity (estimate, 2026-10-02, updated)
 
-**Breadth: ~93% weighted** (P0 core 99%, P1 97%, P2 58%) over the 275 features of the InDesign catalogue, scored
+**Breadth: ~94% weighted** (P0 core 99%, P1 97%, P2 68%) over the 275 features of the InDesign catalogue, scored
 row by row in [docs/parity.md](docs/parity.md) (`cargo xtask parity` recomputes it). Many features scored done still
-lack some of InDesign's options or dialog details, so **overall parity including depth is about 72%**.
+lack some of InDesign's options or dialog details, so **overall parity including depth is about 74%**.
 
-**Remaining work: about 320 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 95–130 hours with
+**Remaining work: about 280 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 85–115 hours with
 four agents in parallel on separate crates:
 
 | Work | Estimate |
 |---|---|
 | Open P0 (3: PDF/X-4 output intent and validation, EPS place, remaining Preferences sections) | 12 h |
-| Open P1 (9: New Window, primary text frame, stroke styles, colour management, image import options, variable-font axes, language support, UI keyboard navigation) | 25 h |
-| Open P2 (54: liquid/alternate layouts, books, buttons & forms, XML, track changes, vertical/RTL type, …) | 150 h |
+| Open P1 (5: New Window, colour management, language support, UI keyboard navigation, …) | 15 h |
+| Open P2 (37: 12 missing — spread rotation, page transitions, vertical/RTL type, math, video/audio, split window, localization, flattener, placed-file layers — and 25 partial) | 110 h |
 | Depth and pixel fidelity of every dialog, panel and menu against InDesign 2026 | 90 h |
 | Performance (incremental composition, GPU raster) and interchange hardening (IDML/PDF corpus) | 55 h |
 
