@@ -12,8 +12,15 @@ pub fn specs() -> Vec<CommandSpec> {
         "{path?, pages?: \"1-3,5\" | [1,3] (1-based positions; default all), flatten?: high|medium|low|ppi (Transparency Flattener: spreads with transparency are rasterised), spreads?: bool, bleed?: bool (document bleed), marks?: bool | {crop?, bleed?, pageInfo?, weight?, offset?}, standard?: \"none\"|\"x4\"|\"a2b\", compressImages?: bool, tagged?: bool (structure tree: stories as paragraphs, figures with alt text), title?, author?} → {path, bytes, pages, warnings} (no path: {base64, …})",
         has_doc, export_pdf),
         cmd!(noundo "file.exportEpub", "Export EPUB (Reflowable)…", ["File"], None,
-        "{path?, title?, author?, language?: \"en\"} → {path, bytes} (no path: {base64, bytes})",
+        "{path?, title?, author?, language?: \"en\", cover?: bool (the first page as the cover image), fixedLayout?: bool (pre-paginated: each page as an image with its text)} → {path, bytes} (no path: {base64, bytes})",
         has_doc, export_epub),
+        cmd!(noundo "file.exportFixedEpub", "Export EPUB (Fixed Layout)…", ["File"], None,
+        "{path?, title?, author?, language?} — pre-paginated EPUB → {path, bytes} (no path: {base64, bytes})",
+        has_doc, |s, p| {
+            let mut q = p.clone();
+            q["fixedLayout"] = serde_json::json!(true);
+            export_epub(s, &q)
+        }),
         cmd!(noundo "file.printBooklet", "Print Booklet…", ["File"], None,
         "{path?, type?: saddleStitch|twoUpConsecutive, spaceBetween? (pt)} — printer spreads as PDF (pages imposed in booklet order) → {path, bytes, sheets} (no path: {base64, …})",
         has_doc, print_booklet),
@@ -93,14 +100,61 @@ fn export_text(s: &mut Session, p: &Value) -> Result<Value> {
     }
 }
 
+/// Text of the frames on page `abs`, in line order (for fixed-layout pages).
+fn page_text(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, abs: usize) -> String {
+    let mut out = String::new();
+    for st in d.stories.values() {
+        let cs = cache.get(d, st.id, None);
+        for ft in &cs.frames {
+            if d.page_of_item(ft.frame) != Some(abs) {
+                continue;
+            }
+            for l in &ft.lines {
+                let r = l.range.start.min(st.text.len())..l.range.end.min(st.text.len());
+                let t: String = st.text[r].chars().filter(|c| !('\u{E000}'..='\u{F8FF}').contains(c)).collect();
+                if !t.trim().is_empty() {
+                    out.push_str(t.trim_end_matches('\n'));
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
+}
+
 fn export_epub(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.doc()?;
+    let fixed = p.get("fixedLayout").and_then(Value::as_bool).unwrap_or(false);
+    let want_cover = p.get("cover").and_then(Value::as_bool).unwrap_or(false);
+    let mut rr = designcraft_render::Renderer::new();
+    rr.threads = designcraft_render::default_threads();
+    let ropts = designcraft_render::RenderOptions { printing_only: true, ..Default::default() };
+    let cover = (want_cover && !fixed).then(|| rr.render_page(&st.doc, &s.cache, 0, 2.0, false, &ropts).map(|img| img.to_png())).flatten();
     let opts = designcraft_epub::EpubOptions {
         title: p.get("title").and_then(Value::as_str).map(str::to_string),
         author: p.get("author").and_then(Value::as_str).map(str::to_string),
         language: p.get("language").and_then(Value::as_str).unwrap_or("en").to_string(),
         identifier: None,
+        cover,
     };
+    if fixed {
+        let d = &st.doc;
+        let mut pages = Vec::new();
+        for i in 0..d.page_count() {
+            let Some((si, pi)) = d.page_loc(i) else { continue };
+            let b = d.spreads[si].pages[pi].bounds();
+            let Some(img) = rr.render_page(d, &s.cache, i, 2.0, false, &ropts) else { continue };
+            pages.push(designcraft_epub::FixedPage { png: img.to_png(), width: b.width(), height: b.height(), text: page_text(d, &s.cache, i) });
+        }
+        let bytes = designcraft_epub::export_fixed_epub(d, &pages, &opts).map_err(|e| crate::EngineError::Other(e.to_string()))?;
+        return match p.get("path").and_then(Value::as_str) {
+            Some(path) => {
+                write_file(path, &bytes)?;
+                Ok(serde_json::json!({"path": path, "bytes": bytes.len(), "pages": pages.len()}))
+            }
+            None => Ok(serde_json::json!({"base64": super::base64_encode(&bytes), "bytes": bytes.len(), "pages": pages.len()})),
+        };
+    }
     let bytes = designcraft_epub::export_epub(&st.doc, &opts).map_err(|e| crate::EngineError::Other(e.to_string()))?;
     match p.get("path").and_then(Value::as_str) {
         Some(path) => {
@@ -496,6 +550,35 @@ mod text_tests {
     use serde_json::json;
 
     use crate::Session;
+
+    fn unzip(b64: &str) -> zip::ZipArchive<std::io::Cursor<Vec<u8>>> {
+        zip::ZipArchive::new(std::io::Cursor::new(super::super::file::base64_decode(b64))).unwrap()
+    }
+
+    fn read(z: &mut zip::ZipArchive<std::io::Cursor<Vec<u8>>>, name: &str) -> String {
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut z.by_name(name).unwrap(), &mut s).unwrap();
+        s
+    }
+
+    #[test]
+    fn epub_cover_and_fixed_layout() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 2})).unwrap();
+        s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": "Page one words", "caret": false})).unwrap();
+        let r = s.execute("file.exportEpub", &json!({"cover": true})).unwrap();
+        let mut z = unzip(r["base64"].as_str().unwrap());
+        let opf = read(&mut z, "OEBPS/content.opf");
+        assert!(opf.contains("cover-image") && opf.contains("<itemref idref=\"cover\"/>"));
+        assert!(z.by_name("OEBPS/images/cover.png").is_ok());
+        let r = s.execute("file.exportFixedEpub", &json!({})).unwrap();
+        assert_eq!(r["pages"], 2);
+        let mut z = unzip(r["base64"].as_str().unwrap());
+        let opf = read(&mut z, "OEBPS/content.opf");
+        assert!(opf.contains("rendition:layout\">pre-paginated") && opf.contains("page2.xhtml"));
+        let p1 = read(&mut z, "OEBPS/page1.xhtml");
+        assert!(p1.contains("width=612, height=792") && p1.contains("Page one words"), "{p1}");
+    }
 
     #[test]
     fn flattener_rasterises_spreads_with_transparency() {
