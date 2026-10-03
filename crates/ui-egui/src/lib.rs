@@ -262,6 +262,8 @@ pub struct DesignApp {
     pub views: HashMap<u64, View>,
     pub canvas: CanvasCache,
     pub canvas_rect: Option<egui::Rect>,
+    /// Power Zoom in progress: the zoom to return to and the canvas point it will centre on.
+    pub power_zoom: Option<(f64, designcraft_geom::Point)>,
     pub perf: Perf,
     pub synthetic: Vec<egui::Event>,
     /// Story open in the Story Editor.
@@ -308,6 +310,7 @@ impl DesignApp {
                 patches: 0,
             },
             canvas_rect: None,
+            power_zoom: None,
             perf: Perf::default(),
             synthetic: vec![],
             story_editor: None,

@@ -205,6 +205,25 @@ fn zoom_tool_click_and_scrub() {
 }
 
 #[test]
+fn hand_tool_alt_press_power_zooms() {
+    let d = Document::new(&NewDocument::default());
+    let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
+    let cx = ctx(&d, &s, &c, &l);
+    let mut t = create("hand");
+    let alt = Mods { alt: true, ..Default::default() };
+    let phase = |a: Vec<Action>| match &a[..] {
+        [Action::View(v)] => v["powerZoom"].as_str().unwrap_or("").to_string(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(phase(t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 10.0, 10.0).with_mods(alt))), "start");
+    assert_eq!(phase(t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 50.0, 60.0))), "move");
+    assert_eq!(phase(t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 50.0, 60.0))), "end");
+    // A plain press pans as before.
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 10.0, 10.0));
+    assert!(t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 10.0, 10.0)).is_empty());
+}
+
+#[test]
 fn page_tool_opens_page_size() {
     let d = Document::new(&NewDocument::default());
     let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));

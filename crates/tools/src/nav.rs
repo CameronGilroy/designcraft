@@ -5,9 +5,12 @@ use serde_json::json;
 
 use crate::{Action, Cursor, Mods, PointerEvent, PointerKind, Tool, ToolContext};
 
+/// Hand tool: drag to pan. Alt-press starts Power Zoom: the view zooms out to the spread, the
+/// pointer aims a rectangle of the previous view, and releasing zooms back in there.
 #[derive(Default)]
 pub struct HandTool {
     last: Option<Point>,
+    power: bool,
 }
 
 impl Tool for HandTool {
@@ -16,9 +19,20 @@ impl Tool for HandTool {
     }
     fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
         match ev.kind {
+            PointerKind::Down if ev.mods.alt => {
+                self.power = true;
+                self.last = Some(ev.pos);
+                vec![Action::View(json!({"powerZoom": "start", "at": [ev.pos.x, ev.pos.y]}))]
+            }
             PointerKind::Down => {
                 self.last = Some(ev.pos);
                 vec![]
+            }
+            PointerKind::Drag if self.power => vec![Action::View(json!({"powerZoom": "move", "at": [ev.pos.x, ev.pos.y]}))],
+            PointerKind::Up if self.power => {
+                self.power = false;
+                self.last = None;
+                vec![Action::View(json!({"powerZoom": "end", "at": [ev.pos.x, ev.pos.y]}))]
             }
             PointerKind::Drag => {
                 // Canvas positions shift as we pan, so convert the delta to screen pixels once.

@@ -145,6 +145,34 @@ pub fn set_zoom(app: &mut DesignApp, z: f64) {
 }
 
 pub fn apply_view_request(app: &mut DesignApp, p: &Value) {
+    // Power Zoom (Hand tool, Alt-press): zoom out to the spread, aim a view-sized rectangle, zoom
+    // back in where it was released.
+    if let Some(phase) = p.get("powerZoom").and_then(Value::as_str) {
+        let at = p.get("at").and_then(Value::as_array).map(|a| Point::new(a[0].as_f64().unwrap_or(0.0), a[1].as_f64().unwrap_or(0.0)));
+        match phase {
+            "start" => {
+                if let (Some(v), Some(rect)) = (app.view().copied(), app.canvas_rect) {
+                    let centre = Xf::new(rect, &v).to_canvas(rect.center());
+                    app.power_zoom = Some((v.zoom, at.unwrap_or(centre)));
+                    fit(app, rect, "spread");
+                }
+            }
+            "move" => {
+                if let (Some(pz), Some(a)) = (&mut app.power_zoom, at) {
+                    pz.1 = a;
+                }
+            }
+            _ => {
+                if let (Some((z, c)), Some(rect)) = (app.power_zoom.take(), app.canvas_rect)
+                    && let Some(v) = app.view_mut()
+                {
+                    let c = at.unwrap_or(c);
+                    v.zoom = z;
+                    v.origin = Point::new(c.x - rect.width() as f64 / 2.0 / z, c.y - rect.height() as f64 / 2.0 / z);
+                }
+            }
+        }
+    }
     if let Some(d) = p.get("pan").and_then(Value::as_array) {
         let (dx, dy) = (d.first().and_then(Value::as_f64).unwrap_or(0.0), d.get(1).and_then(Value::as_f64).unwrap_or(0.0));
         if let Some(v) = app.view_mut() {
@@ -1076,6 +1104,12 @@ fn caret_x(l: &compose::Line, pos: usize) -> f64 {
 }
 
 fn draw_tool_overlays(app: &mut DesignApp, painter: &egui::Painter, xf: &Xf) {
+    if let (Some((z, c)), Some(rect)) = (app.power_zoom, app.canvas_rect) {
+        // The view that releasing returns to.
+        let (w, h) = (rect.width() as f64 / z, rect.height() as f64 / z);
+        let r = xf.rect(designcraft_geom::Rect::new(c.x - w / 2.0, c.y - h / 2.0, c.x + w / 2.0, c.y + h / 2.0));
+        painter.rect_stroke(r, 0.0, egui::Stroke::new(1.5, Color32::from_rgb(230, 40, 40)), egui::StrokeKind::Middle);
+    }
     let ov = app.session.overlays(app.view_info());
     for o in ov {
         match o {
