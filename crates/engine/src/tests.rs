@@ -242,6 +242,19 @@ fn hyperlinks_and_bookmarks_reach_the_pdf() {
 }
 
 #[test]
+fn serialized_document_opens_again() {
+    // The web app saves (downloads) what `file.serialize` returns: it must be the file's exact bytes.
+    let mut s = session();
+    s.execute("frame.create", &json!({"rect": [36, 36, 300, 200], "content": "text", "text": "Saved on the web"})).unwrap();
+    let r = s.execute("file.serialize", &json!({})).unwrap();
+    let bytes = cmd::base64_decode(r["base64"].as_str().expect("base64"));
+    assert_eq!(bytes, cmd::to_bytes(&s.doc().unwrap().doc));
+    s.execute("file.openBytes", &json!({"name": "copy", "base64": r["base64"]})).unwrap();
+    let d = s.execute("document.inspect", &json!({})).unwrap();
+    assert_eq!(d["stories"][0]["preview"], "Saved on the web");
+}
+
+#[test]
 fn step_and_repeat_grid() {
     let mut s = session();
     s.execute("frame.create", &json!({"rect": [36, 36, 66, 66], "content": "unassigned"})).unwrap();

@@ -1325,7 +1325,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
 fn download_document(app: &mut DesignApp) -> Result<Value, String> {
     let name = app.session.active().map(|d| format!("{}.designcraft", d.doc.title)).ok_or("no document")?;
     let ser = app.run("file.serialize", json!({}))?;
-    let bytes = ser.get("json").and_then(Value::as_str).unwrap_or_default().as_bytes().to_vec();
+    let bytes = designcraft_engine::cmd::base64_decode(ser["base64"].as_str().unwrap_or_default());
     if let Some(download) = app.services.download.as_mut() {
         download(&name, &bytes);
     }
