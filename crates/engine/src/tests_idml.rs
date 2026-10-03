@@ -235,3 +235,19 @@ fn newer_features_round_trip_through_idml() {
     assert_eq!((pt.0.start, pt.0.flip, pt.0.align), (12.0, true, designcraft_doc::PathAlign::Center));
     assert_eq!(back.story(pt.1).unwrap().text, "On the line");
 }
+
+#[test]
+fn named_lists_round_trip_through_idml() {
+    let mut s = Session::new();
+    s.execute("file.new", &json!({})).unwrap();
+    s.execute("list.define", &json!({"name": "Steps", "continueAcrossStories": false})).unwrap();
+    let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "One\nTwo"})).unwrap();
+    s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 3})).unwrap();
+    s.execute("type.para", &json!({"attrs": {"listType": "numbers", "listName": "Steps", "startAt": 5}})).unwrap();
+    let d = s.doc().unwrap().doc.clone();
+    let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&d)).unwrap();
+    assert_eq!(back.settings.lists, vec![designcraft_doc::NumberedList { name: "Steps".into(), continue_across_stories: false }]);
+    let st = back.stories.values().find(|st| st.text.starts_with("One")).unwrap();
+    assert_eq!(st.paras[0].para.list_name.as_deref(), Some("Steps"));
+    assert_eq!(st.paras[0].para.start_at, Some(Some(5)));
+}

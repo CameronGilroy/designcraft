@@ -361,6 +361,23 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
     let para_ranges = story.para_ranges();
     let np = para_ranges.len();
     let mut list_counter: u32 = 0;
+    // Named lists number independently of layout: one pass up front.
+    let named_numbers: Vec<Option<u32>> = {
+        let mut counters: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        story
+            .paras
+            .iter()
+            .map(|p| {
+                let (pp, _) = doc.styles.resolve_para(p);
+                if pp.list_type != designcraft_doc::ListType::Numbers || pp.list_name.is_empty() {
+                    return None;
+                }
+                let c = counters.entry(pp.list_name.clone()).or_insert_with(|| doc.list_start(story.id, &pp.list_name));
+                *c = pp.start_at.map_or(*c + 1, |s| s.max(1));
+                Some(*c)
+            })
+            .collect()
+    };
     // Keep options: paragraphs are re-laid from a snapshot when a keep is violated, either forced
     // into the next column or with a cap on the lines set before moving on (widow control).
     let mut snaps: Vec<Snapshot> = Vec::with_capacity(np);
@@ -465,8 +482,14 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             &pp.grep_styles,
         );
         match pp.list_type {
+            designcraft_doc::ListType::Numbers if !pp.list_name.is_empty() => {
+                // A named list: carries on past other paragraphs (and from earlier stories).
+                let n = named_numbers.get(pi).copied().flatten().unwrap_or(1);
+                let label = format!("{}.{}", pp.number_style.format(n), pp.list_separator);
+                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
+            }
             designcraft_doc::ListType::Numbers => {
-                list_counter += 1;
+                list_counter = pp.start_at.map_or(list_counter + 1, |s| s.max(1));
                 let label = format!("{}.{}", pp.number_style.format(list_counter), pp.list_separator);
                 prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
             }

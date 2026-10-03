@@ -506,6 +506,10 @@ attr_set! {
         rule_below: Rule = Rule::default(),
         tabs: Vec<TabStop> = Vec::new(),
         list_type: ListType = ListType::None,
+        /// Named list (Define Lists) the numbers belong to ("" = the story's own list).
+        list_name: String = String::new(),
+        /// Start At: restart the numbering at this number.
+        start_at: Option<u32> = None,
         bullet_char: String = "\u{2022}".into(),
         number_style: NumberStyle = NumberStyle::Arabic,
         /// Text after the number/bullet (`^t` = tab).

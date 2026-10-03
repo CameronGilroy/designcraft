@@ -116,6 +116,21 @@ impl Default for DocumentGrid {
     }
 }
 
+/// A named numbered list.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NumberedList {
+    pub name: String,
+    /// Numbering continues from story to story (in page order).
+    pub continue_across_stories: bool,
+}
+
+impl Default for NumberedList {
+    fn default() -> Self {
+        NumberedList { name: String::new(), continue_across_stories: true }
+    }
+}
+
 /// File → Document Setup + the guide/grid/unit preferences stored with the document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -139,6 +154,9 @@ pub struct DocSettings {
     pub bleed_color: [u8; 3],
     pub slug_color: [u8; 3],
     pub keyboard_increment: f64,
+    /// Named lists (Type › Bulleted and Numbered Lists › Define Lists).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lists: Vec<NumberedList>,
     /// The story in the primary text frames (Smart Text Reflow adds and removes pages for it).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_story: Option<StoryId>,
@@ -167,6 +185,7 @@ impl Default for DocSettings {
             slug_color: [100, 188, 221],
             keyboard_increment: 1.0,
             primary_story: None,
+            lists: Vec::new(),
             chapter_number: 1,
         }
     }

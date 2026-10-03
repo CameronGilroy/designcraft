@@ -483,6 +483,7 @@ pub(crate) fn format_chars(s: &mut Session, attrs: &Value) -> Result<Value> {
             a.set_json(k, v).map_err(|e| bad("type.char", e))?;
         }
     }
+    let cleared: Vec<String> = attrs.as_object().map(|o| o.iter().filter(|(_, v)| v.is_null()).map(|(k, _)| k.clone()).collect()).unwrap_or_default();
     let targets = format_targets(s);
     s.edit(|d, _| {
         for t in &targets {
@@ -499,7 +500,12 @@ pub(crate) fn format_chars(s: &mut Session, attrs: &Value) -> Result<Value> {
                 }
                 continue;
             }
-            st.format_chars(r.clone(), |f| f.over.merge(&a));
+            st.format_chars(r.clone(), |f| {
+                f.over.merge(&a);
+                for k in &cleared {
+                    let _ = f.over.set_json(k, &Value::Null);
+                }
+            });
         }
         ok()
     })
@@ -512,11 +518,18 @@ pub(crate) fn format_paras(s: &mut Session, attrs: &Value) -> Result<Value> {
             a.set_json(k, v).map_err(|e| bad("type.para", e))?;
         }
     }
+    // `null` removes the override (back to the style's value).
+    let cleared: Vec<String> = attrs.as_object().map(|o| o.iter().filter(|(_, v)| v.is_null()).map(|(k, _)| k.clone()).collect()).unwrap_or_default();
     let targets = format_targets(s);
     s.edit(|d, _| {
         for t in &targets {
             if let Some(st) = d.text_story_mut(t.story, t.cell) {
-                st.format_paras(t.range.clone(), |p| p.para.merge(&a));
+                st.format_paras(t.range.clone(), |p| {
+                    p.para.merge(&a);
+                    for k in &cleared {
+                        let _ = p.para.set_json(k, &Value::Null);
+                    }
+                });
             }
         }
         ok()

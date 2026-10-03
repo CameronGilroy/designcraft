@@ -820,6 +820,16 @@ impl<'a> Ex<'a> {
             tables = tables.child(with_props(el, vec![p("BasedOn", "string", "$ID/[Basic Table]")]));
         }
         root.push(tables);
+        // Named numbered lists.
+        for l in &self.d.settings.lists {
+            root.push(
+                El::new("NumberingList")
+                    .attr("Self", format!("NumberingList/{}", escape_id(&l.name)))
+                    .attr("Name", &l.name)
+                    .attr("ContinueNumbersAcrossStories", bool_s(l.continue_across_stories))
+                    .attr("ContinueNumbersAcrossDocuments", "false"),
+            );
+        }
 
         // Object styles.
         let mut og = Group::default();
@@ -973,6 +983,21 @@ impl<'a> Ex<'a> {
     }
 
     fn para_attrs(&mut self, el: &mut El, props: &mut Vec<El>, a: &ParaAttrs) {
+        if let Some(n) = &a.list_name {
+            el.set(
+                "AppliedNumberingList",
+                if n.is_empty() { "NumberingList/$ID/[Default]".to_string() } else { format!("NumberingList/{}", escape_id(n)) },
+            );
+        }
+        if let Some(v) = a.start_at {
+            match v {
+                Some(n) => {
+                    el.set("NumberingContinue", "false");
+                    el.set("NumberingStartAt", n);
+                }
+                None => el.set("NumberingContinue", "true"),
+            }
+        }
         // Nested and GREP styles: property lists of records.
         if let Some(list) = &a.nested_styles {
             let mut l = El::new("AllNestedStyles").attr("type", "list");

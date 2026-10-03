@@ -88,6 +88,10 @@ impl Cache {
             format!("{:?}", doc.footnote_options).hash(&mut h);
             sig.extend([doc.footnote_start(sid) as usize, h.finish() as usize]);
         }
+        // Named lists continue from earlier stories.
+        for l in &doc.settings.lists {
+            sig.push(doc.list_start(sid, &l.name) as usize);
+        }
         {
             let mut g = self.map.lock().unwrap_or_else(|e| e.into_inner());
             g.1 += 1;

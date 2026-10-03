@@ -100,6 +100,7 @@ struct Importer<'r> {
     styles: Styles,
     para_names: HashMap<String, String>,
     char_names: HashMap<String, String>,
+    lists: Vec<designcraft_doc::NumberedList>,
     object_names: HashMap<String, String>,
     /// Object style Self → element (attribute fallback for page items).
     object_els: HashMap<String, El>,
@@ -177,6 +178,7 @@ impl<'r> Importer<'r> {
             styles,
             para_names: HashMap::new(),
             char_names: HashMap::new(),
+            lists: Vec::new(),
             object_names: HashMap::new(),
             object_els: HashMap::new(),
             layers: Vec::new(),
@@ -595,6 +597,13 @@ impl<'r> Importer<'r> {
     // ---------- styles ----------
 
     fn styles(&mut self, top: &[El]) {
+        for e in top.iter().filter(|e| e.local() == "NumberingList") {
+            let name = e.get("Name").unwrap_or("").to_string();
+            if !name.is_empty() && !name.starts_with("$ID/") && !self.lists.iter().any(|l| l.name == name) {
+                self.lists
+                    .push(designcraft_doc::NumberedList { name, continue_across_stories: e.get("ContinueNumbersAcrossStories") != Some("false") });
+            }
+        }
         let mut paras: Vec<(String, El)> = Vec::new();
         let mut chars: Vec<(String, El)> = Vec::new();
         let mut objects: Vec<(String, El)> = Vec::new();
@@ -988,6 +997,15 @@ impl<'r> Importer<'r> {
         a.first_line_indent = e.num("FirstLineIndent");
         a.last_line_indent = e.num("LastLineIndent");
         a.space_before = e.num("SpaceBefore");
+        if let Some(r) = e.prop("AppliedNumberingList") {
+            let r = r.trim().trim_start_matches("NumberingList/");
+            a.list_name = Some(if r.starts_with("$ID/") { String::new() } else { unescape_id(r) });
+        }
+        match e.prop("NumberingContinue").as_deref().map(str::trim) {
+            Some("false") => a.start_at = Some(e.num("NumberingStartAt").map(|n| n.max(1.0) as u32)),
+            Some("true") => a.start_at = Some(None),
+            _ => {}
+        }
         // Nested and GREP styles.
         if let Some(l) = e.prop_el("AllNestedStyles") {
             let v: Vec<designcraft_doc::NestedStyle> = l
@@ -1903,6 +1921,7 @@ impl<'r> Importer<'r> {
         if self.spreads.is_empty() {
             return Err(IdmlError::Invalid("document has no spreads".into()));
         }
+        self.settings.lists = std::mem::take(&mut self.lists);
         // Make sure built-in paragraph styles exist and are first.
         let d = Document {
             title,
