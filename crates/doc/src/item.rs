@@ -463,6 +463,63 @@ pub struct ObjectLiquid {
     pub pin_right: bool,
 }
 
+/// Media panel options for a placed video or sound.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MediaOptions {
+    pub play_on_page_load: bool,
+    #[serde(rename = "loop")]
+    pub looping: bool,
+    /// Show the player controls.
+    pub controls: bool,
+    /// Poster image (shown on the page and in print); `None` = a placeholder frame.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poster: Option<AssetId>,
+}
+
+impl Item {
+    /// The graphic to draw for this frame: a media frame with a poster draws the poster
+    /// stretched over the media rectangle.
+    pub fn drawn_graphic(&self, assets: &std::collections::BTreeMap<AssetId, Arc<crate::Asset>>) -> Option<Graphic> {
+        let Content::Graphic(g) = &self.content else { return None };
+        if let Some(poster) = self.media.as_ref().and_then(|m| m.poster)
+            && let Some((pw, ph)) = assets.get(&poster).and_then(|a| a.pixels)
+        {
+            let (pw, ph) = (pw.max(1) as f64, ph.max(1) as f64);
+            return Some(Graphic { asset: poster, size: (pw, ph), xf: g.xf * Affine::scale_non_uniform(g.size.0 / pw, g.size.1 / ph), ..g.clone() });
+        }
+        Some(g.clone())
+    }
+}
+
+/// "video" or "audio" for a media MIME type.
+pub fn media_kind(mime: &str) -> Option<&'static str> {
+    if mime.starts_with("video/") {
+        Some("video")
+    } else if mime.starts_with("audio/") {
+        Some("audio")
+    } else {
+        None
+    }
+}
+
+/// MIME type of a media file by its extension.
+pub fn media_mime(name: &str) -> Option<&'static str> {
+    let ext = name.rsplit('.').next()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "mp4" | "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "ogv" => "video/ogg",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "aac" => "audio/aac",
+        _ => return None,
+    })
+}
+
 /// A button's On Release action.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -744,6 +801,9 @@ pub struct Item {
     /// Liquid Layout (object-based pages): pins and resize permissions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquid: Option<ObjectLiquid>,
+    /// Window › Interactive › Media: options of a placed video or sound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaOptions>,
     /// Buttons and Forms: what clicking this object does in an interactive PDF.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub button: Option<ButtonAction>,
@@ -796,6 +856,7 @@ impl Item {
             alt_text: String::new(),
             xml_tag: String::new(),
             button: None,
+            media: None,
             liquid: None,
             states: Vec::new(),
             active_state: 0,

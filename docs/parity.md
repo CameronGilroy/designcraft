@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 92 | 5 | 0 | 97% |
-| P2 | 76 | 40 | 26 | 10 | 70% |
+| P2 | 76 | 40 | 27 | 9 | 70% |
 
 | Area | Parity |
 |---|---|
@@ -22,7 +22,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Transform | 100% |
 | Fill, stroke, colour | 96% |
 | Effects & transparency | 75% |
-| Placing & links | 90% |
+| Placing & links | 91% |
 | Type & text frames | 94% |
 | Typography | 98% |
 | Styles | 97% |
@@ -180,7 +180,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Placing & links | Image import options | P1 | D |
 | Placing & links | Linked text/stories | P2 | D |
 | Placing & links | Display performance | P0 | D |
-| Placing & links | Video/audio | P2 | M |
+| Placing & links | Video/audio | P2 | P |
 | Type & text frames | Text frames | P0 | D |
 | Type & text frames | Threading | P0 | D |
 | Type & text frames | Overset detection & indicator | P0 | D |

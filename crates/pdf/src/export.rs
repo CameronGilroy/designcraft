@@ -785,6 +785,7 @@ impl Exporter<'_> {
         // Content.
         match &it.content {
             Content::Graphic(g) => {
+                let g = &if it.media.is_some() { it.drawn_graphic(&self.doc.assets).unwrap_or_else(|| g.clone()) } else { g.clone() };
                 if let Some(p) = &path {
                     s.push_clip_path(p, &FillRule::NonZero);
                     self.graphic(s, g);
@@ -1027,6 +1028,29 @@ impl Exporter<'_> {
     }
 
     pub(crate) fn graphic(&mut self, s: &mut Surface, g: &designcraft_doc::Graphic) {
+        // Video / sound without a poster: a dark frame with a play mark.
+        if let Some(asset) = self.doc.assets.get(&g.asset)
+            && designcraft_doc::media_kind(&asset.mime).is_some()
+        {
+            let (w, h) = g.size;
+            let (cx, cy, r) = (w / 2.0, h / 2.0, w.min(h) * 0.18);
+            let mut tri = BezPath::new();
+            tri.move_to((cx - r * 0.6, cy - r));
+            tri.line_to((cx + r, cy));
+            tri.line_to((cx - r * 0.6, cy + r));
+            tri.close_path();
+            s.push_transform(&tf(g.xf));
+            s.set_stroke(None);
+            for (bp, c) in [(Rect::new(0.0, 0.0, w, h).to_path(0.1), rgb::Color::new(48, 48, 52)), (tri, rgb::Color::new(235, 235, 235))] {
+                if let Some(p) = to_path(&bp) {
+                    s.set_fill(Some(Fill { paint: c.into(), ..Default::default() }));
+                    s.draw_path(&p);
+                }
+            }
+            s.set_fill(None);
+            s.pop();
+            return;
+        }
         // Placed PDFs go in as vectors (the page as a form XObject).
         if let Some(asset) = self.doc.assets.get(&g.asset)
             && asset.data.starts_with(b"%PDF")

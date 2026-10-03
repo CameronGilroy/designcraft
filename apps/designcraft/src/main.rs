@@ -122,10 +122,19 @@ fn services() -> Services {
                         "xlsx",
                         "idml",
                         "designcraft",
+                        "mp4",
+                        "m4v",
+                        "mov",
+                        "webm",
+                        "mp3",
+                        "m4a",
+                        "wav",
+                        "ogg",
                     ],
                 )
                 .add_filter("Graphics", &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai"])
                 .add_filter("Text (Word, RTF, plain, Excel)", &["docx", "rtf", "txt", "md", "xlsx"])
+                .add_filter("Video and sound", &["mp4", "m4v", "mov", "webm", "mp3", "m4a", "wav", "ogg"])
             } else {
                 d.add_filter("DesignCraft or IDML", &["designcraft", "idml"])
                     .add_filter("DesignCraft", &["designcraft"])

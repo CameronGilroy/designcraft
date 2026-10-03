@@ -320,6 +320,15 @@ fn ext(mime: &str) -> &'static str {
         "image/gif" => "gif",
         "image/webp" => "webp",
         "image/svg+xml" => "svg",
+        "video/mp4" => "mp4",
+        "video/quicktime" => "mov",
+        "video/webm" => "webm",
+        "video/ogg" => "ogv",
+        "audio/mpeg" => "mp3",
+        "audio/mp4" => "m4a",
+        "audio/wav" => "wav",
+        "audio/ogg" => "ogg",
+        "audio/aac" => "aac",
         _ => "png",
     }
 }
@@ -354,6 +363,29 @@ fn body_html<'a>(
                 let Some(Content::Graphic(g)) = doc.item(*iid).map(|i| &i.content) else { continue };
                 let Some(a) = doc.assets.get(&g.asset) else { continue };
                 if a.data.is_empty() {
+                    continue;
+                }
+                // Video and sound: an HTML5 player (with the poster, when there is one).
+                if let Some(kind) = designcraft_doc::media_kind(&a.mime) {
+                    let name = format!("media/{}.{}", g.asset.0, ext(&a.mime));
+                    images.insert(name.clone(), (a.mime.as_str(), a.data.as_slice()));
+                    let m = doc.item(*iid).and_then(|i| i.media.clone()).unwrap_or_default();
+                    let mut attrs = String::new();
+                    for (on, attr) in
+                        [(m.controls, " controls=\"controls\""), (m.play_on_page_load, " autoplay=\"autoplay\""), (m.looping, " loop=\"loop\"")]
+                    {
+                        if on {
+                            attrs.push_str(attr);
+                        }
+                    }
+                    if let Some(pa) = m.poster.and_then(|p| doc.assets.get(&p)) {
+                        let pn = format!("images/{}.{}", pa.id.0, ext(&pa.mime));
+                        images.insert(pn.clone(), (pa.mime.as_str(), pa.data.as_slice()));
+                        if kind == "video" {
+                            attrs.push_str(&format!(" poster=\"{}\"", img_src(&pn, &pa.mime, &pa.data)));
+                        }
+                    }
+                    let _ = writeln!(body, "<figure><{kind} src=\"{}\"{attrs}>{}</{kind}></figure>", img_src(&name, &a.mime, &a.data), esc(&a.name));
                     continue;
                 }
                 let name = format!("images/{}.{}", g.asset.0, ext(&a.mime));

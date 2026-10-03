@@ -219,6 +219,10 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
     if lname.ends_with(".idml") || lname.ends_with(".designcraft") {
         return place_layout_page(s, p, &name, &bytes);
     }
+    // Video and sound: a media frame (Window › Interactive › Media).
+    if let Some(mime) = designcraft_doc::media_mime(&name) {
+        return super::media::place_media(s, p, name, mime, bytes, link);
+    }
     // Text files (plain, Word, RTF) flow into frames.
     if designcraft_textimport::is_text_file(&name) {
         return super::place_text::place_text(s, p, &name, &bytes);

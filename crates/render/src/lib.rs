@@ -505,6 +505,7 @@ impl Renderer {
         // Content.
         match &it.content {
             Content::Graphic(g) => {
+                let g = &if it.media.is_some() { it.drawn_graphic(&f.doc.assets).unwrap_or_else(|| g.clone()) } else { g.clone() };
                 ctx.set_transform(f.view * xf);
                 ctx.push_clip_layer(bp);
                 self.draw_graphic(ctx, f, g, xf);
@@ -638,6 +639,21 @@ impl Renderer {
 
     pub(crate) fn draw_graphic(&mut self, ctx: &mut RenderContext, f: &Frame, g: &designcraft_doc::Graphic, xf: Affine) {
         let Some(asset) = f.doc.assets.get(&g.asset) else { return };
+        if designcraft_doc::media_kind(&asset.mime).is_some() {
+            // Video / sound: a dark frame with a play mark (the poster, when set, is drawn by the item).
+            ctx.set_transform(f.view * xf * g.xf);
+            ctx.set_paint(peniko::Color::from_rgba8(48, 48, 52, 255));
+            ctx.fill_rect(&Rect::new(0.0, 0.0, g.size.0, g.size.1));
+            let (cx, cy, r) = (g.size.0 / 2.0, g.size.1 / 2.0, g.size.0.min(g.size.1) * 0.18);
+            let mut tri = BezPath::new();
+            tri.move_to((cx - r * 0.6, cy - r));
+            tri.line_to((cx + r, cy));
+            tri.line_to((cx - r * 0.6, cy + r));
+            tri.close_path();
+            ctx.set_paint(peniko::Color::from_rgba8(235, 235, 235, 255));
+            ctx.fill_path(&tri);
+            return;
+        }
         if f.opts.quality == DisplayQuality::Fast {
             ctx.set_transform(f.view * xf * g.xf);
             ctx.set_paint(peniko::Color::from_rgba8(178, 178, 178, 255));

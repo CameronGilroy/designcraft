@@ -27,6 +27,7 @@ mod linked;
 mod links;
 mod liquid;
 mod lists;
+mod media;
 mod notes;
 mod object;
 mod overrides;
@@ -159,6 +160,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(library::specs());
         v.extend(lists::specs());
         v.extend(linked::specs());
+        v.extend(media::specs());
         v.extend(liquid::specs());
         v.extend(xml::specs());
         v.extend(strokes::specs());
