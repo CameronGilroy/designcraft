@@ -41,6 +41,7 @@ pub mod table;
 pub mod text;
 mod toc;
 mod variables;
+mod xml;
 mod xref;
 
 use designcraft_doc::{ItemId, SpreadRef};
@@ -148,6 +149,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(conditions::specs());
         v.extend(library::specs());
         v.extend(lists::specs());
+        v.extend(xml::specs());
         v.extend(strokes::specs());
         v.extend(path_type::specs());
         v.extend(qr::specs());

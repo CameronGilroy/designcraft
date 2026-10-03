@@ -36,6 +36,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     ("hyperlinks", "Hyperlinks", "panel-hyperlinks"),
     ("bookmarks", "Bookmarks", "panel-bookmarks"),
     ("articles", "Articles", "panel-articles"),
+    ("tags", "Tags", "panel-tags"),
 ];
 
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
@@ -177,6 +178,7 @@ pub fn panel_body(app: &mut DesignApp, ui: &mut egui::Ui, id: &str) {
         "hyperlinks" => panels::interactive::hyperlinks(app, ui),
         "bookmarks" => panels::interactive::bookmarks(app, ui),
         "articles" => panels::interactive::articles(app, ui),
+        "tags" => panels::interactive::tags(app, ui),
         "table" => panels::table::show(app, ui),
         _ => panels::properties::info_panel(app, ui),
     }

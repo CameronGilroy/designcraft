@@ -97,6 +97,8 @@ pub struct UiState {
     pub document_grid: bool,
     pub text_threads: bool,
     pub hidden_characters: bool,
+    /// View › Structure › Show Tagged Frames.
+    pub tagged_frames: bool,
     /// View › Display Performance.
     pub display_quality: designcraft_render::DisplayQuality,
     /// Preferences › Interface › UI scaling (1 = 100%).
@@ -156,6 +158,7 @@ impl Default for UiState {
             document_grid: false,
             text_threads: false,
             hidden_characters: false,
+            tagged_frames: false,
             display_quality: designcraft_render::DisplayQuality::High,
             ui_scale: 1.0,
             rich_black: false,

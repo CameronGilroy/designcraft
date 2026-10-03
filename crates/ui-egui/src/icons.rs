@@ -316,6 +316,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.closed(&[(17.0, 10.0), (13.0, 14.0), (10.0, 14.0), (13.0, 11.0), (14.0, 9.0), (13.0, 7.0), (15.0, 6.0)]);
             pen.line(&[(8.0, 12.0), (12.0, 8.0)]);
         }
+        "panel-tags" => {
+            // Angle brackets.
+            pen.line(&[(7.0, 5.0), (3.0, 10.0), (7.0, 15.0)]);
+            pen.line(&[(13.0, 5.0), (17.0, 10.0), (13.0, 15.0)]);
+            pen.line(&[(11.0, 4.0), (9.0, 16.0)]);
+        }
         "panel-articles" => {
             // Numbered blocks in order.
             pen.rect(3.0, 3.0, 11.0, 8.0);

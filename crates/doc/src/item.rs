@@ -712,6 +712,9 @@ pub struct Item {
     /// Alternative text (Object Export Options) for tagged PDF and EPUB.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub alt_text: String,
+    /// XML tag (Tags panel); its content is the element's content in XML export/import.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub xml_tag: String,
     /// Groups: Isolate Blending (blend modes only within the group) and Knockout Group (the
     /// group's objects don't show through each other).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -751,6 +754,7 @@ impl Item {
             overrides: None,
             label: String::new(),
             alt_text: String::new(),
+            xml_tag: String::new(),
             isolate: false,
             knockout: false,
         }

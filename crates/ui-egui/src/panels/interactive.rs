@@ -113,3 +113,67 @@ pub fn articles(app: &mut DesignApp, ui: &mut egui::Ui) {
         });
     }
 }
+
+/// Tags panel and structure: tags (click to tag the selection), the structure in reading order,
+/// XML export/import.
+pub fn tags(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let Ok(info) = app.session.execute("xml.tags", &json!({})) else { return };
+    let has_sel = app.session.active().is_some_and(|d| !d.selection.items.is_empty());
+    let id = egui::Id::new("new_tag_name");
+    let mut name: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    ui.horizontal(|ui| {
+        ui.add(egui::TextEdit::singleline(&mut name).hint_text("New tag").desired_width(140.0));
+        if ui.button("New").clicked() && !name.trim().is_empty() {
+            match app.run("xml.newTag", json!({"name": name.trim()})) {
+                Ok(_) => name.clear(),
+                Err(e) => app.status(format!("Tags: {e}")),
+            }
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(id, name));
+    for tag in info["tags"].as_array().cloned().unwrap_or_default() {
+        let n = tag["name"].as_str().unwrap_or("").to_string();
+        let c = tag["color"].as_array().map(|a| a.iter().map(|v| v.as_u64().unwrap_or(0) as u8).collect::<Vec<_>>()).unwrap_or_default();
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+            if c.len() == 3 {
+                ui.painter().rect_filled(r, 2.0, egui::Color32::from_rgb(c[0], c[1], c[2]));
+            }
+            if ui.add_enabled(has_sel, egui::Button::new(&n).frame(false)).on_hover_text("Tag the selection").clicked() {
+                let _ = app.run("xml.tag", json!({"tag": n}));
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("Delete").clicked() {
+                    let _ = app.run("xml.deleteTag", json!({"name": n}));
+                }
+            });
+        });
+    }
+    if has_sel && ui.small_button("Untag Selection").clicked() {
+        let _ = app.run("xml.tag", json!({"tag": null}));
+    }
+    ui.separator();
+    ui.label(egui::RichText::new("Structure").strong());
+    let st = app.session.execute("xml.structure", &json!({})).unwrap_or_default();
+    ui.label(egui::RichText::new(st["root"].as_str().unwrap_or("Root")).size(11.0).color(t.text_dim));
+    for el in st["elements"].as_array().cloned().unwrap_or_default() {
+        let text = el["text"].as_str().unwrap_or("").chars().take(40).collect::<String>();
+        let label = format!("  <{}> {}", el["tag"].as_str().unwrap_or(""), text);
+        if ui.selectable_label(false, egui::RichText::new(label).size(11.0)).clicked() {
+            let _ = app.run("selection.set", json!({"ids": [el["id"]]}));
+        }
+    }
+    ui.separator();
+    ui.horizontal(|ui| {
+        if ui.button("Export XML…").clicked() {
+            let _ = app.run("app.exportXml", json!({}));
+        }
+        if ui.button("Import XML…").clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("xml"))
+            && let Err(e) = app.run("file.importXml", json!({"path": path}))
+        {
+            app.status(format!("Import XML: {e}"));
+        }
+    });
+}

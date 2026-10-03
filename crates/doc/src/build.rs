@@ -132,6 +132,7 @@ impl Document {
             inks: Default::default(),
             stroke_styles: vec![],
             articles: vec![],
+            xml: Default::default(),
             endnote_options: Default::default(),
             endnote_story: None,
             sections: vec![Section {

@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 92 | 4 | 1 | 97% |
-| P2 | 76 | 27 | 14 | 35 | 45% |
+| P2 | 76 | 27 | 18 | 31 | 47% |
 
 | Area | Parity |
 |---|---|
@@ -29,9 +29,9 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Tables | 92% |
 | Long documents | 88% |
 | Interactivity & digital | 75% |
-| Output & production | 75% |
-| XML & automation | 61% |
-| View & navigation | 86% |
+| Output & production | 78% |
+| XML & automation | 72% |
+| View & navigation | 88% |
 | Undo, history, saving | 100% |
 | Accessibility | 70% |
 
@@ -286,10 +286,10 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Output & production | Export IDML | P0 | D |
 | Output & production | Export EPUB/HTML | P2 | P |
 | Output & production | Export RTF/TXT/Tagged text | P2 | P |
-| Output & production | Export XML | P2 | M |
+| Output & production | Export XML | P2 | P |
 | Output & production | Separations / Flattener / Ink limit preview | P2 | M |
-| XML & automation | Tags panel, Structure | P2 | M |
-| XML & automation | Import/Export XML | P2 | M |
+| XML & automation | Tags panel, Structure | P2 | P |
+| XML & automation | Import/Export XML | P2 | P |
 | XML & automation | Data Merge | P2 | D |
 | XML & automation | Scripts panel | P2 | P |
 | XML & automation | Script Label | P2 | D |
@@ -303,7 +303,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | View & navigation | Overprint preview | P1 | D |
 | View & navigation | Rulers, guides, grids toggles | P0 | D |
 | View & navigation | Show/hide frame edges, threads, hidden chars | P0 | D |
-| View & navigation | Structure / tag markers | P2 | M |
+| View & navigation | Structure / tag markers | P2 | P |
 | View & navigation | Display performance | P0 | D |
 | View & navigation | Navigate pages | P0 | D |
 | View & navigation | Split window | P2 | M |

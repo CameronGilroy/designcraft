@@ -609,6 +609,23 @@ fn draw_frames(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
         for it in &sp.items {
             draw_item_edges(painter, xf, doc, it, a);
         }
+        // Tagged frames in their tag's colour.
+        if app.ui.tagged_frames {
+            for top in &sp.items {
+                top.walk(&mut |it: &Item| {
+                    if it.xml_tag.is_empty() {
+                        return;
+                    }
+                    let Some(t) = doc.xml.tags.iter().find(|t| t.name == it.xml_tag) else { return };
+                    let col = Color32::from_rgb(t.color[0], t.color[1], t.color[2]);
+                    for poly in path_screen(it, xf, a) {
+                        for w in poly.windows(2) {
+                            painter.line_segment([w[0], w[1]], Stroke::new(2.5, col));
+                        }
+                    }
+                });
+            }
+        }
     }
 }
 
