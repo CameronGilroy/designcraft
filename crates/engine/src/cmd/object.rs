@@ -438,6 +438,33 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "object.primaryTextFrame",
+            "Primary Text Frame",
+            ["Object"],
+            None,
+            "{on?: bool (default: toggle), ids?} — the selected text frame's story becomes the primary story (Smart Text Reflow adds and removes pages for it)",
+            has_selection,
+            |s, p| {
+                let ids = targets(s, p)?;
+                let sid = ids
+                    .iter()
+                    .find_map(|id| s.doc().ok()?.doc.item(*id)?.text_frame().map(|t| t.story))
+                    .ok_or_else(|| bad("object.primaryTextFrame", "select a text frame"))?;
+                let cur = s.doc()?.doc.settings.primary_story;
+                let on = p.get("on").and_then(Value::as_bool).unwrap_or(cur != Some(sid));
+                s.edit(|d, _| {
+                    d.settings.primary_story = if on {
+                        Some(sid)
+                    } else if cur == Some(sid) {
+                        None
+                    } else {
+                        cur
+                    };
+                    Ok(json!({"primary": on, "story": sid.0}))
+                })
+            }
+        ),
+        cmd!(
             "object.attributes",
             "Attributes",
             ["Window", "Output", "Attributes"],
@@ -1819,5 +1846,24 @@ mod fitting_tests {
         let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&s.doc().unwrap().doc)).unwrap();
         let g = back.spreads.iter().flat_map(|sp| sp.items.iter()).find_map(|i| i.graphic().cloned()).unwrap();
         assert_eq!(g.auto_fit, designcraft_doc::Fitting::FillProportionally);
+    }
+}
+
+#[cfg(test)]
+mod primary_frame_tests {
+    use super::*;
+
+    #[test]
+    fn toggle_primary_text_frame() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 300, 300], "content": "text", "text": "x", "caret": false})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        s.execute("object.primaryTextFrame", &json!({})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.settings.primary_story.map(|x| x.0), Some(sid));
+        s.execute("object.primaryTextFrame", &json!({})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.settings.primary_story, None, "toggles off");
+        let g = s.execute("frame.create", &json!({"rect": [0, 0, 10, 10]})).unwrap()["id"].clone();
+        assert!(s.execute("object.primaryTextFrame", &json!({"ids": [g]})).is_err());
     }
 }

@@ -349,6 +349,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:object.showAll",
             "-",
             "cmd:object.textFrameOptions",
+            "cmd:object.primaryTextFrame",
             "cmd:object.cornerOptions",
             "-",
             ">Effects",

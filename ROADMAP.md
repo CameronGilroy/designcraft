@@ -69,6 +69,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Variable font axes: Character panel sliders; any axis values (`fontStyle: "Bold {wght:650}"`) make that instance for layout, screen and PDF.
 - Image Import Options › Crop to for placed PDFs (`file.place {pdfCrop: crop|trim|bleed|art|media}`, Place PDF dialog): the frame shows that page box.
 - Stroke styles: striped (thick-thin… and custom bands), wavy and straight-hash strokes now draw on screen and in PDF; named custom stripe/dash/dot styles (`strokeStyle.new/delete/list`, Stroke panel Type list; IDML Striped/Dashed/DottedStrokeStyle).
+- Object ▸ Primary Text Frame (`object.primaryTextFrame`): any text frame's story can become (or stop being) the primary story Smart Text Reflow follows.
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.
