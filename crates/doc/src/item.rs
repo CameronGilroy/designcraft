@@ -498,12 +498,54 @@ pub struct Effects {
     pub inner_shadow: InnerShadow,
     #[serde(skip_serializing_if = "is_default")]
     pub outer_glow: OuterGlow,
+    #[serde(skip_serializing_if = "is_default")]
+    pub gradient_feather: GradientFeather,
+}
+
+/// Gradient Feather: the object fades from `start` to `end` opacity along a gradient.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GradientFeather {
+    pub on: bool,
+    pub radial: bool,
+    /// Degrees (linear), when no vector was dragged.
+    pub angle: f64,
+    pub start: f32,
+    pub end: f32,
+    /// Gradient Feather tool vector in the item's space: start and end (linear), centre and
+    /// radius point (radial).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector: Option<[f64; 4]>,
+}
+
+impl Default for GradientFeather {
+    fn default() -> Self {
+        GradientFeather { on: false, radial: false, angle: 0.0, start: 1.0, end: 0.0, vector: None }
+    }
+}
+
+impl GradientFeather {
+    /// The gradient's two points in item space for an object with inner bounds `b`.
+    pub fn points(&self, b: designcraft_geom::Rect) -> (designcraft_geom::Point, designcraft_geom::Point) {
+        use designcraft_geom::{Point, Vec2};
+        if let Some([x0, y0, x1, y1]) = self.vector {
+            return (Point::new(x0, y0), Point::new(x1, y1));
+        }
+        let c = b.center();
+        if self.radial {
+            return (c, c + Vec2::new(b.width().max(b.height()) / 2.0, 0.0));
+        }
+        let a = self.angle.to_radians();
+        let d = Vec2::new(a.cos(), -a.sin());
+        let half = (b.width() * d.x.abs() + b.height() * d.y.abs()) / 2.0;
+        (c - d * half, c + d * half)
+    }
 }
 
 impl Effects {
     /// Any effect drawn with soft (raster) filters?
     pub fn any(&self) -> bool {
-        self.drop_shadow.on || self.feather > 0.0 || self.inner_shadow.on || self.outer_glow.on
+        self.drop_shadow.on || self.feather > 0.0 || self.inner_shadow.on || self.outer_glow.on || self.gradient_feather.on
     }
 }
 

@@ -261,6 +261,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "type" => Box::new(text::TypeTool::default()),
         "pen" => Box::new(pen::PenTool::default()),
         "gradientSwatch" => Box::new(gradient::GradientTool::default()),
+        "gradientFeather" => Box::new(gradient::GradientTool::feather()),
         "pencil" => Box::new(pencil::PencilTool::default()),
         "smooth" => Box::new(pencil::PathDragTool::new(false)),
         "erase" => Box::new(pencil::PathDragTool::new(true)),

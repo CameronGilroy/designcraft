@@ -49,6 +49,15 @@ pub fn specs() -> Vec<CommandSpec> {
             pathfinder
         ),
         cmd!(
+            "object.gradientFeather",
+            "Gradient Feather",
+            ["Object", "Effects"],
+            None,
+            "{on?: true, radial?, angle?, start?: opacity 0–100 (100), end?: (0), from?: [x,y], to?: [x,y] (spread coords: the Gradient Feather tool's drag), ids?}",
+            has_selection,
+            gradient_feather
+        ),
+        cmd!(
             "path.split",
             "Split Path",
             [],
@@ -153,6 +162,40 @@ fn pathfinder(s: &mut Session, p: &Value) -> Result<Value> {
         it.corners = Default::default();
         *sel = Selection::items(vec![keep]);
         Ok(json!({"id": keep.0}))
+    })
+}
+
+fn gradient_feather(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = targets(s, p)?;
+    let p = p.clone();
+    s.edit(|d, _| {
+        for id in &ids {
+            let Some((_, xf)) = spread_xf(d, *id) else { continue };
+            let Some(it) = d.item_mut(*id) else { continue };
+            let gf = &mut it.effects.gradient_feather;
+            gf.on = p.get("on").and_then(Value::as_bool).unwrap_or(true);
+            if let Some(v) = p.get("radial").and_then(Value::as_bool) {
+                gf.radial = v;
+            }
+            if let Some(v) = p.get("angle").and_then(Value::as_f64) {
+                gf.angle = v;
+                gf.vector = None;
+            }
+            if let Some(v) = p.get("start").and_then(Value::as_f64) {
+                gf.start = (v / 100.0).clamp(0.0, 1.0) as f32;
+            }
+            if let Some(v) = p.get("end").and_then(Value::as_f64) {
+                gf.end = (v / 100.0).clamp(0.0, 1.0) as f32;
+            }
+            if let (Some(a), Some(b)) = (point_param(&p, "from"), point_param(&p, "to")) {
+                let inv = xf.inverse();
+                let (a, b) = (inv * a, inv * b);
+                if (b - a).hypot() > 1e-6 {
+                    gf.vector = Some([a.x, a.y, b.x, b.y]);
+                }
+            }
+        }
+        Ok(json!({"changed": ids.len()}))
     })
 }
 
@@ -368,6 +411,24 @@ mod tests {
         let bb = d.item(ItemId(a)).unwrap().bounds();
         assert!((bb.x1 - 300.0).abs() < 0.5 && (bb.x0 - 100.0).abs() < 0.5, "{bb:?}");
         assert!(s.execute("object.pathfinder", &json!({"op": "nope"})).is_err());
+    }
+
+    #[test]
+    fn gradient_feather_fades_on_screen_and_in_pdf() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let id = s.execute("frame.create", &json!({"rect": [100, 100, 300, 200]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.fill", &json!({"ids": [id], "swatch": "[Black]"})).unwrap();
+        s.execute("object.gradientFeather", &json!({"ids": [id], "from": [100, 150], "to": [300, 150]})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let mut rr = designcraft_render::Renderer::new();
+        rr.threads = 0;
+        let img = rr.render_page(&d, &s.cache, 0, 1.0, false, &Default::default()).unwrap();
+        let (l, m, r) = (img.pixel(105, 150)[0], img.pixel(200, 150)[0], img.pixel(295, 150)[0]);
+        assert!(l < 60 && m > l + 40 && r > 220, "fades left to right: {l} {m} {r}");
+        let pdf = designcraft_pdf::export_pdf(&d, &s.cache, &Default::default()).unwrap();
+        let t = String::from_utf8_lossy(&pdf);
+        assert!(t.contains("/SMask") || t.contains("/Luminosity"), "a soft mask");
     }
 
     #[test]

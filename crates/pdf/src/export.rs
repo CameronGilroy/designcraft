@@ -410,6 +410,63 @@ impl Exporter<'_> {
     }
 
     fn item(&mut self, s: &mut Surface, it: &Item, parent: Affine, page_name: Option<&str>) {
+        let gf = &it.effects.gradient_feather;
+        if !gf.on || it.hidden || it.nonprinting {
+            return self.item_inner(s, it, parent, page_name);
+        }
+        // Gradient feather: a luminosity mask (white = opaque) over the object.
+        let xf = parent * it.xf;
+        let (p0, p1) = gf.points(it.inner_bounds());
+        let gray = |a: f32| -> krilla::color::Color { luma::Color::new((a.clamp(0.0, 1.0) * 255.0).round() as u8).into() };
+        let stops = vec![
+            Stop { offset: NormalizedF32::ZERO, color: gray(gf.start), opacity: NormalizedF32::ONE },
+            Stop { offset: NormalizedF32::ONE, color: gray(gf.end), opacity: NormalizedF32::ONE },
+        ];
+        let paint: krilla::paint::Paint = if gf.radial {
+            let r = (p1 - p0).hypot().max(1e-3) as f32;
+            RadialGradient {
+                fx: p0.x as f32,
+                fy: p0.y as f32,
+                fr: 0.0,
+                cx: p0.x as f32,
+                cy: p0.y as f32,
+                cr: r,
+                transform: Transform::identity(),
+                spread_method: SpreadMethod::Pad,
+                stops,
+                anti_alias: false,
+            }
+            .into()
+        } else {
+            LinearGradient {
+                x1: p0.x as f32,
+                y1: p0.y as f32,
+                x2: p1.x as f32,
+                y2: p1.y as f32,
+                transform: Transform::identity(),
+                spread_method: SpreadMethod::Pad,
+                stops,
+                anti_alias: false,
+            }
+            .into()
+        };
+        let area = it.inner_bounds().inflate(it.stroke.extent() + 4.0, it.stroke.extent() + 4.0);
+        let mut sb = s.stream_builder();
+        let mut ms = sb.surface();
+        ms.push_transform(&tf(xf));
+        if let Some(p) = to_path(&area.to_path(0.1)) {
+            ms.set_fill(Some(Fill { paint, opacity: NormalizedF32::ONE, rule: FillRule::NonZero }));
+            ms.draw_path(&p);
+        }
+        ms.pop();
+        ms.finish();
+        let stream = sb.finish();
+        s.push_mask(krilla::mask::Mask::new(stream, krilla::mask::MaskType::Luminosity));
+        self.item_inner(s, it, parent, page_name);
+        s.pop();
+    }
+
+    fn item_inner(&mut self, s: &mut Surface, it: &Item, parent: Affine, page_name: Option<&str>) {
         if it.hidden || it.nonprinting {
             return;
         }

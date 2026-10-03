@@ -103,6 +103,13 @@ impl Renderer {
                 c.pop_layer();
             });
         }
+        // Gradient feather: the object (feathered or not) drawn in its own layer, then kept as
+        // much as the opacity gradient says.
+        let gf = &e.gradient_feather;
+        if gf.on {
+            ctx.set_transform(Affine::IDENTITY);
+            ctx.push_layer(None, None, None, None, None);
+        }
         // The object, feathered or not.
         if e.feather > 0.0 && it.path.is_closed() {
             let w = e.feather;
@@ -130,6 +137,25 @@ impl Renderer {
             });
         } else {
             self.draw_body(ctx, f, it, bp, xf, page_name);
+        }
+        if gf.on {
+            let (p0, p1) = gf.points(it.inner_bounds());
+            let stop = |o: f32, a: f32| peniko::ColorStop::from((o, peniko::Color::from_rgba8(0, 0, 0, (a.clamp(0.0, 1.0) * 255.0).round() as u8)));
+            let stops = [stop(0.0, gf.start), stop(1.0, gf.end)];
+            let grad = if gf.radial {
+                peniko::Gradient::new_radial(p0, (p1 - p0).hypot().max(1e-3) as f32).with_stops(stops.as_slice())
+            } else {
+                peniko::Gradient::new_linear(p0, p1).with_stops(stops.as_slice())
+            };
+            ctx.set_transform(Affine::IDENTITY);
+            ctx.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestIn)), None, None, None);
+            ctx.set_transform(f.view * xf);
+            ctx.set_paint(grad);
+            let area = if xf.determinant().abs() > 1e-12 { xf.inverse().transform_rect_bbox(reach) } else { it.inner_bounds() };
+            ctx.fill_rect(&area.inflate(4.0, 4.0));
+            ctx.reset_paint_transform();
+            ctx.pop_layer();
+            ctx.pop_layer();
         }
         // Inner shadow, clipped to the shape.
         if e.inner_shadow.on
