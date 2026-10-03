@@ -88,6 +88,12 @@ impl Cache {
             format!("{:?}", doc.footnote_options).hash(&mut h);
             sig.extend([doc.footnote_start(sid) as usize, h.finish() as usize]);
         }
+        // Hidden conditions take their text out of the layout.
+        for (i, c) in doc.conditions.iter().enumerate() {
+            if !c.visible {
+                sig.push(usize::MAX - i);
+            }
+        }
         // Advanced Type sizes super/subscripts.
         let a = doc.settings.advanced_type;
         sig.extend([a.superscript_size, a.superscript_position, a.subscript_size, a.subscript_position].map(|v| v.to_bits() as usize));

@@ -448,6 +448,8 @@ attr_set! {
         language: String = "English: USA".into(),
         /// Additional OpenType features, e.g. `["onum", "ss01"]`.
         otf_features: Vec<String> = Vec::new(),
+        /// Conditional text: the conditions applied (Window › Type & Tables › Conditional Text).
+        conditions: Vec<String> = Vec::new(),
     }
 }
 

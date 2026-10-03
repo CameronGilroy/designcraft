@@ -229,6 +229,19 @@ impl Renderer {
                 }
             }
         }
+        if f.opts.condition_indicators && !f.doc.conditions.is_empty() && cs.styles.iter().any(|s| s.condition.is_some()) {
+            ctx.set_transform(m);
+            let px = 1.0 / m.determinant().abs().sqrt().max(1e-9);
+            for l in &ft.lines {
+                for g in l.glyphs.iter().filter(|g| g.visible && g.adv > 0.0) {
+                    let Some(name) = cs.styles.get(g.style as usize).and_then(|s| s.condition.as_deref()) else { continue };
+                    let Some(c) = f.doc.conditions.iter().find(|c| c.name == name) else { continue };
+                    ctx.set_paint(peniko::Color::from_rgb8(c.color[0], c.color[1], c.color[2]));
+                    let y = l.baseline + l.descent * 0.6;
+                    ctx.fill_rect(&kurbo::Rect::new(g.x, y, g.x + g.adv, y + 2.0 * px));
+                }
+            }
+        }
         let scale = m.determinant().abs().sqrt();
         let greek_px = f.opts.greek_below_px;
         let mut greek = BezPath::new();

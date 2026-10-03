@@ -310,6 +310,13 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.circle(10.0, 10.0, 7.0);
             pen.line(&[(6.5, 10.0), (9.0, 12.5), (13.5, 7.5)]);
         }
+        "panel-conditions" => {
+            // Text lines, one marked.
+            pen.line(&[(3.0, 6.0), (17.0, 6.0)]);
+            pen.line(&[(3.0, 10.0), (17.0, 10.0)]);
+            pen.line(&[(3.0, 14.0), (11.0, 14.0)]);
+            pen.line(&[(3.0, 16.5), (11.0, 16.5)]);
+        }
         "panel-attributes" => {
             // Two overlapping inks: overprint.
             pen.rect(3.0, 3.0, 13.0, 13.0);

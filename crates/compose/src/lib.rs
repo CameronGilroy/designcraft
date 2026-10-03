@@ -56,6 +56,8 @@ pub struct RunStyle {
     pub missing_font: bool,
     /// Tracking or manual kerning (Highlight Custom Tracking/Kerning).
     pub custom_tracking: bool,
+    /// The first condition applied (its indicator colour underlines the text on screen).
+    pub condition: Option<String>,
 }
 
 /// An underline or strikethrough bar: its top edge `offset` below the baseline (negative =
@@ -453,6 +455,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             page_name: opts.page_name.clone().or_else(|| cur_frame.and_then(|f| f.page_name.clone())),
             section_marker: None,
             vars: var_values,
+            hidden_conditions: doc.conditions.iter().filter(|c| !c.visible).map(|c| c.name.clone()).collect(),
             ..Default::default()
         };
         if !story.objects.is_empty() {
@@ -1501,7 +1504,8 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
         || g.ch == story::INDENT_HERE
         || g.ch == story::RIGHT_INDENT_TAB
         || g.ch == story::TABLE_ANCHOR
-        || g.ch == shape::SOFT_HYPHEN);
+        || g.ch == shape::SOFT_HYPHEN
+        || g.ch == shape::HIDDEN);
     PlacedGlyph {
         face: g.face,
         gid: g.gid,

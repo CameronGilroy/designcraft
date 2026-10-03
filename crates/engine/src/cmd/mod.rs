@@ -3,6 +3,7 @@
 mod anchored;
 pub mod anchors;
 mod captions;
+mod conditions;
 mod datamerge;
 mod edit;
 mod export;
@@ -136,6 +137,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(anchors::specs());
         v.extend(paths::specs());
         v.extend(captions::specs());
+        v.extend(conditions::specs());
         v.extend(lists::specs());
         v.extend(path_type::specs());
         v.extend(qr::specs());

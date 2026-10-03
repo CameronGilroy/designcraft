@@ -287,6 +287,17 @@ impl<'a> Ex<'a> {
                 .attr("ContinueNumbersAcrossDocuments", "false"),
         );
         root.push(El::new("idPkg:Preferences").attr("src", "Resources/Preferences.xml"));
+        for c in &d.conditions {
+            root.push(
+                El::new("Condition")
+                    .attr("Self", format!("Condition/{}", escape_id(&c.name)))
+                    .attr("Name", &c.name)
+                    .attr("IndicatorColor", format!("{} {} {}", c.color[0], c.color[1], c.color[2]))
+                    .attr("IndicatorMethod", "UseUnderline")
+                    .attr("UnderlineIndicatorAppearance", "Solid")
+                    .attr("Visible", bool_s(c.visible)),
+            );
+        }
         // Variables InDesign's cross-reference page/chapter blocks rely on.
         for (name, ty) in [("XRefChapterNumber", "XrefChapterNumberType"), ("XRefPageNumber", "XrefPageNumberType")] {
             let n = format!("<?AID 001b?>TV {name}");
@@ -996,6 +1007,9 @@ impl<'a> Ex<'a> {
         }
         if let Some(v) = a.no_break {
             el.set("NoBreak", bool_s(v));
+        }
+        if let Some(list) = &a.conditions {
+            el.set("AppliedConditions", list.iter().map(|c| format!("Condition/{}", escape_id(c))).collect::<Vec<_>>().join(" "));
         }
         if let Some(v) = &a.language {
             el.set("AppliedLanguage", format!("$ID/{v}"));

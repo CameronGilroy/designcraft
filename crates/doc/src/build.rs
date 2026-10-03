@@ -127,6 +127,7 @@ impl Document {
             styles: Arc::new(Styles::default()),
             swatches: designcraft_color::default_swatches(),
             color_groups: vec![],
+            conditions: vec![],
             sections: vec![Section {
                 start: 0,
                 start_number: Some(nd.start_page.max(1)),

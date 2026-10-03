@@ -92,6 +92,10 @@ pub fn rtf(doc: &Document, story: &Story) -> String {
                 continue;
             }
             let cp = styles.resolve_char(&base, f);
+            // Hidden conditional text isn't exported.
+            if doc.conditions_hide(&cp.conditions) {
+                continue;
+            }
             if !fonts.contains(&cp.font_family) {
                 fonts.push(cp.font_family.clone());
             }

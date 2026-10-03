@@ -221,6 +221,10 @@ pub fn story_html(doc: &Document, sid: StoryId) -> String {
             if a >= b {
                 continue;
             }
+            // Hidden conditional text isn't exported.
+            if f.over.conditions.as_deref().is_some_and(|c| doc.conditions_hide(c)) {
+                continue;
+            }
             let raw = &st.text[a..b];
             let t = if raw.chars().any(|c| designcraft_doc::vars::var_index(c).is_some()) {
                 let sub: String = raw

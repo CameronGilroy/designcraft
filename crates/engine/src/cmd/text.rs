@@ -496,7 +496,7 @@ pub(crate) struct Target {
 
 /// Ranges and stories a formatting command applies to: selected table cells (whole cells), the
 /// text selection, or whole stories of the selected text frames.
-fn format_targets(s: &Session) -> Vec<Target> {
+pub(crate) fn format_targets(s: &Session) -> Vec<Target> {
     let Some(st) = s.active() else { return vec![] };
     if let Some(ts) = st.selection.cells
         && let Some(t) = st.doc.story(ts.story).and_then(|x| x.tables.get(&ts.table))

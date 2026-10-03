@@ -77,7 +77,12 @@ pub struct SubstCtx {
     pub xrefs: HashMap<usize, String>,
     /// Anchored objects by story byte of their mark.
     pub objects: HashMap<usize, ObjectSpec>,
+    /// Conditions currently hidden (conditional text with only these isn't shown).
+    pub hidden_conditions: Vec<String>,
 }
+
+/// The stand-in character of hidden conditional text: no width, no break, not drawn.
+pub const HIDDEN: char = '\u{2060}';
 
 /// Size and placement of an anchored object for line layout.
 #[derive(Clone, Copy, Debug, Default)]
@@ -126,6 +131,7 @@ impl StyleTable<'_> {
                 .entry(p.font_family.clone())
                 .or_insert_with(|| !p.font_family.is_empty() && !designcraft_fonts::FontDb::global().has_family(&p.font_family)),
             custom_tracking: p.tracking.abs() > 1e-9 || matches!(p.kerning, designcraft_doc::Kerning::Manual(_)),
+            condition: p.conditions.first().cloned(),
         };
         if let Some(i) = self.styles.iter().rposition(|s| *s == rs) {
             return i as u32;
@@ -186,6 +192,21 @@ pub(crate) fn shape_para(
         };
         let props = styles.resolve_char(para_chars, fmt);
         let style = table.intern(&props);
+        if !props.conditions.is_empty() && props.conditions.iter().all(|c| sub.hidden_conditions.contains(c)) {
+            // Hidden conditional text: zero-width, unbreakable, undrawn place-holders keep every
+            // byte addressable (caret, selection) without taking space.
+            let face = db.face(&props.font_family, &props.font_style);
+            for (i, c) in story.text[a..b].char_indices() {
+                if c == '\n' {
+                    continue;
+                }
+                let mut g = control_glyph(&face, &props, auto_leading, style, a + i, c);
+                g.ch = HIDDEN;
+                (g.ascent, g.descent, g.leading, g.cap, g.xh) = (0.0, 0.0, 0.0, 0.0, 0.0);
+                glyphs.push(g);
+            }
+            continue;
+        }
         if !story.text[a..b].contains(designcraft_doc::FOOTNOTE_REF) {
             shape_run(db, &story.text, a..b, &props, auto_leading, style, sub, &mut glyphs);
             continue;

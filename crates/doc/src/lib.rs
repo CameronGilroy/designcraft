@@ -131,6 +131,23 @@ impl Default for NumberedList {
     }
 }
 
+/// A conditional-text condition: its indicator colour (screen only) and whether text with it shows.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Condition {
+    pub name: String,
+    pub color: [u8; 3],
+    pub visible: bool,
+}
+
+impl Document {
+    /// Is text with these conditions hidden? (Conditioned text shows while any of its conditions
+    /// is visible.)
+    pub fn conditions_hide(&self, conds: &[String]) -> bool {
+        !conds.is_empty() && conds.iter().all(|c| self.conditions.iter().any(|x| x.name == *c && !x.visible))
+    }
+}
+
 /// A Swatches panel colour group: a named folder of swatches (by name).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -305,6 +322,9 @@ pub struct Document {
     /// the top level.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub color_groups: Vec<ColorGroup>,
+    /// Conditional text conditions; text whose conditions are all hidden isn't composed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<Condition>,
     pub sections: Vec<Section>,
     #[serde(default)]
     pub assets: BTreeMap<AssetId, Arc<Asset>>,

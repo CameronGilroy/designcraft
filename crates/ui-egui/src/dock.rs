@@ -30,6 +30,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     ("info", "Info", "panel-info"),
     ("preflight", "Preflight", "panel-preflight"),
     ("attributes", "Attributes", "panel-attributes"),
+    ("conditions", "Conditional Text", "panel-conditions"),
 ];
 
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
@@ -165,6 +166,7 @@ pub fn panel_body(app: &mut DesignApp, ui: &mut egui::Ui, id: &str) {
         "links" => panels::properties::links_panel(app, ui),
         "preflight" => panels::properties::preflight_panel(app, ui),
         "attributes" => panels::properties::attributes_panel(app, ui),
+        "conditions" => panels::conditions::show(app, ui),
         "table" => panels::table::show(app, ui),
         _ => panels::properties::info_panel(app, ui),
     }

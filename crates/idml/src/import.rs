@@ -98,6 +98,8 @@ struct Importer<'r> {
     /// Unnamed swatches (gradients) added on first use.
     hidden_swatches: HashMap<String, Swatch>,
     color_groups: Vec<designcraft_doc::ColorGroup>,
+    conditions: Vec<designcraft_doc::Condition>,
+    condition_names: HashMap<String, String>,
     styles: Styles,
     para_names: HashMap<String, String>,
     char_names: HashMap<String, String>,
@@ -177,6 +179,8 @@ impl<'r> Importer<'r> {
             hidden_colors: HashMap::new(),
             hidden_swatches: HashMap::new(),
             color_groups: Vec::new(),
+            conditions: Vec::new(),
+            condition_names: HashMap::new(),
             styles,
             para_names: HashMap::new(),
             char_names: HashMap::new(),
@@ -618,6 +622,20 @@ impl<'r> Importer<'r> {
     // ---------- styles ----------
 
     fn styles(&mut self, top: &[El]) {
+        for e in top.iter().filter(|e| e.local() == "Condition") {
+            let (Some(id), Some(name)) = (e.get("Self"), e.get("Name")) else { continue };
+            // Indicator colours: "r g b" (0–255) or a UI colour name (kept as the default blue).
+            let nums: Vec<u8> = e
+                .get("IndicatorColor")
+                .unwrap_or("")
+                .split_whitespace()
+                .filter_map(|x| x.parse::<f64>().ok())
+                .map(|x| x.clamp(0.0, 255.0) as u8)
+                .collect();
+            let color = if nums.len() == 3 { [nums[0], nums[1], nums[2]] } else { [79, 153, 255] };
+            self.condition_names.insert(id.to_string(), name.to_string());
+            self.conditions.push(designcraft_doc::Condition { name: name.to_string(), color, visible: e.get("Visible") != Some("false") });
+        }
         for e in top.iter().filter(|e| e.local() == "NumberingList") {
             let name = e.get("Name").unwrap_or("").to_string();
             if !name.is_empty() && !name.starts_with("$ID/") && !self.lists.iter().any(|l| l.name == name) {
@@ -1004,6 +1022,12 @@ impl<'r> Importer<'r> {
             a.otf_features = Some(otf_list);
         }
         a.no_break = e.boolean("NoBreak");
+        if let Some(v) = e.get("AppliedConditions").filter(|v| !v.trim().is_empty()) {
+            let names: Vec<String> = v.split_whitespace().filter_map(|r| self.condition_names.get(r).cloned()).collect();
+            if !names.is_empty() {
+                a.conditions = Some(names);
+            }
+        }
         a.language = e.prop("AppliedLanguage").map(|l| l.trim().trim_start_matches("$ID/").to_string());
         a
     }
@@ -1956,6 +1980,7 @@ impl<'r> Importer<'r> {
             styles: Arc::new(std::mem::take(&mut self.styles)),
             swatches: std::mem::take(&mut self.swatches),
             color_groups: std::mem::take(&mut self.color_groups),
+            conditions: std::mem::take(&mut self.conditions),
             sections: std::mem::take(&mut self.sections),
             assets: std::mem::take(&mut self.assets),
             hyperlinks: vec![],
