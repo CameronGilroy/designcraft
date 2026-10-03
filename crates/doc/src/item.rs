@@ -450,6 +450,19 @@ fn center_ref() -> u8 {
     4
 }
 
+/// Liquid Layout object rules: which edges stay at their distance from the page edge, and
+/// whether the object may stretch.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ObjectLiquid {
+    pub resize_width: bool,
+    pub resize_height: bool,
+    pub pin_top: bool,
+    pub pin_bottom: bool,
+    pub pin_left: bool,
+    pub pin_right: bool,
+}
+
 /// A button's On Release action.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -728,6 +741,9 @@ pub struct Item {
     /// Alternative text (Object Export Options) for tagged PDF and EPUB.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub alt_text: String,
+    /// Liquid Layout (object-based pages): pins and resize permissions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liquid: Option<ObjectLiquid>,
     /// Buttons and Forms: what clicking this object does in an interactive PDF.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub button: Option<ButtonAction>,
@@ -780,6 +796,7 @@ impl Item {
             alt_text: String::new(),
             xml_tag: String::new(),
             button: None,
+            liquid: None,
             states: Vec::new(),
             active_state: 0,
             isolate: false,

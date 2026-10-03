@@ -40,6 +40,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     ("book", "Book", "panel-library"),
     ("states", "Object States", "panel-articles"),
     ("buttons", "Buttons and Forms", "panel-articles"),
+    ("liquid", "Liquid Layout", "panel-pages"),
 ];
 
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
@@ -185,6 +186,7 @@ pub fn panel_body(app: &mut DesignApp, ui: &mut egui::Ui, id: &str) {
         "book" => panels::library::book(app, ui),
         "states" => panels::interactive::states(app, ui),
         "buttons" => panels::interactive::buttons(app, ui),
+        "liquid" => panels::interactive::liquid(app, ui),
         "table" => panels::table::show(app, ui),
         _ => panels::properties::info_panel(app, ui),
     }

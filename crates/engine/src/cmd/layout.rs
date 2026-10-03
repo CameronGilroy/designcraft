@@ -278,6 +278,18 @@ pub fn specs() -> Vec<CommandSpec> {
                     }
                     let w = p.get("width").and_then(Value::as_f64);
                     let h = p.get("height").and_then(Value::as_f64);
+                    // Pages with a liquid rule re-flow their objects (Adjust Layout aside).
+                    let liquid_before: Vec<(usize, usize, designcraft_geom::Rect)> = if adjust {
+                        vec![]
+                    } else {
+                        d.spreads
+                            .iter()
+                            .enumerate()
+                            .flat_map(|(si, sp)| {
+                                sp.pages.iter().enumerate().filter(|(_, pg)| !pg.liquid.is_off()).map(move |(pi, pg)| (si, pi, pg.bounds()))
+                            })
+                            .collect()
+                    };
                     if w.is_some() || h.is_some() {
                         d.settings.page_width = w.unwrap_or(d.settings.page_width);
                         d.settings.page_height = h.unwrap_or(d.settings.page_height);
@@ -293,6 +305,9 @@ pub fn specs() -> Vec<CommandSpec> {
                     d.repaginate();
                     if let Some(b) = before {
                         adjust_layout(d, &b);
+                    }
+                    for (si, pi, old) in liquid_before {
+                        super::liquid::apply(d, designcraft_doc::SpreadRef::Doc(si), pi, old);
                     }
                     Ok(document_setup(d))
                 })
@@ -605,10 +620,20 @@ fn page_size(s: &mut crate::Session, p: &Value) -> Result<Value> {
         h = Some(pr.height);
     }
     s.edit(|d, _| {
-        for page in &pages {
+        resize_pages(d, &pages, w, h);
+        Ok(json!({"pages": pages.len()}))
+    })
+}
+
+/// Give `pages` (1-based) their own size. Objects stay on their page; pages with a liquid rule
+/// re-flow their objects by it.
+pub(crate) fn resize_pages(d: &mut designcraft_doc::Document, pages: &[usize], w: Option<f64>, h: Option<f64>) {
+    {
+        for page in pages {
             let Some((si, pi)) = d.page_loc(page - 1) else { continue };
             let sp = std::sync::Arc::make_mut(&mut d.spreads[si]);
             let old: Vec<f64> = sp.pages.iter().map(|x| x.x).collect();
+            let old_bounds = sp.pages[pi].bounds();
             let pg = &mut sp.pages[pi];
             let dw = w.map_or(0.0, |w| w.max(1.0) - pg.width);
             if let Some(w) = w {
@@ -638,9 +663,20 @@ fn page_size(s: &mut crate::Session, p: &Value) -> Result<Value> {
                     it.xf = designcraft_geom::Affine::translate((*dx, 0.0)) * it.xf;
                 }
             }
+            // Page guides move with their page.
+            for (k, q) in sp.pages.iter_mut().enumerate() {
+                let dx = new[k] - old[k];
+                if dx != 0.0 {
+                    for g in q.guides.iter_mut().filter(|g| g.orientation == designcraft_doc::Orientation::Vertical) {
+                        g.position += dx;
+                    }
+                }
+            }
+            // Liquid rules: objects were carried along with the page's left edge.
+            let moved = old_bounds + designcraft_geom::Vec2::new(new[pi] - old[pi], 0.0);
+            super::liquid::apply(d, designcraft_doc::SpreadRef::Doc(si), pi, moved);
         }
-        Ok(json!({"pages": pages.len()}))
-    })
+    }
 }
 
 /// File › Document Setup values.

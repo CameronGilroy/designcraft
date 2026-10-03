@@ -568,7 +568,13 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
                         (Point::new(g.position + off.x, span.y0), Point::new(g.position + off.x, span.y1))
                     }
                 };
-                painter.line_segment([xf.to_screen(a), xf.to_screen(bb)], Stroke::new(hair(painter), Color32::from_rgb(74, 227, 255)));
+                let stroke = Stroke::new(hair(painter), Color32::from_rgb(74, 227, 255));
+                if g.liquid {
+                    // Liquid guides are dashed.
+                    painter.extend(egui::Shape::dashed_line(&[xf.to_screen(a), xf.to_screen(bb)], stroke, 6.0, 3.0));
+                } else {
+                    painter.line_segment([xf.to_screen(a), xf.to_screen(bb)], stroke);
+                }
             }
         }
     }

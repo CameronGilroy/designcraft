@@ -219,6 +219,7 @@ impl Document {
             overridden: vec![],
             guides: vec![],
             show_parent_items: true,
+            liquid: Default::default(),
         }
     }
 

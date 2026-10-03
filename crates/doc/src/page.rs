@@ -63,6 +63,9 @@ pub struct Guide {
     /// The layer the guide is on: hidden with it, locked with it (`None` = always shown).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<crate::LayerId>,
+    /// Liquid guide: objects it crosses stretch when a guide-based page changes size.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub liquid: bool,
 }
 
 impl Guide {
@@ -108,6 +111,31 @@ pub struct Page {
     /// Show parent items on this page.
     #[serde(default = "yes")]
     pub show_parent_items: bool,
+    /// Liquid page rule: how objects follow when the page changes size.
+    #[serde(default, skip_serializing_if = "LiquidRule::is_off")]
+    pub liquid: LiquidRule,
+}
+
+/// Liquid Layout page rules.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LiquidRule {
+    #[default]
+    Off,
+    /// Everything scales uniformly (letterboxed, centred).
+    Scale,
+    /// Everything keeps its size, centred on the new page.
+    ReCenter,
+    /// Objects crossed by liquid guides stretch; the rest keep their size.
+    GuideBased,
+    /// Each object's pins and resize settings decide (`Item::liquid`).
+    ObjectBased,
+}
+
+impl LiquidRule {
+    pub fn is_off(&self) -> bool {
+        *self == LiquidRule::Off
+    }
 }
 
 fn yes() -> bool {
@@ -244,6 +272,7 @@ mod tests {
             overridden: vec![],
             guides: vec![],
             show_parent_items: true,
+            liquid: Default::default(),
         }
     }
 

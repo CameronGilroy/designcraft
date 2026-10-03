@@ -1650,6 +1650,7 @@ impl<'r> Importer<'r> {
                 overridden: vec![],
                 guides: Vec::<Guide>::new(),
                 show_parent_items: show,
+                liquid: Default::default(),
             });
         }
         let overrides: Vec<Vec<String>> =

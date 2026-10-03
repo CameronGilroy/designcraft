@@ -92,7 +92,7 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit(|d, _| {
         let sp = d.spread_mut(r).ok_or_else(|| bad("guide.add", "no such spread"))?;
         let pg = sp.pages.get_mut(pi).ok_or_else(|| bad("guide.add", "no such page"))?;
-        pg.guides.push(Guide { orientation: o, position: pos, spread: spread_guide, locked: false, layer: Some(layer) });
+        pg.guides.push(Guide { orientation: o, position: pos, spread: spread_guide, locked: false, layer: Some(layer), liquid: false });
         Ok(json!({"page": pi, "index": pg.guides.len() - 1}))
     })
 }
@@ -171,11 +171,25 @@ fn create_guides(s: &mut Session, p: &Value) -> Result<Value> {
             }
             let area: Rect = if to_page { pg.bounds() } else { pg.margin_rect() };
             for y in grid_positions(area.y0, area.y1, rows, rg) {
-                pg.guides.push(Guide { orientation: Orientation::Horizontal, position: y, spread: false, locked: false, layer: Some(layer) });
+                pg.guides.push(Guide {
+                    orientation: Orientation::Horizontal,
+                    position: y,
+                    spread: false,
+                    locked: false,
+                    layer: Some(layer),
+                    liquid: false,
+                });
                 n += 1;
             }
             for x in grid_positions(area.x0, area.x1, cols, cg) {
-                pg.guides.push(Guide { orientation: Orientation::Vertical, position: x, spread: false, locked: false, layer: Some(layer) });
+                pg.guides.push(Guide {
+                    orientation: Orientation::Vertical,
+                    position: x,
+                    spread: false,
+                    locked: false,
+                    layer: Some(layer),
+                    liquid: false,
+                });
                 n += 1;
             }
         }

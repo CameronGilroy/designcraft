@@ -860,7 +860,7 @@ fn union_bounds(d: &Document, ids: &[ItemId]) -> Rect {
 }
 
 /// Transform an item's geometry in its own space: the path and the gradient vector with it.
-fn bake(it: &mut Item, inner: Affine) {
+pub(crate) fn bake(it: &mut Item, inner: Affine) {
     it.path.transform(inner);
     if let Some([x0, y0, x1, y1]) = it.fill.gradient_vector {
         let (a, b) = (inner * Point::new(x0, y0), inner * Point::new(x1, y1));
