@@ -87,6 +87,9 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
         None,
         "{name: Essentials|Advanced|Book|Digital Publishing|Interactive for PDF|Printing and Proofing|Typography}",
     ),
+    ("window.newWorkspace", "New Workspace…", None, "{name} — saves the current bars and panel arrangement"),
+    ("window.deleteWorkspace", "Delete Workspace…", None, "{name}"),
+    ("window.resetWorkspace", "Reset Workspace", None, "{} — back to the current workspace as saved (or its defaults)"),
     ("window.brightness", "Interface Color Theme", None, "{brightness: dark|mediumDark|mediumLight|light|highContrast}"),
 ];
 
@@ -907,8 +910,56 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(json!({"url": url}))
         }
         "window.toolsDoubleColumn" => flag(&mut app.ui.tools_double_column),
+        "window.newWorkspace" => {
+            let Some(name) = p.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()) else {
+                app.ui.dialog = Some(crate::dialogs::Dialog::new("newWorkspace", json!({"name": ""})));
+                return Some(Ok(Value::Null));
+            };
+            let u = &app.ui;
+            let w = crate::SavedWorkspace {
+                name: name.to_string(),
+                control_bar: u.control_bar,
+                task_bar: u.task_bar,
+                tools_double_column: u.tools_double_column,
+                dock_tab: u.dock_tab.clone(),
+                dock_expanded: u.dock_expanded,
+                open_panel: u.open_panel.clone(),
+                floating: u.floating.clone(),
+            };
+            app.ui.custom_workspaces.retain(|x| x.name != name);
+            app.ui.custom_workspaces.push(w);
+            app.ui.workspace = name.to_string();
+            Ok(Value::Null)
+        }
+        "window.deleteWorkspace" => {
+            let name = p.get("name").and_then(Value::as_str).unwrap_or("");
+            let n = app.ui.custom_workspaces.len();
+            app.ui.custom_workspaces.retain(|x| x.name != name);
+            if app.ui.custom_workspaces.len() == n {
+                return Some(Err(format!("no saved workspace `{name}`")));
+            }
+            if app.ui.workspace == name {
+                app.ui.workspace = "Essentials".into();
+            }
+            Ok(Value::Null)
+        }
+        "window.resetWorkspace" => {
+            let name = app.ui.workspace.clone();
+            return run_ui(app, "window.workspace", &json!({"name": name}));
+        }
         "window.workspace" => {
             let name = p.get("name").and_then(Value::as_str).unwrap_or("Essentials");
+            if let Some(w) = app.ui.custom_workspaces.iter().find(|w| w.name == name).cloned() {
+                app.ui.control_bar = w.control_bar;
+                app.ui.task_bar = w.task_bar;
+                app.ui.tools_double_column = w.tools_double_column;
+                app.ui.dock_tab = w.dock_tab;
+                app.ui.dock_expanded = w.dock_expanded;
+                app.ui.open_panel = w.open_panel;
+                app.ui.floating = w.floating;
+                app.ui.workspace = w.name;
+                return Some(Ok(Value::Null));
+            }
             // Workspaces choose which bars and panels are visible.
             app.ui.control_bar = matches!(name, "Advanced" | "Typography" | "Printing and Proofing" | "Book");
             app.ui.dock_tab = if name == "Typography" { "properties".into() } else { app.ui.dock_tab.clone() };
@@ -1558,5 +1609,23 @@ mod tests {
         assert!(special.is_some_and(|c| c.iter().any(|i| matches!(i, Item::Sub(n, _) if n == "Symbols"))));
         // Fixed-parameter variants keep their own labels.
         assert!(all.iter().any(|(l, id, p)| l == "Fill Frame Proportionally" && id == "object.fit" && p["mode"] == "fillProportionally"));
+    }
+
+    #[test]
+    fn custom_workspaces_save_apply_and_delete() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.ui.dock_tab = "swatches".into();
+        app.ui.control_bar = true;
+        run_ui(&mut app, "window.newWorkspace", &json!({"name": "Mine"})).unwrap().unwrap();
+        run_ui(&mut app, "window.workspace", &json!({"name": "Essentials"})).unwrap().unwrap();
+        app.ui.dock_tab = "properties".into();
+        run_ui(&mut app, "window.workspace", &json!({"name": "Mine"})).unwrap().unwrap();
+        assert_eq!((app.ui.dock_tab.as_str(), app.ui.control_bar, app.ui.workspace.as_str()), ("swatches", true, "Mine"));
+        app.ui.dock_tab = "layers".into();
+        run_ui(&mut app, "window.resetWorkspace", &json!({})).unwrap().unwrap();
+        assert_eq!(app.ui.dock_tab, "swatches", "reset to the saved arrangement");
+        run_ui(&mut app, "window.deleteWorkspace", &json!({"name": "Mine"})).unwrap().unwrap();
+        assert!(app.ui.custom_workspaces.is_empty());
+        assert_eq!(app.ui.workspace, "Essentials");
     }
 }

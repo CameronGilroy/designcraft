@@ -63,6 +63,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Font menu: search, favourites (stars, Show Favorites Only; `favoriteFonts` preference) and each family previewed in its own face.
 - Application preferences (engine `Prefs`) now persist across launches (desktop: prefs.json beside ui.json).
 - View ▸ Fit Selection in Window (⌥⌘=) and Find/Change ▸ Object (`find.objects`, `find.changeObjects`: by fill, stroke, weight, opacity, kind, layer, label).
+- Custom workspaces (`window.newWorkspace/deleteWorkspace/resetWorkspace`; workspace switcher shows the current one): bars and panel arrangement saved by name.
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.

@@ -641,6 +641,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "findFont" => "Find/Replace Font",
         "polygonSettings" => "Polygon Settings",
         "userDictionary" => "User Dictionary",
+        "newWorkspace" => "New Workspace",
         "fittingOptions" => "Frame Fitting Options",
         "qrCode" => "Generate QR Code",
         "preferences" => "Preferences",
@@ -850,6 +851,13 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
             "userDictionary" => user_dictionary(app, ui, &mut d),
+            "newWorkspace" => {
+                ui.horizontal(|ui| {
+                    ui.label("Name:");
+                    text_field(ui, &mut d, "name", 220.0);
+                });
+                ui.label(egui::RichText::new("Saves which bars show and where the panels are.").size(10.5));
+            }
             "fittingOptions" => {
                 check(ui, &mut d, "autoFit", "Auto-Fit");
                 ui.add_space(4.0);
@@ -1191,6 +1199,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             doc["overprintBlack"] = json!(d.b("overprintBlack"));
             app.run("document.preferences", doc)
         }
+        "newWorkspace" => app.run("window.newWorkspace", json!({"name": d.s("name")})),
         "fittingOptions" => {
             let m = |k: &str| d.fields.get(k).and_then(Value::as_str).and_then(|s| parse_measure(s, Unit::Points).ok()).unwrap_or(0.0);
             app.run(

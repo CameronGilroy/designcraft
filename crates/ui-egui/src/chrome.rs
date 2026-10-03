@@ -42,14 +42,38 @@ pub fn app_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
                     icons::paint(ui.painter(), egui::Rect::from_min_size(r.min + vec2(3.0, 2.0), vec2(14.0, 14.0)), "search", t.icon);
                     ui.painter().text(r.min + vec2(20.0, 9.0), egui::Align2::LEFT_CENTER, "Search", egui::FontId::proportional(11.0), t.text_dim);
                     ui.add_space(8.0);
-                    ui.menu_button(egui::RichText::new("Essentials ▾").font(semibold(11.5)).color(t.text), |ui| {
+                    let current = app.ui.workspace.clone();
+                    ui.menu_button(egui::RichText::new(format!("{current} ▾")).font(semibold(11.5)).color(t.text), |ui| {
+                        let customs: Vec<String> = app.ui.custom_workspaces.iter().map(|w| w.name.clone()).collect();
                         for w in
                             ["Essentials", "Advanced", "Book", "Digital Publishing", "Interactive for PDF", "Printing and Proofing", "Typography"]
+                                .into_iter()
+                                .map(str::to_string)
+                                .chain(customs.iter().cloned())
                         {
-                            if ui.button(w).clicked() {
+                            if ui.selectable_label(w == current, &w).clicked() {
                                 let _ = app.run("window.workspace", json!({"name": w}));
                                 ui.close();
                             }
+                        }
+                        ui.separator();
+                        if ui.button(format!("Reset {current}")).clicked() {
+                            let _ = app.run("window.resetWorkspace", json!({}));
+                            ui.close();
+                        }
+                        if ui.button("New Workspace…").clicked() {
+                            let _ = app.run("window.newWorkspace", json!({}));
+                            ui.close();
+                        }
+                        if !customs.is_empty() {
+                            ui.menu_button("Delete Workspace", |ui| {
+                                for w in &customs {
+                                    if ui.button(w).clicked() {
+                                        let _ = app.run("window.deleteWorkspace", json!({"name": w}));
+                                        ui.close();
+                                    }
+                                }
+                            });
                         }
                     });
                     ui.add_space(6.0);

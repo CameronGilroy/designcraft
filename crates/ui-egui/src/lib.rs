@@ -70,6 +70,20 @@ pub enum ScreenMode {
     Presentation,
 }
 
+/// A saved workspace: which bars show and where the panels are.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SavedWorkspace {
+    pub name: String,
+    pub control_bar: bool,
+    pub task_bar: bool,
+    pub tools_double_column: bool,
+    pub dock_tab: String,
+    pub dock_expanded: bool,
+    pub open_panel: Option<String>,
+    pub floating: Vec<(String, [f32; 2])>,
+}
+
 /// Persisted UI state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -104,6 +118,8 @@ pub struct UiState {
     pub dock_expanded: bool,
     pub units: Unit,
     pub workspace: String,
+    /// Window › Workspace › New Workspace: saved panel arrangements.
+    pub custom_workspaces: Vec<SavedWorkspace>,
     /// Transform reference point (0..8, row-major; 0 = top-left).
     pub ref_point: u8,
     /// Align To target (`selection`, `keyObject`, `margins`, `page`, `spread`).
@@ -153,6 +169,7 @@ impl Default for UiState {
             dock_expanded: true,
             units: Unit::Picas,
             workspace: "Essentials".into(),
+            custom_workspaces: Vec::new(),
             ref_point: 0,
             align_to: "selection".into(),
             text_style_tab: 0,
