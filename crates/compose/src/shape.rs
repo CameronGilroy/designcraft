@@ -318,6 +318,7 @@ fn shape_run(
                 | story::TABLE_ANCHOR
                 | designcraft_doc::FOOTNOTE_REF
                 | designcraft_doc::ENDNOTE_REF
+                | designcraft_doc::NOTE_MARK
                 | designcraft_doc::XREF_MARK
                 | designcraft_doc::ANCHOR_MARK
                 | designcraft_doc::INDEX_MARK

@@ -465,6 +465,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             ">Type & Tables",
             "ui:window.panel|Conditional Text|{\"panel\": \"conditions\"}",
+            "ui:window.panel|Notes|{\"panel\": \"notes\"}",
             "ui:window.panel|Glyphs|{\"panel\": \"glyphs\"}",
             "<",
             ">Utilities",

@@ -18,6 +18,19 @@ use crate::story::{BASIC_PARAGRAPH, CharFormat, ParaFormat, Story};
 /// Endnote reference character (the number shown in the text).
 pub const ENDNOTE_REF: char = '\u{E00F}';
 
+/// Editorial note anchor (Type › Notes): never printed; the note's text is in
+/// [`Story::editorial`], one per anchor in text order.
+pub const NOTE_MARK: char = '\u{E010}';
+
+/// An editorial note.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorialNote {
+    pub id: u64,
+    pub author: String,
+    pub text: String,
+}
+
 /// Document Endnote Options.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

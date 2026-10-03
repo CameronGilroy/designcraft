@@ -1238,6 +1238,7 @@ impl<'r> Importer<'r> {
             xrefs: xref_list,
             index_refs: index_refs.into_iter().map(Arc::new).collect(),
             objects: objects.into_iter().map(Arc::new).collect(),
+            editorial: Vec::new(),
         };
         st.fix_notes();
         st.fix_marks();

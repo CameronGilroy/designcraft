@@ -3,6 +3,7 @@
 pub mod conditions;
 pub mod glyphs;
 pub mod layers;
+pub mod notes;
 pub mod pages;
 pub mod properties;
 pub mod styles;

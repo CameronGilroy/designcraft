@@ -107,6 +107,8 @@ pub struct RenderOptions {
     pub highlight_custom_tracking: bool,
     /// Conditional text indicators: an underline in each condition's colour (screen view).
     pub condition_indicators: bool,
+    /// Editorial note anchors (screen view).
+    pub note_indicators: bool,
     /// View › Display Performance.
     pub quality: DisplayQuality,
     /// Preferences › Appearance of Black: show 100% K as rich (pure) black instead of the
@@ -143,6 +145,7 @@ impl Default for RenderOptions {
             highlight_keeps: false,
             highlight_custom_tracking: false,
             condition_indicators: false,
+            note_indicators: false,
             quality: DisplayQuality::High,
             rich_black: false,
             overprint_preview: false,

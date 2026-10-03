@@ -229,6 +229,25 @@ impl Renderer {
                 }
             }
         }
+        if f.opts.note_indicators
+            && let Some(st) = f.doc.story(cs.story).filter(|st| !st.editorial.is_empty())
+        {
+            // A small flag at each note anchor, in the notes' amber.
+            ctx.set_transform(m);
+            ctx.set_paint(peniko::Color::from_rgb8(232, 160, 32));
+            for l in &ft.lines {
+                for g in l.glyphs.iter().filter(|g| st.text.get(g.byte..).is_some_and(|t| t.starts_with(designcraft_doc::NOTE_MARK))) {
+                    let h = l.ascent.max(4.0);
+                    let mut p = BezPath::new();
+                    p.move_to((g.x - h * 0.25, l.baseline - h));
+                    p.line_to((g.x + h * 0.25, l.baseline - h));
+                    p.line_to((g.x, l.baseline - h * 0.55));
+                    p.close_path();
+                    ctx.fill_path(&p);
+                    ctx.fill_rect(&kurbo::Rect::new(g.x - h * 0.03, l.baseline - h * 0.6, g.x + h * 0.03, l.baseline + l.descent * 0.5));
+                }
+            }
+        }
         if f.opts.condition_indicators && !f.doc.conditions.is_empty() && cs.styles.iter().any(|s| s.condition.is_some()) {
             ctx.set_transform(m);
             let px = 1.0 / m.determinant().abs().sqrt().max(1e-9);

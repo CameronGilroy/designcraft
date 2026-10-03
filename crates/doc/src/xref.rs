@@ -208,6 +208,14 @@ impl Story {
                 self.index_refs.insert(k + i, Arc::new(crate::index::IndexRef::default()));
             }
         }
+        let n = text.matches(crate::endnotes::NOTE_MARK).count();
+        if n > 0 {
+            let k = self.marks_before(crate::endnotes::NOTE_MARK, pos);
+            for i in 0..n {
+                let id = self.editorial.iter().map(|x| x.id).max().unwrap_or(0) + 1;
+                self.editorial.insert((k + i).min(self.editorial.len()), Arc::new(crate::endnotes::EditorialNote { id, ..Default::default() }));
+            }
+        }
         let n = text.matches(crate::anchored::OBJECT_MARK).count();
         if n > 0 {
             let k = self.marks_before(crate::anchored::OBJECT_MARK, pos);
@@ -227,7 +235,7 @@ impl Story {
 
     /// Keep anchor/xref lists in step with a deletion of `a..b` (before it happens).
     pub(crate) fn marks_deleted(&mut self, a: usize, b: usize) {
-        for mark in [ANCHOR_MARK, XREF_MARK, crate::index::INDEX_MARK, crate::anchored::OBJECT_MARK] {
+        for mark in [ANCHOR_MARK, XREF_MARK, crate::index::INDEX_MARK, crate::anchored::OBJECT_MARK, crate::endnotes::NOTE_MARK] {
             let n = self.text[a..b].matches(mark).count();
             if n == 0 {
                 continue;
@@ -239,6 +247,8 @@ impl Story {
                 self.xrefs.drain(k..(k + n).min(self.xrefs.len()));
             } else if mark == crate::index::INDEX_MARK {
                 self.index_refs.drain(k..(k + n).min(self.index_refs.len()));
+            } else if mark == crate::endnotes::NOTE_MARK {
+                self.editorial.drain(k..(k + n).min(self.editorial.len()));
             } else {
                 self.objects.drain(k..(k + n).min(self.objects.len()));
             }
@@ -265,6 +275,12 @@ impl Story {
         while self.index_refs.len() < n {
             self.index_refs.push(Arc::new(crate::index::IndexRef::default()));
         }
+        let n = self.text.matches(crate::endnotes::NOTE_MARK).count();
+        self.editorial.truncate(n);
+        while self.editorial.len() < n {
+            let id = self.editorial.iter().map(|x| x.id).max().unwrap_or(0) + 1;
+            self.editorial.push(Arc::new(crate::endnotes::EditorialNote { id, ..Default::default() }));
+        }
         let n = self.text.matches(crate::anchored::OBJECT_MARK).count();
         self.objects.truncate(n);
         while self.objects.len() < n {
@@ -280,6 +296,10 @@ impl Story {
         let o = self.text.matches(crate::anchored::OBJECT_MARK).count();
         if o != self.objects.len() {
             return Err(format!("story {}: {o} object marks for {} anchored objects", self.id.0, self.objects.len()));
+        }
+        let e = self.text.matches(crate::endnotes::NOTE_MARK).count();
+        if e != self.editorial.len() {
+            return Err(format!("story {}: {e} note marks for {} notes", self.id.0, self.editorial.len()));
         }
         let i = self.text.matches(crate::index::INDEX_MARK).count();
         if i != self.index_refs.len() {
