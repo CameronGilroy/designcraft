@@ -19,6 +19,8 @@ pub fn unescape_id(s: &str) -> String {
 /// Built-in style names: (ours, IDML `Name`).
 pub const PARA_BUILTINS: &[(&str, &str)] = &[("[No Paragraph Style]", "$ID/[No paragraph style]"), ("[Basic Paragraph]", "$ID/NormalParagraphStyle")];
 pub const CHAR_BUILTINS: &[(&str, &str)] = &[("[None]", "$ID/[No character style]")];
+pub const CELL_BUILTINS: &[(&str, &str)] = &[("[None]", "$ID/[None]")];
+pub const TABLE_BUILTINS: &[(&str, &str)] = &[("[Basic Table]", "$ID/[Basic Table]")];
 pub const OBJECT_BUILTINS: &[(&str, &str)] =
     &[("[None]", "$ID/[None]"), ("[Basic Graphics Frame]", "$ID/[Normal Graphics Frame]"), ("[Basic Text Frame]", "$ID/[Normal Text Frame]")];
 
@@ -504,5 +506,59 @@ pub fn note_marker_in(s: &str) -> Position {
         "SuperscriptMarker" => Position::Superscript,
         "SubscriptMarker" => Position::Subscript,
         _ => Position::Normal,
+    }
+}
+
+/// Nested-style delimiter → (property type, value).
+pub fn nested_until_out(u: &designcraft_doc::NestedUntil) -> (&'static str, String) {
+    use designcraft_doc::NestedUntil as N;
+    let e = |v: &str| ("enumeration", v.to_string());
+    match u {
+        N::Sentences => e("Sentence"),
+        N::Words => e("AnyWord"),
+        N::Characters => e("AnyCharacter"),
+        N::Letters => e("Letters"),
+        N::Digits => e("Digits"),
+        N::Tab => e("Tabs"),
+        N::ForcedLineBreak => e("ForcedLineBreak"),
+        N::EmSpace => e("EmSpaces"),
+        N::EnSpace => e("EnSpaces"),
+        N::Chars(c) => ("string", c.clone()),
+    }
+}
+
+pub fn nested_until_in(ty: &str, v: &str) -> designcraft_doc::NestedUntil {
+    use designcraft_doc::NestedUntil as N;
+    if ty == "string" {
+        return N::Chars(v.to_string());
+    }
+    match v.trim() {
+        "Sentence" => N::Sentences,
+        "AnyCharacter" => N::Characters,
+        "Letters" => N::Letters,
+        "Digits" => N::Digits,
+        "Tabs" => N::Tab,
+        "ForcedLineBreak" => N::ForcedLineBreak,
+        "EmSpaces" => N::EmSpace,
+        "EnSpaces" => N::EnSpace,
+        _ => N::Words,
+    }
+}
+
+pub fn path_align_out(a: designcraft_doc::PathAlign) -> &'static str {
+    match a {
+        designcraft_doc::PathAlign::Baseline => "BaselineAlignment",
+        designcraft_doc::PathAlign::Ascender => "AscenderAlignment",
+        designcraft_doc::PathAlign::Descender => "DescenderAlignment",
+        designcraft_doc::PathAlign::Center => "CenterAlignment",
+    }
+}
+
+pub fn path_align_in(v: &str) -> designcraft_doc::PathAlign {
+    match v {
+        "AscenderAlignment" => designcraft_doc::PathAlign::Ascender,
+        "DescenderAlignment" => designcraft_doc::PathAlign::Descender,
+        "CenterAlignment" => designcraft_doc::PathAlign::Center,
+        _ => designcraft_doc::PathAlign::Baseline,
     }
 }

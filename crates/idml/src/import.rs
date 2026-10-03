@@ -598,6 +598,8 @@ impl<'r> Importer<'r> {
         let mut paras: Vec<(String, El)> = Vec::new();
         let mut chars: Vec<(String, El)> = Vec::new();
         let mut objects: Vec<(String, El)> = Vec::new();
+        let mut cell_styles: Vec<(String, El)> = Vec::new();
+        let mut table_styles: Vec<(String, El)> = Vec::new();
         fn walk(e: &El, style: &str, group: &str, out: &mut Vec<(String, El)>) {
             for c in e.elements() {
                 if c.local() == style {
@@ -612,6 +614,8 @@ impl<'r> Importer<'r> {
                 "RootParagraphStyleGroup" => walk(e, "ParagraphStyle", "ParagraphStyleGroup", &mut paras),
                 "RootCharacterStyleGroup" => walk(e, "CharacterStyle", "CharacterStyleGroup", &mut chars),
                 "RootObjectStyleGroup" => walk(e, "ObjectStyle", "ObjectStyleGroup", &mut objects),
+                "RootCellStyleGroup" => walk(e, "CellStyle", "CellStyleGroup", &mut cell_styles),
+                "RootTableStyleGroup" => walk(e, "TableStyle", "TableStyleGroup", &mut table_styles),
                 _ => {}
             }
         }
@@ -648,6 +652,77 @@ impl<'r> Importer<'r> {
             match self.styles.char_style_mut(&name) {
                 Some(slot) => *slot = s,
                 None => self.styles.character.push(s),
+            }
+        }
+        // Cell and table styles (the built-ins stay as they are).
+        let cell_ref = |r: &str| names::style_name_in(names::CELL_BUILTINS, &unescape_id(r.trim_start_matches("CellStyle/")));
+        for (_, e) in &cell_styles {
+            let name = names::style_name_in(names::CELL_BUILTINS, e.get("Name").unwrap_or(""));
+            if name == designcraft_doc::NO_CELL_STYLE {
+                continue;
+            }
+            let mut cs = designcraft_doc::CellStyle { name: name.clone(), ..Default::default() };
+            cs.fill = e.get("FillColor").map(|c| self.swatch_ref(c));
+            cs.fill_tint = e.num("FillTint").and_then(|v| tint(Some(v)));
+            let ins: Vec<Option<f64>> = ["TopInset", "LeftInset", "BottomInset", "RightInset"].iter().map(|k| e.num(k)).collect();
+            if ins.iter().all(Option::is_some) {
+                cs.insets = Some([ins[0].unwrap_or(0.0), ins[1].unwrap_or(0.0), ins[2].unwrap_or(0.0), ins[3].unwrap_or(0.0)]);
+            }
+            cs.vj = e.get("VerticalJustification").map(names::vj_in);
+            if e.get("TopEdgeStrokeWeight").is_some() || e.get("TopEdgeStrokeColor").is_some() {
+                let mut st = CellStroke::default();
+                if let Some(w) = e.num("TopEdgeStrokeWeight") {
+                    st.weight = w.max(0.0);
+                }
+                if let Some(c) = e.get("TopEdgeStrokeColor") {
+                    st.color = self.swatch_ref(c);
+                }
+                cs.stroke = Some(st);
+            }
+            cs.paragraph_style = e.get("AppliedParagraphStyle").map(|r| self.para_style_ref(r)).filter(|n| n != designcraft_doc::NO_PARA_STYLE);
+            match self.styles.cell.iter_mut().find(|c| c.name == name) {
+                Some(slot) => *slot = cs,
+                None => self.styles.cell.push(cs),
+            }
+        }
+        for (_, e) in &table_styles {
+            let name = names::style_name_in(names::TABLE_BUILTINS, e.get("Name").unwrap_or(""));
+            if name == designcraft_doc::BASIC_TABLE || name == "[No table style]" {
+                continue;
+            }
+            let mut ts = designcraft_doc::TableStyle { name: name.clone(), ..Default::default() };
+            ts.header = e.get("HeaderRegionCellStyle").map(cell_ref).filter(|n| n != designcraft_doc::NO_CELL_STYLE);
+            ts.body = e.get("BodyRegionCellStyle").map(cell_ref).filter(|n| n != designcraft_doc::NO_CELL_STYLE);
+            ts.footer = e.get("FooterRegionCellStyle").map(cell_ref).filter(|n| n != designcraft_doc::NO_CELL_STYLE);
+            ts.left_column = e.get("LeftColumnRegionCellStyle").map(cell_ref).filter(|n| n != designcraft_doc::NO_CELL_STYLE);
+            ts.right_column = e.get("RightColumnRegionCellStyle").map(cell_ref).filter(|n| n != designcraft_doc::NO_CELL_STYLE);
+            if e.get("TopBorderStrokeWeight").is_some() {
+                let mut b = CellStroke::default();
+                if let Some(w) = e.num("TopBorderStrokeWeight") {
+                    b.weight = w.max(0.0);
+                }
+                if let Some(c) = e.get("TopBorderStrokeColor") {
+                    b.color = self.swatch_ref(c);
+                }
+                ts.border = Some(b);
+            }
+            if let Some(first) = e.num("StartRowFillCount").filter(|n| *n > 0.0) {
+                ts.alt_rows = Some(AltFills {
+                    first: first as u32,
+                    first_color: e.get("StartRowFillColor").map(|c| self.swatch_ref(c)).unwrap_or_else(|| swatch::NONE.into()),
+                    first_tint: tint(e.num("StartRowFillTint")).unwrap_or(1.0),
+                    next: e.num("EndRowFillCount").unwrap_or(1.0) as u32,
+                    next_color: e.get("EndRowFillColor").map(|c| self.swatch_ref(c)).unwrap_or_else(|| swatch::NONE.into()),
+                    next_tint: tint(e.num("EndRowFillTint")).unwrap_or(1.0),
+                    skip_first: 0,
+                    skip_last: 0,
+                });
+            }
+            ts.space_before = e.num("SpaceBefore");
+            ts.space_after = e.num("SpaceAfter");
+            match self.styles.table.iter_mut().find(|c| c.name == name) {
+                Some(slot) => *slot = ts,
+                None => self.styles.table.push(ts),
             }
         }
         for (_, e) in &objects {
@@ -913,6 +988,33 @@ impl<'r> Importer<'r> {
         a.first_line_indent = e.num("FirstLineIndent");
         a.last_line_indent = e.num("LastLineIndent");
         a.space_before = e.num("SpaceBefore");
+        // Nested and GREP styles.
+        if let Some(l) = e.prop_el("AllNestedStyles") {
+            let v: Vec<designcraft_doc::NestedStyle> = l
+                .find_all("ListItem")
+                .map(|it| {
+                    let t = |k: &str| it.find(k).map(|x| x.text_content()).unwrap_or_default();
+                    let d = it.find("Delimiter");
+                    designcraft_doc::NestedStyle {
+                        style: self.char_style_ref(t("AppliedCharacterStyle").trim()),
+                        through: t("Inclusive").trim() != "false",
+                        count: t("Repetition").trim().parse().unwrap_or(1),
+                        until: names::nested_until_in(d.and_then(|d| d.get("type")).unwrap_or("enumeration"), &t("Delimiter")),
+                    }
+                })
+                .collect();
+            a.nested_styles = Some(v);
+        }
+        if let Some(l) = e.prop_el("AllGREPStyles") {
+            let v: Vec<designcraft_doc::GrepStyle> = l
+                .find_all("ListItem")
+                .map(|it| {
+                    let t = |k: &str| it.find(k).map(|x| x.text_content()).unwrap_or_default();
+                    designcraft_doc::GrepStyle { style: self.char_style_ref(t("AppliedCharacterStyle").trim()), pattern: t("GrepExpression") }
+                })
+                .collect();
+            a.grep_styles = Some(v);
+        }
         a.space_after = e.num("SpaceAfter");
         a.drop_cap_lines = u("DropCapLines");
         a.drop_cap_chars = u("DropCapCharacters");
@@ -1145,6 +1247,11 @@ impl<'r> Importer<'r> {
                 t.options.alt_cols = Some(alt);
             }
         }
+        t.style = e
+            .get("AppliedTableStyle")
+            .map(|r| names::style_name_in(names::TABLE_BUILTINS, &unescape_id(r.trim_start_matches("TableStyle/"))))
+            .filter(|n| n != designcraft_doc::BASIC_TABLE && n != "[No table style]")
+            .unwrap_or_default();
         let mut regions = Vec::new();
         for ce in e.find_all("Cell") {
             let Some((c, r)) =
@@ -1159,6 +1266,11 @@ impl<'r> Importer<'r> {
             let cs = ce.num("ColumnSpan").unwrap_or(1.0).max(1.0) as usize;
             let text = self.story(StoryId(0), ce);
             let mut cell = Cell { text, ..Default::default() };
+            cell.style = ce
+                .get("AppliedCellStyle")
+                .map(|r| names::style_name_in(names::CELL_BUILTINS, &unescape_id(r.trim_start_matches("CellStyle/"))))
+                .filter(|n| n != designcraft_doc::NO_CELL_STYLE)
+                .unwrap_or_default();
             if let Some(fc) = ce.get("FillColor") {
                 cell.fill = self.swatch_ref(fc);
             }
@@ -1609,6 +1721,24 @@ impl<'r> Importer<'r> {
                     [o.num("Top").unwrap_or(0.0), o.num("Left").unwrap_or(0.0), o.num("Bottom").unwrap_or(0.0), o.num("Right").unwrap_or(0.0)];
             }
             it.wrap = tw;
+        }
+        // Type on a path.
+        if tag != "TextFrame"
+            && let Some(tp) = e.find("TextPath")
+        {
+            let story_self = tp.get("ParentStory").unwrap_or("n").to_string();
+            if let Some(story) = self.story_ids.get(&story_self).copied() {
+                let options = TextFrameOptions {
+                    path: Some(designcraft_doc::PathType {
+                        start: tp.num("StartBracket").unwrap_or(0.0).max(0.0),
+                        flip: tp.get("FlipPathEffect") == Some("Flipped"),
+                        align: names::path_align_in(tp.get("TextAlignment").unwrap_or("")),
+                    }),
+                    ..Default::default()
+                };
+                it.content = Content::Text(TextFrame { story, options });
+                self.ctx.threads.push((id, story_self, "n".into(), "n".into()));
+            }
         }
         // Content.
         match tag {

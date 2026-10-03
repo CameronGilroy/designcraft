@@ -743,21 +743,83 @@ impl<'a> Ex<'a> {
         pg.emit(&mut rp, "ParagraphStyleGroup", "");
         root.push(rp);
 
-        // Cell and table styles (built-ins only).
-        root.push(
-            El::new("RootCellStyleGroup").attr("Self", self.fresh()).child(
-                El::new("CellStyle").attr("Self", "CellStyle/$ID/[None]").attr("AppliedParagraphStyle", NO_PARA_ID).attr("Name", "$ID/[None]"),
-            ),
-        );
-        root.push(
-            El::new("RootTableStyleGroup")
-                .attr("Self", self.fresh())
-                .child(El::new("TableStyle").attr("Self", "TableStyle/$ID/[No table style]").attr("Name", "$ID/[No table style]"))
-                .child(with_props(
-                    El::new("TableStyle").attr("Self", "TableStyle/$ID/[Basic Table]").attr("Name", "$ID/[Basic Table]"),
-                    vec![p("BasedOn", "string", "$ID/[No table style]")],
-                )),
-        );
+        // Cell and table styles.
+        let mut cells = El::new("RootCellStyleGroup")
+            .attr("Self", self.fresh())
+            .child(El::new("CellStyle").attr("Self", "CellStyle/$ID/[None]").attr("AppliedParagraphStyle", NO_PARA_ID).attr("Name", "$ID/[None]"));
+        for cs in styles.cell.iter().filter(|c| c.name != designcraft_doc::NO_CELL_STYLE) {
+            let mut el = El::new("CellStyle")
+                .attr("Self", names::style_self("CellStyle", names::CELL_BUILTINS, &cs.name))
+                .attr("Name", names::style_name_out(names::CELL_BUILTINS, &cs.name));
+            if let Some(f) = &cs.fill {
+                el.set("FillColor", self.sw(f));
+            }
+            if let Some(t) = cs.fill_tint {
+                el.set("FillTint", pct(t as f64));
+            }
+            if let Some(i) = cs.insets {
+                for (k, v) in ["TopInset", "LeftInset", "BottomInset", "RightInset"].iter().zip(i) {
+                    el.set(k, num(v));
+                }
+            }
+            if let Some(vj) = cs.vj {
+                el.set("VerticalJustification", names::vj_out(vj));
+            }
+            if let Some(st) = &cs.stroke {
+                for side in ["TopEdge", "LeftEdge", "BottomEdge", "RightEdge"] {
+                    self.cell_stroke_attrs(&mut el, side, st);
+                }
+            }
+            if let Some(ps) = &cs.paragraph_style {
+                el.set("AppliedParagraphStyle", names::style_self("ParagraphStyle", PARA_BUILTINS, ps));
+            }
+            cells = cells.child(with_props(el, vec![p("BasedOn", "string", "$ID/[None]")]));
+        }
+        root.push(cells);
+        let mut tables = El::new("RootTableStyleGroup")
+            .attr("Self", self.fresh())
+            .child(El::new("TableStyle").attr("Self", "TableStyle/$ID/[No table style]").attr("Name", "$ID/[No table style]"))
+            .child(with_props(
+                El::new("TableStyle").attr("Self", "TableStyle/$ID/[Basic Table]").attr("Name", "$ID/[Basic Table]"),
+                vec![p("BasedOn", "string", "$ID/[No table style]")],
+            ));
+        for ts in styles.table.iter().filter(|t| t.name != designcraft_doc::BASIC_TABLE) {
+            let mut el = El::new("TableStyle")
+                .attr("Self", names::style_self("TableStyle", names::TABLE_BUILTINS, &ts.name))
+                .attr("Name", names::style_name_out(names::TABLE_BUILTINS, &ts.name));
+            for (k, v) in [
+                ("HeaderRegionCellStyle", &ts.header),
+                ("BodyRegionCellStyle", &ts.body),
+                ("FooterRegionCellStyle", &ts.footer),
+                ("LeftColumnRegionCellStyle", &ts.left_column),
+                ("RightColumnRegionCellStyle", &ts.right_column),
+            ] {
+                if let Some(n) = v {
+                    el.set(k, names::style_self("CellStyle", names::CELL_BUILTINS, n));
+                }
+            }
+            if let Some(b) = &ts.border {
+                for side in ["Top", "Left", "Bottom", "Right"] {
+                    self.cell_stroke_attrs(&mut el, &format!("{side}Border"), b);
+                }
+            }
+            if let Some(a) = &ts.alt_rows {
+                el.set("StartRowFillColor", self.sw(&a.first_color));
+                el.set("StartRowFillCount", a.first);
+                el.set("StartRowFillTint", pct(a.first_tint as f64));
+                el.set("EndRowFillColor", self.sw(&a.next_color));
+                el.set("EndRowFillCount", a.next);
+                el.set("EndRowFillTint", pct(a.next_tint as f64));
+            }
+            if let Some(v) = ts.space_before {
+                el.set("SpaceBefore", num(v));
+            }
+            if let Some(v) = ts.space_after {
+                el.set("SpaceAfter", num(v));
+            }
+            tables = tables.child(with_props(el, vec![p("BasedOn", "string", "$ID/[Basic Table]")]));
+        }
+        root.push(tables);
 
         // Object styles.
         let mut og = Group::default();
@@ -911,6 +973,34 @@ impl<'a> Ex<'a> {
     }
 
     fn para_attrs(&mut self, el: &mut El, props: &mut Vec<El>, a: &ParaAttrs) {
+        // Nested and GREP styles: property lists of records.
+        if let Some(list) = &a.nested_styles {
+            let mut l = El::new("AllNestedStyles").attr("type", "list");
+            for ns in list {
+                let (ty, delim) = names::nested_until_out(&ns.until);
+                l = l.child(
+                    El::new("ListItem")
+                        .attr("type", "record")
+                        .child(p("AppliedCharacterStyle", "object", names::style_self("CharacterStyle", CHAR_BUILTINS, &ns.style)))
+                        .child(p("Delimiter", ty, delim))
+                        .child(p("Repetition", "long", ns.count.to_string()))
+                        .child(p("Inclusive", "boolean", bool_s(ns.through))),
+                );
+            }
+            props.push(l);
+        }
+        if let Some(list) = &a.grep_styles {
+            let mut l = El::new("AllGREPStyles").attr("type", "list");
+            for g in list {
+                l = l.child(
+                    El::new("ListItem")
+                        .attr("type", "record")
+                        .child(p("AppliedCharacterStyle", "object", names::style_self("CharacterStyle", CHAR_BUILTINS, &g.style)))
+                        .child(p("GrepExpression", "string", g.pattern.clone())),
+                );
+            }
+            props.push(l);
+        }
         macro_rules! n {
             ($f:ident, $k:literal) => {
                 if let Some(v) = a.$f {
@@ -1132,7 +1222,14 @@ impl<'a> Ex<'a> {
 
     fn item_el(&mut self, it: &Item, xf: Affine) -> El {
         let d = self.d;
+        let path_text = matches!(&it.content, Content::Text(t) if t.options.path.is_some());
         let tag = match (&it.content, it.shape) {
+            (Content::Text(_), _) if path_text => match it.shape {
+                Shape::GraphicLine => "GraphicLine",
+                Shape::Oval => "Oval",
+                Shape::Rectangle => "Rectangle",
+                _ => "Polygon",
+            },
             (Content::Text(_), _) => "TextFrame",
             (Content::Group { .. }, Shape::Group) => "Group",
             (_, Shape::Oval) => "Oval",
@@ -1141,7 +1238,25 @@ impl<'a> Ex<'a> {
             _ => "Rectangle",
         };
         let mut el = El::new(tag).attr("Self", uid(it.id.0));
-        if let Content::Text(t) = &it.content {
+        if let Content::Text(t) = &it.content
+            && let Some(pt) = &t.options.path
+        {
+            // Type on a path: a TextPath child holds the story.
+            let len = designcraft_geom::warp::PathWarp::new(&it.path.to_bezpath(), false).length();
+            el.push(
+                El::new("TextPath")
+                    .attr("Self", format!("{}tp", uid(it.id.0)))
+                    .attr("ParentStory", uid(t.story.0))
+                    .attr("PreviousTextFrame", "n")
+                    .attr("NextTextFrame", "n")
+                    .attr("PathEffect", "RainbowPathEffect")
+                    .attr("PathAlignment", "CenterPathAlignment")
+                    .attr("TextAlignment", names::path_align_out(pt.align))
+                    .attr("FlipPathEffect", if pt.flip { "Flipped" } else { "NotFlipped" })
+                    .attr("StartBracket", num(pt.start))
+                    .attr("EndBracket", num(len)),
+            );
+        } else if let Content::Text(t) = &it.content {
             let (prev, next) = self.threads.get(&it.id.0).copied().unwrap_or((None, None));
             el.set("ParentStory", uid(t.story.0));
             el.set("PreviousTextFrame", prev.map(uid).unwrap_or_else(|| "n".into()));
@@ -1672,7 +1787,10 @@ impl<'a> Ex<'a> {
             .attr("FooterRowCount", f)
             .attr("BodyRowCount", t.nrows() - h - f)
             .attr("ColumnCount", t.ncols())
-            .attr("AppliedTableStyle", "TableStyle/$ID/[Basic Table]")
+            .attr(
+                "AppliedTableStyle",
+                names::style_self("TableStyle", names::TABLE_BUILTINS, if t.style.is_empty() { designcraft_doc::BASIC_TABLE } else { &t.style }),
+            )
             .attr("TableDirection", "LeftToRightDirection")
             .attr("SpaceBefore", num(t.options.space_before))
             .attr("SpaceAfter", num(t.options.space_after))
@@ -1725,7 +1843,14 @@ impl<'a> Ex<'a> {
                     .attr("Name", format!("{c}:{r}"))
                     .attr("RowSpan", cell.row_span)
                     .attr("ColumnSpan", cell.col_span)
-                    .attr("AppliedCellStyle", "CellStyle/$ID/[None]")
+                    .attr(
+                        "AppliedCellStyle",
+                        names::style_self(
+                            "CellStyle",
+                            names::CELL_BUILTINS,
+                            if cell.style.is_empty() { designcraft_doc::NO_CELL_STYLE } else { &cell.style },
+                        ),
+                    )
                     .attr("FillColor", self.sw(&cell.fill))
                     .attr("FillTint", pct(cell.fill_tint as f64))
                     .attr("TopInset", num(cell.insets[0]))

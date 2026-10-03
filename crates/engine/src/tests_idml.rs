@@ -182,3 +182,56 @@ fn underline_options_render_and_round_trip() {
     assert_eq!(f.over.underline_offset, Some(Some(4.0)));
     assert_eq!(f.over.underline_color.as_deref(), Some("C=100 M=0 Y=0 K=0"));
 }
+
+#[test]
+fn newer_features_round_trip_through_idml() {
+    let mut s = Session::new();
+    s.execute("file.new", &json!({})).unwrap();
+    // Nested and GREP styles on a paragraph style.
+    s.execute("style.character.create", &json!({"name": "Lead", "chars": {"fontStyle": "Bold"}})).unwrap();
+    s.execute(
+        "style.paragraph.create",
+        &json!({"name": "Intro", "para": {
+            "nestedStyles": [{"style": "Lead", "through": false, "count": 2, "until": {"kind": "chars", "chars": ":"}}],
+            "grepStyles": [{"style": "Lead", "pattern": "\\d+"}]
+        }}),
+    )
+    .unwrap();
+    // Cell and table styles on a table.
+    let r = s.execute("frame.create", &json!({"rect": [72, 72, 500, 300], "content": "text", "text": ""})).unwrap();
+    s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+    s.execute("table.insert", &json!({"rows": 2, "cols": 2, "headerRows": 1})).unwrap();
+    s.execute("style.cell.create", &json!({"name": "Head", "fill": "[Black]", "insets": 5, "paragraphStyle": "Intro"})).unwrap();
+    s.execute("style.table.create", &json!({"name": "Grid", "header": "Head", "border": {"weight": 3, "color": "[Black]"}})).unwrap();
+    s.execute("style.table.apply", &json!({"name": "Grid"})).unwrap();
+    // Type on a path.
+    let line = s.execute("line.create", &json!({"a": [100, 500], "b": [400, 500]})).unwrap()["id"].as_u64().unwrap();
+    s.execute("type.onPath", &json!({"id": line, "text": "On the line", "start": 12, "flip": true, "align": "center"})).unwrap();
+    let d = s.doc().unwrap().doc.clone();
+    let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&d)).unwrap();
+    let intro = back.styles.para("Intro").unwrap();
+    let ns = intro.para.nested_styles.clone().unwrap();
+    assert_eq!(ns[0].style, "Lead");
+    assert_eq!((ns[0].through, ns[0].count), (false, 2));
+    assert_eq!(ns[0].until, designcraft_doc::NestedUntil::Chars(":".into()));
+    assert_eq!(intro.para.grep_styles.clone().unwrap()[0].pattern, "\\d+");
+    let head = back.styles.cell.iter().find(|c| c.name == "Head").unwrap();
+    assert_eq!((head.fill.as_deref(), head.insets, head.paragraph_style.as_deref()), (Some("[Black]"), Some([5.0; 4]), Some("Intro")));
+    let grid = back.styles.table.iter().find(|t| t.name == "Grid").unwrap();
+    assert_eq!(grid.header.as_deref(), Some("Head"));
+    assert_eq!(grid.border.as_ref().unwrap().weight, 3.0);
+    let t = back.stories.values().flat_map(|st| st.tables.values()).next().unwrap();
+    assert_eq!(t.style, "Grid");
+    assert_eq!(t.cell(0, 0).unwrap().style, "Head");
+    let pt = back
+        .spreads
+        .iter()
+        .flat_map(|sp| sp.items.iter())
+        .find_map(|it| match &it.content {
+            designcraft_doc::Content::Text(tf) => tf.options.path.clone().map(|p| (p, tf.story)),
+            _ => None,
+        })
+        .expect("type on a path");
+    assert_eq!((pt.0.start, pt.0.flip, pt.0.align), (12.0, true, designcraft_doc::PathAlign::Center));
+    assert_eq!(back.story(pt.1).unwrap().text, "On the line");
+}
