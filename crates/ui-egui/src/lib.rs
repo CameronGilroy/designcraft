@@ -102,6 +102,8 @@ pub struct UiState {
     /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
     pub hidden_menu_items: Vec<String>,
     pub show_full_menus: bool,
+    /// Edit › Transparency Flattener Presets: "" (none), "high", "medium" or "low" for PDF export.
+    pub flattener: String,
     /// View › Separations Preview: a process plate (0–3) and/or an ink limit (total, 0–4).
     #[serde(skip)]
     pub separation: Option<u8>,
@@ -169,6 +171,7 @@ impl Default for UiState {
             tagged_frames: false,
             hidden_menu_items: Vec::new(),
             show_full_menus: false,
+            flattener: String::new(),
             separation: None,
             ink_limit: None,
             display_quality: designcraft_render::DisplayQuality::High,

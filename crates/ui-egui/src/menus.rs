@@ -26,6 +26,12 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.fittingOptions", "Frame Fitting Options…", None, "{} — the dialog for object.fittingOptions"),
     ("app.menus", "Menus…", None, "{} — show or hide menu items"),
     ("window.hideMenuItem", "Hide Menu Item", None, "{item: \"Menu/Label\", hidden?: bool}"),
+    (
+        "app.flattener",
+        "Transparency Flattener Presets",
+        None,
+        "{preset: \"\"|high|medium|low} — PDF export rasterises spreads with transparency at 300 / 150 / 72 ppi",
+    ),
     ("app.graphicCell", "Convert Cell to Graphic Cell…", None, "{} — pick an image for the target table cell"),
     ("app.placeAndLink", "Place and Link", None, "{} — a linked copy of the selected frame's story, beside it"),
     ("app.placeWithOptions", "Place with Import Options…", Some("Cmd+Shift+D"), "{} — Word/RTF style mapping before placing"),
@@ -169,6 +175,12 @@ pub const MENUS: &[(&str, &[&str])] = &[
             ">Transparency Blend Space",
             "cmd:edit.transparencyBlendSpace|Document RGB|{\"space\": \"rgb\"}",
             "cmd:edit.transparencyBlendSpace|Document CMYK|{\"space\": \"cmyk\"}",
+            "<",
+            ">Transparency Flattener Presets",
+            "ui:app.flattener|None (keep transparency)|{\"preset\": \"\"}",
+            "ui:app.flattener|High Resolution|{\"preset\": \"high\"}",
+            "ui:app.flattener|Medium Resolution|{\"preset\": \"medium\"}",
+            "ui:app.flattener|Low Resolution|{\"preset\": \"low\"}",
             "<",
             "-",
             "ui:app.palette",
@@ -690,6 +702,14 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 None => Ok(Value::Null),
             }
         }
+        "app.flattener" => {
+            let v = p.get("preset").and_then(Value::as_str).unwrap_or("");
+            if !["", "high", "medium", "low"].contains(&v) {
+                return Some(Err(format!("unknown preset `{v}`")));
+            }
+            app.ui.flattener = v.to_string();
+            Ok(json!(v))
+        }
         "app.graphicCell" => {
             let Some(pick) = app.services.pick_open.as_mut() else { return Some(Err("needs a file picker".into())) };
             match pick("place") {
@@ -1207,6 +1227,9 @@ fn export_pdf(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
         o.remove("path");
         o.entry("bleed").or_insert(json!(true));
         o.entry("tagged").or_insert(json!(true));
+        if !app.ui.flattener.is_empty() {
+            o.entry("flatten").or_insert(json!(app.ui.flattener));
+        }
     }
     let r = app.run("file.exportPdf", params)?;
     let bytes = designcraft_engine::cmd::base64_decode(r["base64"].as_str().unwrap_or_default());
@@ -1389,6 +1412,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "changes.track" => app.session.active().is_some_and(|d| d.doc.settings.track_changes),
         "window.controlBar" => app.ui.control_bar,
         "window.split" => app.split,
+        "app.flattener" => app.ui.flattener == params.get("preset").and_then(Value::as_str).unwrap_or(""),
         "window.taskBar" => app.ui.task_bar,
         "window.toolsDoubleColumn" => app.ui.tools_double_column,
         "view.togglePreview" => app.ui.screen_mode == crate::ScreenMode::Preview,

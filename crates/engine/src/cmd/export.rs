@@ -9,7 +9,7 @@ use crate::{EngineError, Result, Session};
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(noundo "file.exportPdf", "Export PDF…", ["File"], None,
-        "{path?, pages?: \"1-3,5\" | [1,3] (1-based positions; default all), spreads?: bool, bleed?: bool (document bleed), marks?: bool | {crop?, bleed?, pageInfo?, weight?, offset?}, standard?: \"none\"|\"x4\"|\"a2b\", compressImages?: bool, tagged?: bool (structure tree: stories as paragraphs, figures with alt text), title?, author?} → {path, bytes, pages, warnings} (no path: {base64, …})",
+        "{path?, pages?: \"1-3,5\" | [1,3] (1-based positions; default all), flatten?: high|medium|low|ppi (Transparency Flattener: spreads with transparency are rasterised), spreads?: bool, bleed?: bool (document bleed), marks?: bool | {crop?, bleed?, pageInfo?, weight?, offset?}, standard?: \"none\"|\"x4\"|\"a2b\", compressImages?: bool, tagged?: bool (structure tree: stories as paragraphs, figures with alt text), title?, author?} → {path, bytes, pages, warnings} (no path: {base64, …})",
         has_doc, export_pdf),
         cmd!(noundo "file.exportEpub", "Export EPUB (Reflowable)…", ["File"], None,
         "{path?, title?, author?, language?: \"en\"} → {path, bytes} (no path: {base64, bytes})",
@@ -161,10 +161,97 @@ pub(crate) fn options(p: &Value, page_count: usize) -> Result<PdfOptions> {
     })
 }
 
+/// Does this object (or anything in it) need the transparency flattener?
+fn transparent(it: &designcraft_doc::Item) -> bool {
+    it.opacity < 1.0 || it.blend != Default::default() || it.effects.any() || it.knockout || it.children().iter().any(|c| transparent(c))
+}
+
+/// Transparency Flattener: spreads with transparency become one raster per page at `ppi`
+/// (in a copy of the document made for export). Returns the copy and the flattened page count.
+fn flatten(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, ppi: f64) -> (designcraft_doc::Document, usize) {
+    use designcraft_doc::{Asset, AssetId, Content, Graphic, Item, ItemId, Shape, SpreadRef};
+    let mut out = d.clone();
+    let mut n = 0;
+    let mut rr = designcraft_render::Renderer::new();
+    rr.threads = designcraft_render::default_threads();
+    let k = ppi / 72.0;
+    let parent_transparent = |pid: Option<designcraft_doc::SpreadId>| {
+        pid.and_then(|id| d.parents.iter().find(|p| p.id == id)).is_some_and(|p| p.items.iter().any(|it| transparent(it)))
+    };
+    for (si, sp) in d.spreads.iter().enumerate() {
+        if !sp.items.iter().any(|it| transparent(it)) && !sp.pages.iter().any(|pg| pg.show_parent_items && parent_transparent(pg.parent)) {
+            continue;
+        }
+        let first = d.first_page_of_spread(si);
+        let mut images = Vec::new();
+        for (pi, pg) in sp.pages.iter().enumerate() {
+            if let Some(img) = rr.render_page(d, cache, first + pi, k, false, &Default::default()) {
+                images.push((pg.bounds(), img));
+            }
+        }
+        let lid = out.default_layer();
+        let osp = std::sync::Arc::make_mut(&mut out.spreads[si]);
+        osp.items.clear();
+        for pg in &mut osp.pages {
+            pg.show_parent_items = false;
+        }
+        for (b, img) in images {
+            let (w, h) = (img.width, img.height);
+            let aid = AssetId(out.alloc());
+            out.assets.insert(
+                aid,
+                std::sync::Arc::new(Asset {
+                    page: 0,
+                    id: aid,
+                    name: format!("flattened-{}.png", aid.0),
+                    mime: "image/png".into(),
+                    link: None,
+                    data: std::sync::Arc::new(img.to_png()),
+                    pixels: Some((w, h)),
+                }),
+            );
+            let id = ItemId(out.alloc());
+            let mut it = Item::new(id, lid, Shape::Rectangle, designcraft_geom::shapes::rectangle(b));
+            it.content = Content::Graphic(Graphic {
+                asset: aid,
+                size: (w as f64, h as f64),
+                xf: designcraft_geom::Affine::translate((b.x0, b.y0))
+                    * designcraft_geom::Affine::scale_non_uniform(b.width() / w as f64, b.height() / h as f64),
+                auto_fit: Default::default(),
+                fit_align: 4,
+                crop: [0.0; 4],
+            });
+            it.stroke.weight = 0.0;
+            let _ = out.insert_item(SpreadRef::Doc(si), it, None);
+            n += 1;
+        }
+    }
+    (out, n)
+}
+
 fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.doc()?;
     let opts = options(p, st.doc.page_count())?;
-    let r = designcraft_pdf::export_pdf_with_report(&st.doc, &s.cache, &opts).map_err(|e| EngineError::Other(e.to_string()))?;
+    // Transparency Flattener presets: High / Medium / Low Resolution, or a ppi.
+    let ppi = match p.get("flatten") {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => None,
+        Some(Value::String(s)) if s == "high" => Some(300.0),
+        Some(Value::String(s)) if s == "medium" => Some(150.0),
+        Some(Value::String(s)) if s == "low" => Some(72.0),
+        Some(Value::Bool(true)) => Some(300.0),
+        Some(v) => Some(
+            v.as_f64().filter(|v| (36.0..=1200.0).contains(v)).ok_or_else(|| bad("file.exportPdf", "`flatten`: high|medium|low or 36–1200 ppi"))?,
+        ),
+    };
+    let flattened = ppi.map(|ppi| flatten(&st.doc, &s.cache, ppi));
+    let doc: &designcraft_doc::Document = flattened.as_ref().map_or(&st.doc, |f| &f.0);
+    let r = designcraft_pdf::export_pdf_with_report(doc, &s.cache, &opts).map_err(|e| EngineError::Other(e.to_string()))?;
+    let mut r = r;
+    if let Some((_, n)) = &flattened
+        && *n > 0
+    {
+        r.warnings.push(format!("transparency flattened: {n} page(s) rasterised"));
+    }
     match str_param(p, "path") {
         Some(path) => {
             write_file(path, &r.bytes)?;
@@ -188,6 +275,26 @@ mod text_tests {
     use serde_json::json;
 
     use crate::Session;
+
+    #[test]
+    fn flattener_rasterises_spreads_with_transparency() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 3})).unwrap();
+        let id = s.execute("frame.create", &json!({"rect": [100, 100, 300, 300]})).unwrap()["id"].clone();
+        s.execute("object.fill", &json!({"swatch": "[Black]", "ids": [id]})).unwrap();
+        // Opaque: nothing to flatten.
+        let r = s.execute("file.exportPdf", &json!({"flatten": "low"})).unwrap();
+        assert!(r["warnings"].as_array().unwrap().iter().all(|w| !w.as_str().unwrap().contains("flattened")));
+        s.execute("object.opacity", &json!({"ids": [id], "opacity": 0.5})).unwrap();
+        let r = s.execute("file.exportPdf", &json!({"flatten": "low"})).unwrap();
+        assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("flattened: 1 page")), "{r}");
+        assert_eq!(r["pages"], 3);
+        let bytes = super::super::file::base64_decode(r["base64"].as_str().unwrap());
+        assert_eq!(designcraft_render::pdf_page_count(&bytes), Some(3));
+        // The document itself is untouched.
+        assert!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(id.as_u64().unwrap())).is_some());
+        assert!(s.execute("file.exportPdf", &json!({"flatten": 5})).is_err());
+    }
 
     #[test]
     fn export_story_as_text_and_rtf() {

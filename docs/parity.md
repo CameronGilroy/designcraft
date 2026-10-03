@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 92 | 5 | 0 | 97% |
-| P2 | 76 | 40 | 25 | 11 | 69% |
+| P2 | 76 | 40 | 26 | 10 | 70% |
 
 | Area | Parity |
 |---|---|
@@ -21,7 +21,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Frames, shapes & paths | 100% |
 | Transform | 100% |
 | Fill, stroke, colour | 96% |
-| Effects & transparency | 71% |
+| Effects & transparency | 75% |
 | Placing & links | 90% |
 | Type & text frames | 94% |
 | Typography | 98% |
@@ -165,7 +165,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Effects & transparency | Basic/Directional/Gradient Feather | P2 | P |
 | Effects & transparency | Global Light | P2 | D |
 | Effects & transparency | Transparency blend space | P1 | P |
-| Effects & transparency | Transparency flattener | P2 | M |
+| Effects & transparency | Transparency flattener | P2 | P |
 | Placing & links | Place | P0 | D |
 | Placing & links | Place into frame / by click or drag | P0 | D |
 | Placing & links | Raster formats | P0 | D |
