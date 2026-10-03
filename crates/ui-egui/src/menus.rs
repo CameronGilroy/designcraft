@@ -518,6 +518,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:window.panel|Hyperlinks|{\"panel\": \"hyperlinks\"}",
             "ui:window.panel|Bookmarks|{\"panel\": \"bookmarks\"}",
             "ui:window.panel|Articles|{\"panel\": \"articles\"}",
+            "ui:window.panel|Object States|{\"panel\": \"states\"}",
             "ui:window.panel|Tags|{\"panel\": \"tags\"}",
             "ui:window.panel|Book|{\"panel\": \"book\"}",
             "<",

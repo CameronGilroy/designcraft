@@ -450,6 +450,10 @@ fn center_ref() -> u8 {
     4
 }
 
+fn is_zero_usize(v: &usize) -> bool {
+    *v == 0
+}
+
 impl Graphic {
     /// The graphic transform that fits it into `frame` (the frame's inner rect) with `mode`,
     /// honouring the crop amounts and the reference point.
@@ -712,6 +716,11 @@ pub struct Item {
     /// Alternative text (Object Export Options) for tagged PDF and EPUB.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub alt_text: String,
+    /// Object States: a group whose children are states (named here); only `active_state` shows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub states: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub active_state: usize,
     /// XML tag (Tags panel); its content is the element's content in XML export/import.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub xml_tag: String,
@@ -755,6 +764,8 @@ impl Item {
             label: String::new(),
             alt_text: String::new(),
             xml_tag: String::new(),
+            states: Vec::new(),
+            active_state: 0,
             isolate: false,
             knockout: false,
         }
@@ -787,6 +798,12 @@ impl Item {
             _ => &[],
         }
     }
+    /// The children that show: all of them, or just the active state of a multi-state object.
+    pub fn shown_children(&self) -> impl Iterator<Item = &Arc<Item>> {
+        let only = (!self.states.is_empty()).then_some(self.active_state);
+        self.children().iter().enumerate().filter(move |(i, _)| only.is_none_or(|a| a == *i)).map(|(_, c)| c)
+    }
+
     pub fn children_mut(&mut self) -> Option<&mut Vec<Arc<Item>>> {
         match &mut self.content {
             Content::Group { items } => Some(items),

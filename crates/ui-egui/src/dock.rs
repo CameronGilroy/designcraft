@@ -38,6 +38,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     ("articles", "Articles", "panel-articles"),
     ("tags", "Tags", "panel-tags"),
     ("book", "Book", "panel-library"),
+    ("states", "Object States", "panel-articles"),
 ];
 
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
@@ -181,6 +182,7 @@ pub fn panel_body(app: &mut DesignApp, ui: &mut egui::Ui, id: &str) {
         "articles" => panels::interactive::articles(app, ui),
         "tags" => panels::interactive::tags(app, ui),
         "book" => panels::library::book(app, ui),
+        "states" => panels::interactive::states(app, ui),
         "table" => panels::table::show(app, ui),
         _ => panels::properties::info_panel(app, ui),
     }

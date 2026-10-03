@@ -423,7 +423,7 @@ impl Renderer {
             if it.knockout {
                 // Knockout: each object first clears its area of those behind it, so it composites
                 // with the group's backdrop rather than with its siblings.
-                for c in it.children() {
+                for c in it.shown_children() {
                     if !c.hidden {
                         ctx.set_transform(Affine::IDENTITY);
                         ctx.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestOut)), None, None, None);
@@ -435,7 +435,7 @@ impl Renderer {
                     self.draw_item(ctx, f, c, xf, page_name);
                 }
             } else {
-                for c in it.children() {
+                for c in it.shown_children() {
                     self.draw_item(ctx, f, c, xf, page_name);
                 }
             }

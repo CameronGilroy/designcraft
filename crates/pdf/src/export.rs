@@ -741,7 +741,7 @@ impl Exporter<'_> {
         }
         if !it.children().is_empty() {
             let pushes = Self::push_group(s, it.opacity, it.blend) + Self::push_isolation(s, it);
-            for c in it.children() {
+            for c in it.shown_children() {
                 self.item(s, c, xf, page_name);
             }
             for _ in 0..pushes {
