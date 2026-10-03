@@ -378,11 +378,30 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
             ("units", "Units & Increments"),
             ("grids", "Grids"),
             ("guides", "Guides & Pasteboard"),
+            ("dictionary", "Dictionary"),
+            ("spelling", "Spelling"),
+            ("autocorrect", "Autocorrect"),
+            ("notes", "Notes"),
+            ("trackChanges", "Track Changes"),
+            ("storyEditor", "Story Editor Display"),
             ("display", "Display Performance"),
             ("black", "Appearance of Black"),
+            ("files", "File Handling"),
         ]
     } else {
-        &[("general", "General"), ("interface", "Interface"), ("type", "Type"), ("composition", "Composition"), ("display", "Display Performance")]
+        &[
+            ("general", "General"),
+            ("interface", "Interface"),
+            ("type", "Type"),
+            ("composition", "Composition"),
+            ("spelling", "Spelling"),
+            ("autocorrect", "Autocorrect"),
+            ("notes", "Notes"),
+            ("trackChanges", "Track Changes"),
+            ("storyEditor", "Story Editor Display"),
+            ("display", "Display Performance"),
+            ("files", "File Handling"),
+        ]
     };
     let cur = d.s("section");
     ui.horizontal_top(|ui| {
@@ -401,6 +420,66 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
         ui.vertical(|ui| {
             ui.set_min_width(300.0);
             match cur.as_str() {
+                "dictionary" => {
+                    ui.label(egui::RichText::new("User Dictionary (this document)").font(semibold(12.0)));
+                    ui.label("Words, one per line:");
+                    let mut t = d.s("userWords");
+                    if egui::ScrollArea::vertical()
+                        .max_height(170.0)
+                        .show(ui, |ui| ui.add(egui::TextEdit::multiline(&mut t).desired_rows(8).desired_width(280.0)))
+                        .inner
+                        .changed()
+                    {
+                        d.fields.insert("userWords".into(), json!(t));
+                    }
+                }
+                "spelling" => {
+                    ui.label(egui::RichText::new("Dynamic Spelling").font(semibold(12.0)));
+                    check(ui, d, "dynamicSpelling", "Enable Dynamic Spelling (underline misspelled words)");
+                }
+                "autocorrect" => {
+                    ui.label(egui::RichText::new("Options").font(semibold(12.0)));
+                    check(ui, d, "autocorrect", "Enable Autocorrect");
+                    ui.add_space(6.0);
+                    ui.label("Misspelled word → Correction (one per line):");
+                    let mut t = d.s("autocorrectText");
+                    if egui::ScrollArea::vertical()
+                        .max_height(150.0)
+                        .show(ui, |ui| ui.add(egui::TextEdit::multiline(&mut t).desired_rows(8).desired_width(280.0)))
+                        .inner
+                        .changed()
+                    {
+                        d.fields.insert("autocorrectText".into(), json!(t));
+                    }
+                }
+                "notes" => {
+                    ui.label(egui::RichText::new("Options").font(semibold(12.0)));
+                    check(ui, d, "showNoteAnchors", "Show Note Anchors in Layout View");
+                }
+                "trackChanges" => {
+                    ui.label(egui::RichText::new("Show").font(semibold(12.0)));
+                    check(ui, d, "showAddedText", "Added Text (highlighted)");
+                }
+                "storyEditor" => {
+                    ui.label(egui::RichText::new("Text Display Options").font(semibold(12.0)));
+                    ui.horizontal(|ui| {
+                        ui.label("Font Size:");
+                        let mut v = d.n("storyEditorSize").unwrap_or(14.0);
+                        if ui.add(egui::Slider::new(&mut v, 8.0..=36.0).step_by(1.0).suffix(" pt")).changed() {
+                            d.fields.insert("storyEditorSize".into(), json!(v));
+                        }
+                    });
+                }
+                "files" => {
+                    ui.label(egui::RichText::new("Document Recovery Data").font(semibold(12.0)));
+                    ui.horizontal(|ui| {
+                        ui.label("Save recovery data every:");
+                        let mut v = d.n("recoveryMinutes").unwrap_or(0.5);
+                        if ui.add(egui::DragValue::new(&mut v).range(0.1..=60.0).speed(0.1).suffix(" min")).changed() {
+                            d.fields.insert("recoveryMinutes".into(), json!(v));
+                        }
+                    });
+                }
                 "type" => {
                     ui.label(egui::RichText::new("Type Options").font(semibold(12.0)));
                     check(ui, d, "typographersQuotes", "Use Typographer's Quotes");
@@ -1220,8 +1299,21 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "preferences" => {
             app.run(
                 "prefs.set",
-                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "highlightHj": d.b("highlightHj"), "highlightKeeps": d.b("highlightKeeps"), "highlightCustomTracking": d.b("highlightCustomTracking"), "highlightSubstitutedFonts": d.b("highlightSubstitutedFonts"), "richBlackOutput": d.b("richBlackOutput"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
+                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "highlightHj": d.b("highlightHj"), "highlightKeeps": d.b("highlightKeeps"), "highlightCustomTracking": d.b("highlightCustomTracking"), "highlightSubstitutedFonts": d.b("highlightSubstitutedFonts"), "richBlackOutput": d.b("richBlackOutput"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow"),
+                    "autocorrect": d.b("autocorrect"), "showAddedText": d.b("showAddedText"), "showNoteAnchors": d.b("showNoteAnchors"),
+                    "recoveryMinutes": d.n("recoveryMinutes").unwrap_or(0.5),
+                    "autocorrectList": d.s("autocorrectText").lines().filter_map(|l| {
+                        let (a, b) = l.split_once('→').or_else(|| l.split_once("->"))?;
+                        let (a, b) = (a.trim().to_lowercase(), b.trim().to_string());
+                        (!a.is_empty() && !b.is_empty()).then(|| json!([a, b]))
+                    }).collect::<Vec<_>>()}),
             )?;
+            app.ui.dynamic_spelling = d.b("dynamicSpelling");
+            if d.fields.contains_key("userWords") {
+                let words: Vec<String> = d.s("userWords").lines().map(str::to_string).collect();
+                app.run("spelling.setWords", json!({"words": words}))?;
+            }
+            app.ui.story_editor_size = d.n("storyEditorSize").unwrap_or(14.0) as f32;
             // Highlight options change the screen view only.
             app.canvas.shown = None;
             let view = match d.s("displayQuality").as_str() {

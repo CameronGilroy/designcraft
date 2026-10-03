@@ -257,6 +257,9 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
         if app.ui.hidden_characters {
             draw_hidden_characters(app, &painter, &xf, &doc, &layout);
         }
+        if app.ui.dynamic_spelling && !preview {
+            draw_dynamic_spelling(app, ui.ctx(), &painter, &xf, &doc, &layout);
+        }
     }
     let sel_rect = draw_selection(app, &painter, &xf, &doc, &layout);
     draw_tool_overlays(app, &painter, &xf);
@@ -356,8 +359,8 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
             highlight_missing_fonts: !preview && app.session.prefs.highlight_substituted_fonts,
             highlight_hj: !preview && app.session.prefs.highlight_hj,
             condition_indicators: !preview,
-            note_indicators: !preview,
-            change_markup: !preview,
+            note_indicators: !preview && app.session.prefs.show_note_anchors,
+            change_markup: !preview && app.session.prefs.show_added_text,
             highlight_keeps: !preview && app.session.prefs.highlight_keeps,
             highlight_custom_tracking: !preview && app.session.prefs.highlight_custom_tracking,
             quality: app.ui.display_quality,
@@ -467,8 +470,8 @@ fn patch_texture(app: &mut DesignApp, layout: &CanvasLayout, ppp: f64, doc_key: 
         highlight_missing_fonts: !preview && app.session.prefs.highlight_substituted_fonts,
         highlight_hj: !preview && app.session.prefs.highlight_hj,
         condition_indicators: !preview,
-        note_indicators: !preview,
-        change_markup: !preview,
+        note_indicators: !preview && app.session.prefs.show_note_anchors,
+        change_markup: !preview && app.session.prefs.show_added_text,
         highlight_keeps: !preview && app.session.prefs.highlight_keeps,
         highlight_custom_tracking: !preview && app.session.prefs.highlight_custom_tracking,
         quality: app.ui.display_quality,
@@ -1406,6 +1409,46 @@ fn draw_hidden_characters(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc
                     let mark = if end >= story.text.len() { "#" } else { "¶" };
                     let p = xf.to_screen(m * Point::new(l.end_x + 1.0, l.baseline));
                     painter.text(p, egui::Align2::LEFT_BOTTOM, mark, font.clone(), col);
+                }
+            }
+        }
+    }
+}
+
+/// Edit › Spelling › Dynamic Spelling: red squiggles under misspelled words (checked once per
+/// story version).
+fn draw_dynamic_spelling(app: &DesignApp, ctx: &egui::Context, painter: &egui::Painter, xf: &Xf, doc: &Document, layout: &CanvasLayout) {
+    for story in doc.stories.values() {
+        let key = egui::Id::new(("dyn_spell", std::sync::Arc::as_ptr(story) as usize, doc.user_words.len()));
+        let bad: std::sync::Arc<Vec<std::ops::Range<usize>>> = match ctx.data(|d| d.get_temp(key)) {
+            Some(v) => v,
+            None => {
+                let v = std::sync::Arc::new(designcraft_engine::cmd::spelling::misspellings(story, &doc.user_words));
+                ctx.data_mut(|d| d.insert_temp(key, v.clone()));
+                v
+            }
+        };
+        if bad.is_empty() {
+            continue;
+        }
+        let cs = app.session.cache.get(doc, story.id, None);
+        let red = Stroke::new(1.0, Color32::from_rgb(230, 30, 30));
+        for ft in &cs.frames {
+            let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { continue };
+            let m = a * it.xf;
+            for l in &ft.lines {
+                for r in bad.iter().filter(|r| r.start < l.range.end && r.end > l.range.start) {
+                    let gs: Vec<_> = l.glyphs.iter().filter(|g| g.len > 0 && g.byte >= r.start && g.byte < r.end).collect();
+                    let (Some(x0), Some(x1)) = (gs.iter().map(|g| g.x).reduce(f64::min), gs.iter().map(|g| g.x + g.adv).reduce(f64::max)) else {
+                        continue;
+                    };
+                    let y = l.baseline + l.descent * 0.5;
+                    let (p0, p1) = (xf.to_screen(m * Point::new(x0, y)), xf.to_screen(m * Point::new(x1, y)));
+                    // A zigzag 2 px high, 4 px per wave.
+                    let n = ((p1.x - p0.x) / 2.0).max(1.0) as usize;
+                    let pts: Vec<Pos2> =
+                        (0..=n).map(|k| pos2(p0.x + (p1.x - p0.x) * k as f32 / n as f32, p0.y + if k % 2 == 0 { 0.0 } else { 2.0 })).collect();
+                    painter.add(egui::Shape::line(pts, red));
                 }
             }
         }

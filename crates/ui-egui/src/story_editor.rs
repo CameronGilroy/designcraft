@@ -46,7 +46,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     let mut text = story.text.clone();
                     let r = ui.add(
                         egui::TextEdit::multiline(&mut text)
-                            .font(egui::FontId::proportional(14.0))
+                            .font(egui::FontId::proportional(app.ui.story_editor_size.clamp(8.0, 36.0)))
                             .desired_width(f32::INFINITY)
                             .desired_rows(20)
                             .frame(egui::Frame::NONE),

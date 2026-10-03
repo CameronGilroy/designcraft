@@ -9,13 +9,13 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
-| P0 | 102 | 99 | 3 | 0 | 99% |
+| P0 | 102 | 100 | 2 | 0 | 99% |
 | P1 | 97 | 92 | 5 | 0 | 97% |
 | P2 | 76 | 41 | 29 | 6 | 73% |
 
 | Area | Parity |
 |---|---|
-| Application shell & workspace | 92% |
+| Application shell & workspace | 96% |
 | Documents, pages, spreads | 96% |
 | Layers | 95% |
 | Frames, shapes & paths | 100% |
@@ -35,7 +35,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Undo, history, saving | 100% |
 | Accessibility | 70% |
 
-Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print).
+Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print).
 
 ## Rows
 
@@ -55,7 +55,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Application shell & workspace | Menu customization | P2 | D |
 | Application shell & workspace | Show Full Menus | P2 | D |
 | Application shell & workspace | Recovery / autosave | P0 | D |
-| Application shell & workspace | Preferences | P0 | P |
+| Application shell & workspace | Preferences | P0 | D |
 | Application shell & workspace | Localization | P2 | P |
 | Application shell & workspace | Scripting (own API: commands, scripts, MCP) | P2 | D |
 | Documents, pages, spreads | New Document dialog | P0 | D |

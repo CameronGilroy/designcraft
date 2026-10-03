@@ -41,6 +41,24 @@ pub fn specs() -> Vec<CommandSpec> {
             })
         }),
         cmd!(query "hyphenation.list", "Hyphenation Exceptions", [], None, "{} → [word]", has_doc, |s, _| Ok(serde_json::to_value(&s.doc()?.doc.hyphenation_exceptions).unwrap_or_default())),
+        cmd!("spelling.setWords", "User Dictionary", [], None, "{words: [word]} — replace the document's user dictionary", has_doc, |s, p| {
+            let mut words: Vec<String> = p
+                .get("words")
+                .and_then(Value::as_array)
+                .ok_or_else(|| bad("spelling.setWords", "`words` required"))?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(|w| w.trim().to_lowercase())
+                .filter(|w| !w.is_empty())
+                .collect();
+            words.sort();
+            words.dedup();
+            s.edit(|d, _| {
+                d.user_words = words.clone();
+                Ok(json!({"words": words.len()}))
+            })
+        }),
+        cmd!(query "spelling.words", "User Dictionary Words", [], None, "{} → [word]", has_doc, |s, _| Ok(json!(s.doc()?.doc.user_words))),
         cmd!("spelling.addWord", "Add to Dictionary", ["Edit", "Spelling"], None, "{word}", has_doc, |s, p| {
             let w = str_param(p, "word").ok_or_else(|| bad("spelling.addWord", "missing word"))?.to_lowercase();
             s.edit(|d, _| {
@@ -142,6 +160,36 @@ pub fn suggest(dict: &Dictionary, w: &str) -> Vec<String> {
     out
 }
 
+/// Misspelled words of a story: byte ranges (acronyms skipped; the user dictionary counts).
+pub fn misspellings(story: &designcraft_doc::Story, user: &[String]) -> Vec<std::ops::Range<usize>> {
+    let dict = Dictionary::en_us();
+    let text = &story.text;
+    let bytes: Vec<(usize, char)> = text.char_indices().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if !bytes[i].1.is_alphabetic() {
+            i += 1;
+            continue;
+        }
+        let start = bytes[i].0;
+        let mut j = i;
+        while j < bytes.len()
+            && (bytes[j].1.is_alphabetic() || ((bytes[j].1 == '\'' || bytes[j].1 == '’') && j + 1 < bytes.len() && bytes[j + 1].1.is_alphabetic()))
+        {
+            j += 1;
+        }
+        let end = bytes.get(j).map(|b| b.0).unwrap_or(text.len());
+        let word = &text[start..end];
+        let acronym = word.chars().all(|c| c.is_uppercase()) && word.chars().count() <= 5;
+        if !acronym && !known(dict, user, &word.to_lowercase()) {
+            out.push(start..end);
+        }
+        i = j.max(i + 1);
+    }
+    out
+}
+
 fn check(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.doc()?;
     let d = &st.doc;
@@ -154,32 +202,10 @@ fn check(s: &mut Session, p: &Value) -> Result<Value> {
     let mut out = Vec::new();
     for sid in stories {
         let Some(story) = d.story(sid) else { continue };
-        let text = &story.text;
-        let mut i = 0;
-        let bytes: Vec<(usize, char)> = text.char_indices().collect();
-        while i < bytes.len() {
-            if !bytes[i].1.is_alphabetic() {
-                i += 1;
-                continue;
-            }
-            let start = bytes[i].0;
-            let mut j = i;
-            while j < bytes.len()
-                && (bytes[j].1.is_alphabetic()
-                    || ((bytes[j].1 == '\'' || bytes[j].1 == '’') && j + 1 < bytes.len() && bytes[j + 1].1.is_alphabetic()))
-            {
-                j += 1;
-            }
-            let end = bytes.get(j).map(|b| b.0).unwrap_or(text.len());
-            let word = &text[start..end];
-            let lower = word.to_lowercase();
-            // Skip words with digits around them and all-caps acronyms.
-            let acronym = word.chars().all(|c| c.is_uppercase()) && word.chars().count() <= 5;
-            if !acronym && !known(dict, &d.user_words, &lower) {
-                let sugg = if want_sugg { suggest(dict, &lower) } else { vec![] };
-                out.push(json!({"story": sid.0, "start": start, "end": end, "word": word, "suggestions": sugg}));
-            }
-            i = j.max(i + 1);
+        for r in misspellings(story, &d.user_words) {
+            let word = &story.text[r.clone()];
+            let sugg = if want_sugg { suggest(dict, &word.to_lowercase()) } else { vec![] };
+            out.push(json!({"story": sid.0, "start": r.start, "end": r.end, "word": word, "suggestions": sugg}));
         }
     }
     Ok(Value::Array(out))
@@ -201,6 +227,18 @@ mod tests {
         assert!(!known(d, &[], "typograpy"));
         assert!(suggest(d, "typograpy").contains(&"typography".to_string()));
         assert!(known(d, &["designcraft".into()], "designcraft"));
+    }
+
+    #[test]
+    fn user_dictionary_replaces_and_counts() {
+        let mut s = Session::new();
+        s.execute("file.new", &serde_json::json!({})).unwrap();
+        s.execute("spelling.setWords", &serde_json::json!({"words": ["Zorbo", " zorbo", "", "Quux"]})).unwrap();
+        assert_eq!(s.execute("spelling.words", &serde_json::json!({})).unwrap(), serde_json::json!(["quux", "zorbo"]));
+        let mut story = designcraft_doc::Story::new(designcraft_doc::StoryId(1));
+        story.insert(0, "zorbo qwzx");
+        let bad = misspellings(&story, &s.doc().unwrap().doc.user_words);
+        assert_eq!(bad, vec![6..10]);
     }
 
     #[test]

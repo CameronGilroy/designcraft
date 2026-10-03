@@ -26,6 +26,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.fittingOptions", "Frame Fitting Options…", None, "{} — the dialog for object.fittingOptions"),
     ("app.menus", "Menus…", None, "{} — show or hide menu items"),
     ("window.hideMenuItem", "Hide Menu Item", None, "{item: \"Menu/Label\", hidden?: bool}"),
+    ("edit.dynamicSpelling", "Dynamic Spelling", None, "{on?: bool} — underline misspelled words on the canvas"),
     ("app.language", "Interface Language", None, "{lang: \"\"|de|fr|es|ja} — menus and panel names (the macOS menu bar follows on the next launch)"),
     (
         "app.flattener",
@@ -170,6 +171,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             ">Spelling",
             "cmd:spelling.check",
+            "ui:edit.dynamicSpelling",
             "cmd:spelling.addWord",
             "ui:app.userDictionary",
             "<",
@@ -843,6 +845,9 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                     f[format!("adv.{k}")] = json!(format!("{}", doc["advancedType"][k].as_f64().unwrap_or(0.0)));
                 }
                 f["verticalUnits"] = doc["verticalUnits"].clone();
+                let words = app.session.execute("spelling.words", &json!({})).unwrap_or_default();
+                f["userWords"] =
+                    json!(words.as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n")).unwrap_or_default());
                 let inc = doc["keyboardIncrement"].as_f64().unwrap_or(1.0);
                 f["keyboardIncrement"] = json!(designcraft_geom::format_measure(inc, designcraft_geom::Unit::Points));
                 let units = app.session.active().map(|d| d.doc.settings.horizontal_units).unwrap_or_default();
@@ -871,6 +876,10 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             });
             f["uiScale"] = json!((app.ui.ui_scale * 100.0).round());
             f["richBlack"] = json!(app.ui.rich_black);
+            f["dynamicSpelling"] = json!(app.ui.dynamic_spelling);
+            f["storyEditorSize"] = json!(app.ui.story_editor_size);
+            let list = app.session.prefs.autocorrect_list.iter().map(|(a, b)| format!("{a} → {b}")).collect::<Vec<_>>().join("\n");
+            f["autocorrectText"] = json!(list);
             f["section"] = json!("general");
             app.ui.dialog = Some(crate::dialogs::Dialog::new("preferences", f));
             Ok(Value::Null)
@@ -1039,6 +1048,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(json!({"floating": app.ui.floating.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()}))
         }
         "window.controlBar" => flag(&mut app.ui.control_bar),
+        "edit.dynamicSpelling" => flag(&mut app.ui.dynamic_spelling),
         "window.split" | "window.newWindow" => {
             let on = if id == "window.newWindow" { true } else { p.get("on").and_then(Value::as_bool).unwrap_or(!app.split) };
             app.split = on;
@@ -1430,6 +1440,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "changes.track" => app.session.active().is_some_and(|d| d.doc.settings.track_changes),
         "window.controlBar" => app.ui.control_bar,
         "window.split" => app.split,
+        "edit.dynamicSpelling" => app.ui.dynamic_spelling,
         "app.language" => app.ui.language == params.get("lang").and_then(Value::as_str).unwrap_or(""),
         "app.flattener" => app.ui.flattener == params.get("preset").and_then(Value::as_str).unwrap_or(""),
         "window.taskBar" => app.ui.task_bar,

@@ -152,6 +152,37 @@ pub struct Prefs {
     /// Preferences › Type › Smart Text Reflow: pages follow the primary text frame's story
     /// (added while it oversets, empty ones at the end removed).
     pub smart_text_reflow: bool,
+    /// Preferences › Autocorrect: typing a space or punctuation after a listed word replaces it.
+    pub autocorrect: bool,
+    /// Misspelled word → correction (lowercase; the correction follows the typed capitalisation).
+    pub autocorrect_list: Vec<(String, String)>,
+    /// Preferences › Track Changes › Show: added text highlighted on screen.
+    pub show_added_text: bool,
+    /// Preferences › Notes: note anchors shown in layout view.
+    pub show_note_anchors: bool,
+    /// Preferences › File Handling: minutes between document recovery saves.
+    pub recovery_minutes: f64,
+}
+
+/// A starter autocorrect list (common English typing slips).
+pub fn default_autocorrect() -> Vec<(String, String)> {
+    [
+        ("teh", "the"),
+        ("adn", "and"),
+        ("taht", "that"),
+        ("recieve", "receive"),
+        ("seperate", "separate"),
+        ("occured", "occurred"),
+        ("untill", "until"),
+        ("wich", "which"),
+        ("becuase", "because"),
+        ("definately", "definitely"),
+        ("thier", "their"),
+        ("alot", "a lot"),
+    ]
+    .iter()
+    .map(|(a, b)| (a.to_string(), b.to_string()))
+    .collect()
 }
 
 impl Default for Prefs {
@@ -172,6 +203,11 @@ impl Default for Prefs {
             rich_black_output: false,
             favorite_fonts: Vec::new(),
             smart_text_reflow: true,
+            autocorrect: false,
+            autocorrect_list: default_autocorrect(),
+            show_added_text: true,
+            show_note_anchors: true,
+            recovery_minutes: 0.5,
         }
     }
 }

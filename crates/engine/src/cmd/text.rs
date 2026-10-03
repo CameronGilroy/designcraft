@@ -287,11 +287,34 @@ fn insert(s: &mut Session, p: &Value) -> Result<Value> {
     let raw = p.get("raw").and_then(Value::as_bool).unwrap_or(false);
     let text = if s.prefs.typographers_quotes && !raw { smart_quotes(s, &text) } else { text };
     let tracking = s.doc()?.doc.settings.track_changes;
+    let autocorrect = (s.prefs.autocorrect && !tracking && !raw).then(|| s.prefs.autocorrect_list.clone());
     s.edit(|d, sel| {
         let t = sel.text.ok_or_else(|| bad("text.insert", "no insertion point"))?;
         let st = d.text_story_mut(t.story, t.cell).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
         let r = t.range();
-        let r = r.start.min(st.len())..r.end.min(st.len());
+        let mut r = r.start.min(st.len())..r.end.min(st.len());
+        // Autocorrect: a word ended by a space or punctuation is looked up.
+        if let Some(list) = &autocorrect
+            && r.is_empty()
+            && text.chars().count() == 1
+            && text.chars().all(|c| c.is_whitespace() || c.is_ascii_punctuation())
+        {
+            let before = &st.text[..r.start];
+            let ws = before.char_indices().rev().take_while(|(_, c)| c.is_alphabetic()).last().map(|(i, _)| i);
+            if let Some(ws) = ws {
+                let word = &before[ws..];
+                if let Some((_, to)) = list.iter().find(|(from, _)| from.eq_ignore_ascii_case(word)) {
+                    let to = if word.chars().next().is_some_and(char::is_uppercase) {
+                        let mut c = to.chars();
+                        c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+                    } else {
+                        to.clone()
+                    };
+                    st.replace(ws..r.start, &to);
+                    r = ws + to.len()..ws + to.len();
+                }
+            }
+        }
         // Typing next to a table anchor starts a paragraph of its own.
         let mut text = text.clone();
         let mut trail = 0;
@@ -1034,5 +1057,34 @@ mod border_tests {
             (Some(true), Some([2.0, 1.0, 2.0, 1.0]), Some([4.0; 4])),
             "IDML paragraph border"
         );
+    }
+}
+
+#[cfg(test)]
+mod autocorrect_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn autocorrect_fixes_the_word_before_a_space() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": ""})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        s.execute("text.select", &json!({"story": sid.0, "anchor": 0, "focus": 0})).unwrap();
+        let text = |s: &Session| s.doc().unwrap().doc.stories[&sid].text.clone();
+        // Off by default.
+        for c in ["t", "e", "h", " "] {
+            s.execute("text.insert", &json!({"text": c})).unwrap();
+        }
+        assert_eq!(text(&s), "teh ");
+        s.execute("prefs.set", &json!({"autocorrect": true})).unwrap();
+        for c in ["T", "e", "h", " ", "c", "a", "t", "."] {
+            s.execute("text.insert", &json!({"text": c})).unwrap();
+        }
+        assert_eq!(text(&s), "teh The cat.");
+        // The caret ends after the inserted punctuation.
+        assert_eq!(s.doc().unwrap().selection.text.unwrap().focus, "teh The cat.".len());
     }
 }

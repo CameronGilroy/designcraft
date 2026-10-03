@@ -103,6 +103,10 @@ pub struct UiState {
     /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
     pub hidden_menu_items: Vec<String>,
     pub show_full_menus: bool,
+    /// Edit › Spelling › Dynamic Spelling: misspelled words underlined on the canvas.
+    pub dynamic_spelling: bool,
+    /// Preferences › Story Editor Display: text size (points).
+    pub story_editor_size: f32,
     /// Edit › Interface Language: "" (English), "de", "fr", "es" or "ja".
     pub language: String,
     /// Edit › Transparency Flattener Presets: "" (none), "high", "medium" or "low" for PDF export.
@@ -174,6 +178,8 @@ impl Default for UiState {
             tagged_frames: false,
             hidden_menu_items: Vec::new(),
             show_full_menus: false,
+            story_editor_size: 14.0,
+            dynamic_spelling: false,
             language: String::new(),
             flattener: String::new(),
             separation: None,
@@ -501,7 +507,7 @@ impl DesignApp {
         let now = ctx.input(|i| i.time);
         // Crash recovery: unsaved documents are written to the recovery folder every 30 s.
         #[cfg(not(target_arch = "wasm32"))]
-        if self.session.recovery_dir.is_some() && now - self.last_recovery > 30.0 {
+        if self.session.recovery_dir.is_some() && now - self.last_recovery > (self.session.prefs.recovery_minutes * 60.0).max(5.0) {
             self.last_recovery = now;
             if self.session.documents().iter().any(|d| d.is_dirty())
                 && let Err(e) = self.session.execute("file.recovery.save", &json!({}))
