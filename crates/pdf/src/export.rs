@@ -466,8 +466,16 @@ impl Exporter<'_> {
                     n = base;
                 }
                 SwatchValue::Registration => return Some(registration(t, self.rgb_only)),
-                SwatchValue::Color { color, color_type: ColorType::Spot } => {
-                    let space = SeparationSpace::new(SeparationColorant::Custom(sw.name.clone()), regular(color, self.rgb_only));
+                SwatchValue::Color { color: _, color_type: ColorType::Spot } => {
+                    // Ink Manager: an alias prints on another ink; converted inks go to process.
+                    let (ink, process) = self.doc.inks.resolve(&sw.name);
+                    let target =
+                        self.doc.swatch(ink).filter(|w| matches!(w.value, SwatchValue::Color { color_type: ColorType::Spot, .. })).unwrap_or(sw);
+                    let SwatchValue::Color { color, .. } = &target.value else { break };
+                    if process {
+                        return Some(device(&designcraft_color::swatch::apply_tint(*color, t), self.rgb_only));
+                    }
+                    let space = SeparationSpace::new(SeparationColorant::Custom(target.name.clone()), regular(color, self.rgb_only));
                     return Some(SepColor::new(q(t), space).into());
                 }
                 _ => break,

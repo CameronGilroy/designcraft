@@ -132,6 +132,71 @@ pub fn specs() -> Vec<CommandSpec> {
                 ok()
             })
         }),
+        cmd!(query "ink.list", "Ink Manager", [], None, "{} → {allToProcess, inks: [{name, process: bool (printed as process), alias?}]} — the spot inks", has_doc, |s, _| {
+            let d = &s.doc()?.doc;
+            let inks: Vec<Value> = d
+                .swatches
+                .iter()
+                .filter(|w| matches!(w.value, designcraft_color::swatch::SwatchValue::Color { color_type: designcraft_color::swatch::ColorType::Spot, .. }))
+                .map(|w| {
+                    let alias = d.inks.aliases.iter().find(|(a, _)| *a == w.name).map(|(_, t)| t.clone());
+                    json!({"name": w.name, "process": d.inks.resolve(&w.name).1, "alias": alias})
+                })
+                .collect();
+            Ok(json!({"allToProcess": d.inks.all_to_process, "inks": inks}))
+        }),
+        cmd!(
+            "ink.options",
+            "Ink Manager",
+            [],
+            None,
+            "{allToProcess?: bool, ink?: spot swatch, toProcess?: bool, alias?: spot swatch | null} — output: spots to process, ink aliases",
+            has_doc,
+            |s, p| {
+                let all = p.get("allToProcess").and_then(Value::as_bool);
+                let ink = str_param(p, "ink").map(str::to_string);
+                let to_process = p.get("toProcess").and_then(Value::as_bool);
+                let alias = p.get("alias").cloned();
+                s.edit(|d, _| {
+                    if let Some(v) = all {
+                        d.inks.all_to_process = v;
+                    }
+                    if let Some(name) = &ink {
+                        let is_spot = |n: &str| {
+                            d.swatch(n).is_some_and(|w| {
+                                matches!(
+                                    w.value,
+                                    designcraft_color::swatch::SwatchValue::Color { color_type: designcraft_color::swatch::ColorType::Spot, .. }
+                                )
+                            })
+                        };
+                        if !is_spot(name) {
+                            return Err(bad("ink.options", format!("`{name}` isn't a spot ink")));
+                        }
+                        if let Some(Value::String(to)) = &alias
+                            && (!is_spot(to) || to == name)
+                        {
+                            return Err(bad("ink.options", format!("can't alias to `{to}`")));
+                        }
+                        if let Some(v) = to_process {
+                            d.inks.to_process.retain(|x| x != name);
+                            if v {
+                                d.inks.to_process.push(name.clone());
+                            }
+                        }
+                        match alias {
+                            Some(Value::String(to)) => {
+                                d.inks.aliases.retain(|(a, _)| a != name);
+                                d.inks.aliases.push((name.clone(), to));
+                            }
+                            Some(Value::Null) => d.inks.aliases.retain(|(a, _)| a != name),
+                            _ => {}
+                        }
+                    }
+                    ok()
+                })
+            }
+        ),
         cmd!(
             "swatch.newColorGroup",
             "New Color Group",
@@ -934,5 +999,40 @@ mod color_group_tests {
         s.execute("swatch.ungroupColorGroup", &json!({"name": "Identity"})).unwrap();
         assert!(groups(&s).is_empty());
         assert!(s.doc().unwrap().doc.swatch(&a).is_some(), "ungrouping keeps the swatches");
+    }
+}
+
+#[cfg(test)]
+mod ink_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn ink_manager_converts_and_aliases_spots_in_pdf() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        for (n, c) in [("Pantone A", [0, 50, 100, 0]), ("Pantone B", [100, 0, 0, 0])] {
+            s.execute("swatch.create", &json!({"name": n, "spot": true, "color": {"c": c[0], "m": c[1], "y": c[2], "k": c[3]}})).unwrap();
+        }
+        let id = s.execute("frame.create", &json!({"rect": [72, 72, 200, 200]})).unwrap()["id"].clone();
+        s.execute("object.fill", &json!({"swatch": "Pantone A", "ids": [id]})).unwrap();
+        let pdf = |s: &mut Session| {
+            let b = s.execute("file.exportPdf", &json!({})).unwrap()["base64"].as_str().unwrap().to_string();
+            String::from_utf8_lossy(&super::super::file::base64_decode(&b)).into_owned()
+        };
+        assert!(pdf(&mut s).contains("Pantone"), "a separation");
+        s.execute("ink.options", &json!({"ink": "Pantone A", "alias": "Pantone B"})).unwrap();
+        let p = pdf(&mut s);
+        assert!(p.contains("Pantone#20B") || p.contains("Pantone B"), "aliased onto B");
+        assert!(!p.contains("Pantone#20A") && !p.contains("/Pantone A"));
+        s.execute("ink.options", &json!({"allToProcess": true})).unwrap();
+        assert!(!pdf(&mut s).contains("Pantone"), "all spots to process");
+        let l = s.execute("ink.list", &json!({})).unwrap();
+        assert_eq!(l["inks"][0]["alias"], "Pantone B");
+        let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&s.doc().unwrap().doc)).unwrap();
+        assert!(back.inks.resolve("Pantone A").1, "IDML ConvertToProcess");
+        assert!(back.inks.aliases.iter().any(|(a, b)| a == "Pantone A" && b == "Pantone B"), "IDML AliasInkName");
+        assert!(s.execute("ink.options", &json!({"ink": "[Black]", "toProcess": true})).is_err());
     }
 }

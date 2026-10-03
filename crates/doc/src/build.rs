@@ -129,6 +129,7 @@ impl Document {
             swatches: designcraft_color::default_swatches(),
             color_groups: vec![],
             conditions: vec![],
+            inks: Default::default(),
             endnote_options: Default::default(),
             endnote_story: None,
             sections: vec![Section {

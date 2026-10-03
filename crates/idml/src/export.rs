@@ -485,12 +485,16 @@ impl<'a> Ex<'a> {
                     colors.push(color_el(&id, &s.name, model, color, "Normal", true, true, true));
                     by_value.push((*color, id.clone()));
                     if *color_type == ColorType::Spot {
+                        let mut ink = El::new("Ink");
+                        if let Some((_, to)) = d.inks.aliases.iter().find(|(a, _)| *a == s.name) {
+                            ink.set("AliasInkName", to);
+                        }
+                        let convert = d.inks.all_to_process || d.inks.to_process.contains(&s.name);
                         inks.push(
-                            El::new("Ink")
-                                .attr("Self", format!("Ink/{}", escape_id(&s.name)))
+                            ink.attr("Self", format!("Ink/{}", escape_id(&s.name)))
                                 .attr("Name", &s.name)
                                 .attr("Angle", "45")
-                                .attr("ConvertToProcess", "false")
+                                .attr("ConvertToProcess", bool_s(convert))
                                 .attr("Frequency", "70")
                                 .attr("NeutralDensity", "0.5")
                                 .attr("PrintInk", "true")

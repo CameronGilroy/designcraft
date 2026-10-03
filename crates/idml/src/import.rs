@@ -100,6 +100,7 @@ struct Importer<'r> {
     color_groups: Vec<designcraft_doc::ColorGroup>,
     conditions: Vec<designcraft_doc::Condition>,
     condition_names: HashMap<String, String>,
+    inks: designcraft_doc::InkManager,
     styles: Styles,
     para_names: HashMap<String, String>,
     char_names: HashMap<String, String>,
@@ -181,6 +182,7 @@ impl<'r> Importer<'r> {
             color_groups: Vec::new(),
             conditions: Vec::new(),
             condition_names: HashMap::new(),
+            inks: Default::default(),
             styles,
             para_names: HashMap::new(),
             char_names: HashMap::new(),
@@ -512,6 +514,21 @@ impl<'r> Importer<'r> {
                 id.to_string(),
                 Swatch { name, value: SwatchValue::Tint { base, tint: (t / 100.0) as f32 }, locked: false, named: true, hidden: false },
             ));
+        }
+        // Ink Manager.
+        for e in top.iter().filter(|e| e.local() == "Ink") {
+            let Some(name) = e
+                .get("Name")
+                .filter(|n| !n.starts_with("$ID/") && !["Process Cyan", "Process Magenta", "Process Yellow", "Process Black"].contains(n))
+            else {
+                continue;
+            };
+            if e.get("ConvertToProcess") == Some("true") {
+                self.inks.to_process.push(name.to_string());
+            }
+            if let Some(a) = e.get("AliasInkName").filter(|a| !a.is_empty() && *a != name && !a.starts_with("$ID/")) {
+                self.inks.aliases.push((name.to_string(), a.to_string()));
+            }
         }
         for e in top.iter().filter(|e| e.local() == "Gradient") {
             let Some(id) = e.get("Self") else { continue };
@@ -1988,6 +2005,7 @@ impl<'r> Importer<'r> {
             swatches: std::mem::take(&mut self.swatches),
             color_groups: std::mem::take(&mut self.color_groups),
             conditions: std::mem::take(&mut self.conditions),
+            inks: std::mem::take(&mut self.inks),
             endnote_options: Default::default(),
             endnote_story: None,
             sections: std::mem::take(&mut self.sections),

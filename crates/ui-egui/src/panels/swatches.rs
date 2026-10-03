@@ -66,6 +66,27 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
                 let _ = app.run("swatch.create", json!({"color": {"c": 0, "m": 50, "y": 100, "k": 0}}));
             }
             ui.menu_button("☰", |ui| {
+                ui.menu_button("Ink Manager", |ui| {
+                    let Ok(l) = app.session.execute("ink.list", &json!({})) else { return };
+                    let mut all = l["allToProcess"].as_bool().unwrap_or(false);
+                    if ui.checkbox(&mut all, "All Spots to Process").changed() {
+                        let _ = app.run("ink.options", json!({"allToProcess": all}));
+                    }
+                    ui.separator();
+                    let inks = l["inks"].as_array().cloned().unwrap_or_default();
+                    if inks.is_empty() {
+                        ui.label("No spot inks");
+                    }
+                    for ink in inks {
+                        let name = ink["name"].as_str().unwrap_or("").to_string();
+                        let mut process = ink["process"].as_bool().unwrap_or(false);
+                        ui.add_enabled_ui(!all, |ui| {
+                            if ui.checkbox(&mut process, format!("{name} → process")).changed() {
+                                let _ = app.run("ink.options", json!({"ink": name, "toProcess": process}));
+                            }
+                        });
+                    }
+                });
                 if ui.button("New Color Group").clicked() {
                     let _ = app.run("swatch.newColorGroup", json!({}));
                     ui.close();

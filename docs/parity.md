@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 75 | 21 | 1 | 88% |
-| P2 | 76 | 22 | 13 | 41 | 38% |
+| P2 | 76 | 23 | 13 | 40 | 39% |
 
 | Area | Parity |
 |---|---|
@@ -20,7 +20,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Layers | 95% |
 | Frames, shapes & paths | 93% |
 | Transform | 100% |
-| Fill, stroke, colour | 88% |
+| Fill, stroke, colour | 90% |
 | Effects & transparency | 71% |
 | Placing & links | 82% |
 | Type & text frames | 92% |
@@ -147,7 +147,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Fill, stroke, colour | Tints | P0 | D |
 | Fill, stroke, colour | Special swatches | P0 | D |
 | Fill, stroke, colour | Spot colours | P1 | D |
-| Fill, stroke, colour | Ink Manager | P2 | M |
+| Fill, stroke, colour | Ink Manager | P2 | D |
 | Fill, stroke, colour | Load/Save Swatches (.ase) | P1 | D |
 | Fill, stroke, colour | Color groups | P2 | D |
 | Fill, stroke, colour | Unnamed colour to swatch | P1 | D |
