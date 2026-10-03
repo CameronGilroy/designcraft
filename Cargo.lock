@@ -935,6 +935,7 @@ dependencies = [
  "designcraft-format",
  "designcraft-geom",
  "designcraft-idml",
+ "designcraft-images",
  "designcraft-pdf",
  "designcraft-render",
  "designcraft-textimport",

@@ -219,6 +219,13 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
     if lname.ends_with(".idml") || lname.ends_with(".designcraft") {
         return place_layout_page(s, p, &name, &bytes);
     }
+    // EPS: shown and printed through its preview (or a placeholder) at its bounding box size.
+    let (bytes, eps_size) = if designcraft_images::is_eps(&bytes) {
+        let (proxy, size) = designcraft_images::eps_proxy(&bytes).ok_or_else(|| bad("file.place", "the EPS has no bounding box"))?;
+        (proxy, Some(size))
+    } else {
+        (bytes, None)
+    };
     // Video and sound: a media frame (Window › Interactive › Media).
     if let Some(mime) = designcraft_doc::media_mime(&name) {
         return super::media::place_media(s, p, name, mime, bytes, link);
@@ -245,7 +252,7 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
             .ok_or_else(|| bad("file.place", "can't read that PDF page"))?,
     };
     // 72 ppi by default unless the file says otherwise; scale so it fits the page when huge.
-    let (nw, nh) = (pw as f64, ph as f64);
+    let (nw, nh) = eps_size.unwrap_or((pw as f64, ph as f64));
     // Image Import Options › Crop to: the frame shows that box of the PDF page.
     let crop_box = match str_param(p, "pdfCrop") {
         Some(k) if designcraft_render::is_pdf(&bytes) => {

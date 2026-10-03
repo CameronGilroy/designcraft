@@ -184,4 +184,17 @@ mod tests {
         let x = read("OEBPS/content.xhtml");
         assert!(x.contains("<video src=") && x.contains("loop=") && x.contains("poster="), "{x}");
     }
+
+    #[test]
+    fn eps_places_at_its_bounding_box() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let eps = b"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 10 10 154 82\nnewpath\n%%EOF\n";
+        let r = s.execute("file.place", &json!({"base64": super::super::file::base64_encode(eps), "name": "logo.eps", "x": 72, "y": 72})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let b = d.item(designcraft_doc::ItemId(r["id"].as_u64().unwrap())).unwrap().bounds();
+        assert!((b.width() - 144.0).abs() < 1e-6 && (b.height() - 72.0).abs() < 1e-6, "{b:?}");
+        // Renders (the placeholder) and exports.
+        assert!(s.execute("file.exportPdf", &json!({})).is_ok());
+    }
 }

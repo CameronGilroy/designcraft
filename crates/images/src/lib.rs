@@ -7,6 +7,9 @@ use std::sync::{Arc, OnceLock};
 
 pub use resvg::usvg;
 
+mod eps;
+pub use eps::{bounding_box as eps_bounding_box, eps_proxy, is_eps};
+
 /// CSS pixels (SVG user units) → points.
 pub const PT_PER_PX: f64 = 0.75;
 
