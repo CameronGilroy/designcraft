@@ -12,16 +12,19 @@ pub enum Brightness {
     MediumDark,
     MediumLight,
     Light,
+    /// Accessibility: black chrome, white text, yellow selection and focus.
+    HighContrast,
 }
 
 impl Brightness {
-    pub const ALL: [Brightness; 4] = [Brightness::Dark, Brightness::MediumDark, Brightness::MediumLight, Brightness::Light];
+    pub const ALL: [Brightness; 5] = [Brightness::Dark, Brightness::MediumDark, Brightness::MediumLight, Brightness::Light, Brightness::HighContrast];
     pub fn label(self) -> &'static str {
         match self {
             Brightness::Dark => "Dark",
             Brightness::MediumDark => "Medium Dark",
             Brightness::MediumLight => "Medium Light",
             Brightness::Light => "Light",
+            Brightness::HighContrast => "High Contrast",
         }
     }
     pub fn id(self) -> &'static str {
@@ -30,6 +33,7 @@ impl Brightness {
             Brightness::MediumDark => "mediumDark",
             Brightness::MediumLight => "mediumLight",
             Brightness::Light => "light",
+            Brightness::HighContrast => "highContrast",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -204,6 +208,37 @@ impl Tokens {
                 ruler_text: hex(0x1e1e1e),
                 section_divider: hex(0xd0d0d0),
                 tab_strip: hex(0xe2e2e2),
+                ..dark
+            },
+            Brightness::HighContrast => Tokens {
+                app_bar: hex(0x000000),
+                panel: hex(0x000000),
+                panel_darker: hex(0x000000),
+                input: hex(0x000000),
+                input_border: hex(0xffffff),
+                divider: hex(0xffffff),
+                text: hex(0xffffff),
+                text_strong: hex(0xffffff),
+                text_dim: hex(0xe6e6e6),
+                text_disabled: hex(0xa0a0a0),
+                icon: hex(0xffffff),
+                hover: hex(0x3d3d00),
+                tool_active: hex(0x5c5c00),
+                accent: hex(0xffeb3b),
+                accent_strong: hex(0xffd600),
+                row_selected: hex(0x5c5c00),
+                pasteboard: hex(0x1a1a1a),
+                ruler: hex(0x000000),
+                ruler_tick: hex(0xffffff),
+                tab_inactive: hex(0x000000),
+                button: hex(0x000000),
+                border: hex(0xffffff),
+                field_border: hex(0xffffff),
+                well: hex(0x5c5c00),
+                well_rim: hex(0xffeb3b),
+                ruler_text: hex(0xffffff),
+                section_divider: hex(0xffffff),
+                tab_strip: hex(0x000000),
                 ..dark
             },
         }
