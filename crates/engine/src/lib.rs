@@ -8,6 +8,7 @@
 
 pub mod cmd;
 pub mod links;
+pub mod math;
 pub mod recovery;
 pub mod sample;
 pub mod script;

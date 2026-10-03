@@ -28,6 +28,7 @@ mod linked;
 mod links;
 mod liquid;
 mod lists;
+mod mathexpr;
 mod media;
 mod notes;
 mod object;
@@ -163,6 +164,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(library::specs());
         v.extend(lists::specs());
         v.extend(linked::specs());
+        v.extend(mathexpr::specs());
         v.extend(media::specs());
         v.extend(liquid::specs());
         v.extend(xml::specs());

@@ -374,6 +374,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "cmd:footnote.insert",
             "cmd:endnote.insert",
+            "cmd:math.insert",
             ">Story Direction",
             "cmd:object.textFrameOptions|Horizontal|{\"vertical\": false}",
             "cmd:object.textFrameOptions|Vertical|{\"vertical\": true}",
