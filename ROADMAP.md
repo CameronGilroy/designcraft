@@ -100,6 +100,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - EPS place: placed at its (high-resolution) bounding box and shown, printed and exported through its TIFF preview, or a placeholder when it has none. PostScript itself isn't interpreted.
 - Preferences: Dictionary (user dictionary; `spelling.setWords/words`), Spelling (Dynamic Spelling: red squiggles on the canvas, also Edit ▸ Spelling), Autocorrect (word list, applied as you type), Notes, Track Changes, Story Editor Display and File Handling (recovery interval) sections.
 - Colour management exposed: Edit ▸ Color Settings (`color.settings`: RGB/CMYK working spaces, intent, black-point compensation; `color.loadProfile` for ICC files; `color.convert` through the working spaces, with gamut checks) and View ▸ Proof Setup / Proof Colors (press, sRGB, legacy Mac RGB, colour-blindness simulations, simulate paper) on the canvas.
+- Keyboard: Tab / Shift+Tab hide and show all panels / all but Tools (`window.hidePanels`, `window.hidePanelsExceptTools`); Cmd+F6 / Cmd+Shift+F6 cycle documents; panel fields are reached with Tab and Escape returns to the layout.
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.
@@ -158,7 +159,7 @@ four agents in parallel on separate crates:
 | Work | Estimate |
 |---|---|
 | Open P0 (2: PDF/X-4 validation against a certified checker, PostScript interpretation for EPS) | 8 h |
-| Open P1 (4 partial: New Window as a separate OS window, language support, UI keyboard navigation, on-screen blending in the blend space) | 12 h |
+| Open P1 (3 partial: New Window as a separate OS window, language support, on-screen blending in the blend space) | 10 h |
 | Open P2 (37: 12 missing — spread rotation, page transitions, vertical/RTL type, math, video/audio, split window, localization, flattener, placed-file layers — and 25 partial) | 110 h |
 | Depth and pixel fidelity of every dialog, panel and menu against InDesign 2026 | 90 h |
 | Performance (incremental composition, GPU raster) and interchange hardening (IDML/PDF corpus) | 55 h |

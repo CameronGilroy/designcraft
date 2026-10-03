@@ -103,6 +103,8 @@ pub struct UiState {
     /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
     pub hidden_menu_items: Vec<String>,
     pub show_full_menus: bool,
+    /// Tab / Shift+Tab: 1 = every panel hidden, 2 = all but the Tools panel (0 = shown).
+    pub hidden_panels: u8,
     /// Edit › Color Settings (re-applied at start).
     pub color_settings: Option<designcraft_color::cms::ColorSettings>,
     /// View › Proof Colors and View › Proof Setup.
@@ -184,6 +186,7 @@ impl Default for UiState {
             hidden_menu_items: Vec::new(),
             show_full_menus: false,
             story_editor_size: 14.0,
+            hidden_panels: 0,
             color_settings: None,
             proof_colors: false,
             proof_setup: Default::default(),
@@ -597,15 +600,19 @@ impl DesignApp {
             if dbg {
                 eprintln!("after app bar {:?}", ui.available_rect_before_wrap());
             }
-            if self.ui.control_bar && self.session.active().is_some() {
+            if self.ui.control_bar && self.session.active().is_some() && self.ui.hidden_panels == 0 {
                 chrome::control_bar(self, ui);
             }
             chrome::status_bar(self, ui);
             if dbg {
                 eprintln!("after status {:?}", ui.available_rect_before_wrap());
             }
-            toolbar::show(self, ui);
-            dock::show(self, ui);
+            if self.ui.hidden_panels != 1 {
+                toolbar::show(self, ui);
+            }
+            if self.ui.hidden_panels == 0 {
+                dock::show(self, ui);
+            }
         }
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.pasteboard)).show(ui, |ui| {
             if self.session.active().is_none() {

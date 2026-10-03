@@ -73,6 +73,10 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.textThreads", "Show/Hide Text Threads", Some("Cmd+Alt+Y"), "{}"),
     ("view.hiddenCharacters", "Show/Hide Hidden Characters", Some("Cmd+Alt+I"), "{}"),
     ("view.taggedFrames", "Show/Hide Tagged Frames", None, "{} — XML-tagged frames outlined in their tag colour"),
+    ("window.hidePanels", "Show/Hide Panels", Some("Tab"), "{} — every panel, the Tools panel included"),
+    ("window.hidePanelsExceptTools", "Show/Hide Panels Except Tools", Some("Shift+Tab"), "{}"),
+    ("window.nextDocument", "Next Document", Some("Cmd+F6"), "{}"),
+    ("window.previousDocument", "Previous Document", Some("Cmd+Shift+F6"), "{}"),
     ("view.proofColors", "Proof Colors", None, "{on?: bool} — simulate the proof target on screen"),
     (
         "view.proofSetup",
@@ -557,6 +561,11 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:window.split",
             "<",
             "-",
+            "ui:window.hidePanels",
+            "ui:window.hidePanelsExceptTools",
+            "ui:window.nextDocument",
+            "ui:window.previousDocument",
+            "-",
             "ui:window.controlBar",
             "ui:window.taskBar",
             "ui:window.toolsDoubleColumn",
@@ -976,6 +985,20 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "view.textThreads" => flag(&mut app.ui.text_threads),
         "view.hiddenCharacters" => flag(&mut app.ui.hidden_characters),
         "view.taggedFrames" => flag(&mut app.ui.tagged_frames),
+        "window.hidePanels" | "window.hidePanelsExceptTools" => {
+            let mode = if id == "window.hidePanels" { 1 } else { 2 };
+            app.ui.hidden_panels = if app.ui.hidden_panels == mode { 0 } else { mode };
+            Ok(json!(app.ui.hidden_panels))
+        }
+        "window.nextDocument" | "window.previousDocument" => {
+            let n = app.session.documents().len();
+            if n > 1 {
+                let cur = app.session.active_index().unwrap_or(0);
+                let next = if id == "window.nextDocument" { (cur + 1) % n } else { (cur + n - 1) % n };
+                app.session.set_active(next);
+            }
+            Ok(json!(app.session.active_index()))
+        }
         "view.proofColors" => {
             app.ui.proof_colors = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.proof_colors);
             app.canvas.shown = None;
@@ -1889,6 +1912,26 @@ mod tests {
         run_ui(&mut app, "view.proofColors", &json!({})).unwrap().unwrap();
         assert!(!app.ui.proof_colors);
         assert!(run_ui(&mut app, "view.proofSetup", &json!({"target": "nope"})).unwrap().is_err());
+    }
+
+    #[test]
+    fn tab_hides_panels_and_documents_cycle() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        assert_eq!(shortcut_of(&app, "window.hidePanels").as_deref(), Some("Tab"));
+        run_ui(&mut app, "window.hidePanels", &json!({})).unwrap().unwrap();
+        assert_eq!(app.ui.hidden_panels, 1);
+        run_ui(&mut app, "window.hidePanelsExceptTools", &json!({})).unwrap().unwrap();
+        assert_eq!(app.ui.hidden_panels, 2);
+        run_ui(&mut app, "window.hidePanelsExceptTools", &json!({})).unwrap().unwrap();
+        assert_eq!(app.ui.hidden_panels, 0);
+        for _ in 0..3 {
+            app.session.execute("file.new", &json!({})).unwrap();
+        }
+        assert_eq!(app.session.active_index(), Some(2));
+        run_ui(&mut app, "window.nextDocument", &json!({})).unwrap().unwrap();
+        assert_eq!(app.session.active_index(), Some(0));
+        run_ui(&mut app, "window.previousDocument", &json!({})).unwrap().unwrap();
+        assert_eq!(app.session.active_index(), Some(2));
     }
 
     #[test]
