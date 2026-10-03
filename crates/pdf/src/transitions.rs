@@ -44,8 +44,9 @@ pub(crate) fn int_after(s: &str, key: &str) -> Option<usize> {
 
 /// Byte range of object `id`'s body (between `obj` and `endobj`).
 pub(crate) fn object(pdf: &[u8], id: usize) -> Option<std::ops::Range<usize>> {
+    // The latest copy (incremental updates re-state objects further on).
     let head = format!("\n{id} 0 obj");
-    let start = find(pdf, head.as_bytes(), 0)? + head.len();
+    let start = rfind(pdf, head.as_bytes())? + head.len();
     let end = find(pdf, b"endobj", start)?;
     Some(start..end)
 }
@@ -53,7 +54,19 @@ pub(crate) fn object(pdf: &[u8], id: usize) -> Option<std::ops::Range<usize>> {
 /// Add transitions to the pages of `pdf` (index = PDF page). `None` when the file's structure
 /// isn't the simple kind this understands (classic xref table, a flat page tree).
 pub fn add_transitions(pdf: &[u8], trans: &[Option<PageTransition>]) -> Option<Vec<u8>> {
-    if trans.iter().all(Option::is_none) {
+    add_page_entries(pdf, &trans.iter().map(|t| t.as_ref().map(trans_dict)).collect::<Vec<_>>())
+}
+
+/// Transparency blend space: pages with transparency get a page group in DeviceCMYK or DeviceRGB
+/// (`pages[i]` true = PDF page i).
+pub fn add_blend_space(pdf: &[u8], pages: &[bool], cmyk: bool) -> Option<Vec<u8>> {
+    let cs = if cmyk { "DeviceCMYK" } else { "DeviceRGB" };
+    add_page_entries(pdf, &pages.iter().map(|on| on.then(|| format!("/Group<</Type/Group/S/Transparency/CS/{cs}>>"))).collect::<Vec<_>>())
+}
+
+/// Append dictionary entries to pages (index = PDF page) as an incremental update.
+pub fn add_page_entries(pdf: &[u8], extra: &[Option<String>]) -> Option<Vec<u8>> {
+    if extra.iter().all(Option::is_none) {
         return Some(pdf.to_vec());
     }
     let t_at = rfind(pdf, b"trailer")?;
@@ -76,14 +89,14 @@ pub fn add_transitions(pdf: &[u8], trans: &[Option<PageTransition>]) -> Option<V
         out.push(b'\n');
     }
     let mut entries: Vec<(usize, usize)> = Vec::new();
-    for (i, t) in trans.iter().enumerate() {
+    for (i, t) in extra.iter().enumerate() {
         let (Some(t), Some(&kid)) = (t, kids.get(i)) else { continue };
         let body = String::from_utf8_lossy(&pdf[object(pdf, kid)?]).to_string();
         if !body.contains("/Type/Page") && !body.contains("/Type /Page") {
             return None;
         }
         let close = body.rfind(">>")?;
-        let new_body = format!("{}{}{}", &body[..close], trans_dict(t), &body[close..]);
+        let new_body = format!("{}{}{}", &body[..close], t, &body[close..]);
         entries.push((kid, out.len()));
         out.extend_from_slice(format!("{kid} 0 obj{new_body}endobj\n").as_bytes());
     }

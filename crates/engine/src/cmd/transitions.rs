@@ -99,6 +99,17 @@ mod tests {
         let r = s.execute("file.exportPdf", &json!({"spreads": true})).unwrap();
         let bytes = super::super::file::base64_decode(r["base64"].as_str().unwrap());
         assert_eq!(String::from_utf8_lossy(&bytes).matches("/Trans<<").count(), 1);
+        // With transparency too, the page keeps both its group and its transition.
+        let id = s.execute("frame.create", &json!({"rect": [100, 100, 200, 200]})).unwrap()["id"].clone();
+        s.execute("object.opacity", &json!({"ids": [id], "opacity": 0.5})).unwrap();
+        let r = s.execute("file.exportPdf", &json!({"pages": [1]})).unwrap();
+        let bytes = super::super::file::base64_decode(r["base64"].as_str().unwrap());
+        assert_eq!(designcraft_render::pdf_page_count(&bytes), Some(1));
+        s.execute("page.transition", &json!({"pages": [1], "kind": "fade"})).unwrap();
+        let r = s.execute("file.exportPdf", &json!({"pages": [1]})).unwrap();
+        let text = String::from_utf8_lossy(&super::super::file::base64_decode(r["base64"].as_str().unwrap())).to_string();
+        let last = &text[text.rfind("/Type/Page/").unwrap()..];
+        assert!(last.contains("/S/Fade") && last[..last.find("endobj").unwrap()].contains("/S/Transparency"), "{last}");
         s.execute("page.transition", &json!({"all": true, "kind": "none"})).unwrap();
         assert!(s.execute("page.transitions", &json!({})).unwrap().as_array().unwrap().is_empty());
     }

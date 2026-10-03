@@ -247,11 +247,18 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
     let doc: &designcraft_doc::Document = flattened.as_ref().map_or(&st.doc, |f| &f.0);
     let r = designcraft_pdf::export_pdf_with_report(doc, &s.cache, &opts).map_err(|e| EngineError::Other(e.to_string()))?;
     let mut r = r;
+    // Transparency Blend Space: the page group of pages with transparency.
+    let spreads = designcraft_pdf::sheet_spreads(doc, &opts);
+    let blended: Vec<bool> = spreads.iter().map(|si| doc.spreads.get(*si).is_some_and(|sp| sp.items.iter().any(|it| transparent(it)))).collect();
+    if blended.iter().any(|b| *b) {
+        match designcraft_pdf::add_blend_space(&r.bytes, &blended, doc.settings.blend_space == designcraft_doc::BlendSpace::Cmyk) {
+            Some(b) => r.bytes = b,
+            None => r.warnings.push("the transparency blend space couldn't be set".into()),
+        }
+    }
     // Page transitions (each spread's first page holds them).
-    let trans: Vec<Option<designcraft_doc::PageTransition>> = designcraft_pdf::sheet_spreads(doc, &opts)
-        .into_iter()
-        .map(|si| doc.spreads.get(si).and_then(|sp| sp.pages.first()).and_then(|pg| pg.transition))
-        .collect();
+    let trans: Vec<Option<designcraft_doc::PageTransition>> =
+        spreads.into_iter().map(|si| doc.spreads.get(si).and_then(|sp| sp.pages.first()).and_then(|pg| pg.transition)).collect();
     if trans.iter().any(Option::is_some) {
         match designcraft_pdf::add_transitions(&r.bytes, &trans) {
             Some(b) => r.bytes = b,
@@ -305,6 +312,10 @@ mod text_tests {
         // The document itself is untouched.
         assert!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(id.as_u64().unwrap())).is_some());
         assert!(s.execute("file.exportPdf", &json!({"flatten": 5})).is_err());
+        // Unflattened, the page blends in the document's blend space (CMYK for print).
+        let r = s.execute("file.exportPdf", &json!({})).unwrap();
+        let text = String::from_utf8_lossy(&super::super::file::base64_decode(r["base64"].as_str().unwrap())).to_string();
+        assert_eq!(text.matches("/S/Transparency/CS/DeviceCMYK").count(), 1, "only the page with transparency");
     }
 
     #[test]
