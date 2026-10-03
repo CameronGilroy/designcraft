@@ -79,6 +79,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("window.nextDocument", "Next Document", Some("Cmd+F6"), "{}"),
     ("window.previousDocument", "Previous Document", Some("Cmd+Shift+F6"), "{}"),
     ("app.layerOptions", "Object Layer Options…", None, "{} — show or hide the layers of the selected placed PDF"),
+    ("view.tagMarkers", "Show Tag Markers", None, "{on?: bool} — brackets around inline-tagged text"),
     ("view.flattenerPreview", "Flattener Preview", None, "{on?: bool} — highlight objects that involve transparency"),
     ("view.rotateSpread", "Rotate Spread", None, "{angle: 90 (clockwise) | -90 | 180 | 0 (clear)} — turn the view in quarter turns"),
     ("view.proofColors", "Proof Colors", None, "{on?: bool} — simulate the proof target on screen"),
@@ -356,6 +357,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "<",
             "ui:view.proofColors",
             "ui:view.flattenerPreview",
+            "ui:view.tagMarkers",
             ">Separations Preview",
             "ui:view.separations|Off|{\"plate\": null, \"inkLimit\": null}",
             "ui:view.separations|Cyan|{\"plate\": \"cyan\"}",
@@ -1179,6 +1181,10 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "window.controlBar" => flag(&mut app.ui.control_bar),
         "view.flattenerPreview" => flag(&mut app.ui.flattener_preview),
+        "view.tagMarkers" => {
+            app.canvas.shown = None;
+            flag(&mut app.ui.tag_markers)
+        }
         "edit.dynamicSpelling" => flag(&mut app.ui.dynamic_spelling),
         "window.split" | "window.newWindow" => {
             let on = if id == "window.newWindow" { true } else { p.get("on").and_then(Value::as_bool).unwrap_or(!app.split) };
@@ -1573,6 +1579,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "window.split" => app.split,
         "view.proofColors" => app.ui.proof_colors,
         "view.flattenerPreview" => app.ui.flattener_preview,
+        "view.tagMarkers" => app.ui.tag_markers,
         "view.rotateSpread" => match params.get("angle").and_then(Value::as_i64) {
             Some(0) => app.view().is_some_and(|v| v.rotation == 0),
             _ => return None,

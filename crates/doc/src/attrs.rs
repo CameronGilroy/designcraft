@@ -485,6 +485,8 @@ attr_set! {
         conditions: Vec<String> = Vec::new(),
         /// Track Changes: text added or deleted while tracking (deleted text isn't laid out).
         change: ChangeMark = ChangeMark::None,
+        /// XML: the element this text is tagged with (Tags panel, inline).
+        xml_tag: String = String::new(),
     }
 }
 

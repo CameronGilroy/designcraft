@@ -46,6 +46,33 @@ fn plain(t: &str) -> String {
     t.chars().filter(|c| !('\u{E000}'..='\u{E1FF}').contains(c)).map(|c| if c == '\u{2028}' { '\n' } else { c }).collect()
 }
 
+/// A paragraph's text with inline-tagged runs as elements.
+fn para_xml(st: &designcraft_doc::Story, r: std::ops::Range<usize>) -> String {
+    let mut out = String::new();
+    let mut open: Option<String> = None;
+    for (rr, f) in st.runs() {
+        let (a, b) = (rr.start.max(r.start), rr.end.min(r.end));
+        if a >= b {
+            continue;
+        }
+        let tag = f.over.xml_tag.clone().filter(|t| !t.is_empty());
+        if tag != open {
+            if let Some(t) = open.take() {
+                out.push_str(&format!("</{t}>"));
+            }
+            if let Some(t) = &tag {
+                out.push_str(&format!("<{t}>"));
+            }
+            open = tag;
+        }
+        out.push_str(&esc(&plain(&st.text[a..b])));
+    }
+    if let Some(t) = open {
+        out.push_str(&format!("</{t}>"));
+    }
+    out
+}
+
 /// The document's tagged content as XML.
 pub fn export_xml(d: &Document) -> String {
     let mut out = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<{}>\n", root_name(d));
@@ -56,19 +83,20 @@ pub fn export_xml(d: &Document) -> String {
             Content::Text(tf) => {
                 let Some(st) = d.story(tf.story) else { continue };
                 let mapped = |style: &str| d.xml.style_map.iter().find(|(s, _)| s == style).map(|(_, t)| t.clone());
+                // Paragraph text with inline tags already escaped.
                 let paras: Vec<(Option<String>, String)> =
-                    st.para_ranges().into_iter().enumerate().map(|(i, r)| (mapped(&st.paras[i].style), plain(&st.text[r]))).collect();
+                    st.para_ranges().into_iter().enumerate().map(|(i, r)| (mapped(&st.paras[i].style), para_xml(st, r))).collect();
                 if paras.iter().any(|(m, _)| m.is_some()) {
                     out.push_str(&format!("  <{tag}>\n"));
                     for (m, text) in paras {
                         match m {
-                            Some(t) => out.push_str(&format!("    <{t}>{}</{t}>\n", esc(&text))),
-                            None => out.push_str(&format!("    {}\n", esc(&text))),
+                            Some(t) => out.push_str(&format!("    <{t}>{text}</{t}>\n")),
+                            None => out.push_str(&format!("    {text}\n")),
                         }
                     }
                     out.push_str(&format!("  </{tag}>\n"));
                 } else {
-                    out.push_str(&format!("  <{tag}>{}</{tag}>\n", esc(&paras.into_iter().map(|(_, t)| t).collect::<Vec<_>>().join("\n"))));
+                    out.push_str(&format!("  <{tag}>{}</{tag}>\n", paras.into_iter().map(|(_, t)| t).collect::<Vec<_>>().join("\n")));
                 }
             }
             Content::Graphic(g) => {
@@ -182,6 +210,27 @@ pub fn specs() -> Vec<CommandSpec> {
                 }
                 ok()
             })
+        }),
+        cmd!("xml.tagText", "Tag Text", [], None, "{tag | null (untag)} — the selected text becomes an inline element", super::has_doc, |s, p| {
+            let tag = str_param(p, "tag").map(str::to_string);
+            if let Some(t) = &tag
+                && !valid_name(t)
+            {
+                return Err(bad("xml.tagText", format!("`{t}` isn't a valid XML name")));
+            }
+            if s.doc()?.selection.text.is_none_or(|t| t.range().is_empty()) {
+                return Err(bad("xml.tagText", "select some text"));
+            }
+            if let Some(t) = &tag {
+                s.edit(|d, _| {
+                    if !d.xml.tags.iter().any(|x| x.name == *t) {
+                        let color = COLORS[d.xml.tags.len() % COLORS.len()];
+                        d.xml.tags.push(XmlTag { name: t.clone(), color });
+                    }
+                    ok()
+                })?;
+            }
+            s.execute("type.char", &json!({"xmlTag": tag.unwrap_or_default()}))
         }),
         cmd!("xml.tag", "Tag Frame", [], None, "{tag (made if new), ids? (default: the selection)} — `tag: null` untags", has_doc, |s, p| {
             let tag = str_param(p, "tag").map(str::to_string);
@@ -380,5 +429,31 @@ mod tests {
         assert_eq!(sa.paras[0].style, "Head", "mapped tag → paragraph style");
         assert_eq!(d.stories[&designcraft_doc::StoryId(b["story"].as_u64().unwrap())].text, "New caption");
         assert!(s.execute("xml.tag", &json!({"tag": "1bad", "ids": [b["id"]]})).is_err());
+        // Inline tagging: part of a paragraph becomes an element.
+        let f = s
+            .execute("frame.create", &json!({"rect": [72, 500, 400, 560], "content": "text", "text": "See the glossary entry", "caret": false}))
+            .unwrap();
+        s.execute("xml.tag", &json!({"tag": "note", "ids": [f["id"]]})).unwrap();
+        s.execute("text.select", &json!({"story": f["story"], "anchor": 8, "focus": 16})).unwrap();
+        s.execute("xml.tagText", &json!({"tag": "term"})).unwrap();
+        let x = s.execute("file.exportXml", &json!({})).unwrap()["text"].as_str().unwrap().to_string();
+        assert!(x.contains("<note>See the <term>glossary</term> entry</note>"), "{x}");
+        // Tag markers draw in the tag's colour (screen view only).
+        let d = s.doc().unwrap().doc.clone();
+        let col = d.xml.tags.iter().find(|t| t.name == "term").unwrap().color;
+        let mut rr = designcraft_render::Renderer::new();
+        rr.threads = 0;
+        let count = |opts: &designcraft_render::RenderOptions, rr: &mut designcraft_render::Renderer| {
+            let img = rr.render_page(&d, &s.cache, 0, 2.0, false, opts).unwrap();
+            img.pixels
+                .chunks_exact(4)
+                .filter(|p| {
+                    (p[0] as i32 - col[0] as i32).abs() < 30 && (p[1] as i32 - col[1] as i32).abs() < 30 && (p[2] as i32 - col[2] as i32).abs() < 30
+                })
+                .count()
+        };
+        let plain = count(&Default::default(), &mut rr);
+        let marked = count(&designcraft_render::RenderOptions { tag_markers: true, ..Default::default() }, &mut rr);
+        assert!(marked > plain + 10, "{plain} {marked}");
     }
 }

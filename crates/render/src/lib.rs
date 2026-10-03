@@ -118,6 +118,8 @@ pub struct RenderOptions {
     pub note_indicators: bool,
     /// Track Changes: added text highlighted (screen view).
     pub change_markup: bool,
+    /// View › Structure › Show Tag Markers: brackets around inline-tagged text (screen view).
+    pub tag_markers: bool,
     /// View › Display Performance.
     pub quality: DisplayQuality,
     /// Preferences › Appearance of Black: show 100% K as rich (pure) black instead of the
@@ -156,6 +158,7 @@ impl Default for RenderOptions {
             condition_indicators: false,
             note_indicators: false,
             change_markup: false,
+            tag_markers: false,
             quality: DisplayQuality::High,
             rich_black: false,
             overprint_preview: false,

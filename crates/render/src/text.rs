@@ -234,6 +234,39 @@ impl Renderer {
                 }
             }
         }
+        if f.opts.tag_markers && cs.styles.iter().any(|s| s.xml_tag.is_some()) {
+            ctx.set_transform(m);
+            let px = 1.0 / m.determinant().abs().sqrt().max(1e-9);
+            for l in &ft.lines {
+                let tag_of = |g: &designcraft_compose::PlacedGlyph| cs.styles.get(g.style as usize).and_then(|s| s.xml_tag.clone());
+                let gs: Vec<_> = l.glyphs.iter().filter(|g| g.len > 0).collect();
+                let mut i = 0;
+                while i < gs.len() {
+                    let Some(tag) = tag_of(gs[i]) else {
+                        i += 1;
+                        continue;
+                    };
+                    let mut j = i + 1;
+                    while j < gs.len() && tag_of(gs[j]).as_deref() == Some(tag.as_str()) {
+                        j += 1;
+                    }
+                    let c = f.doc.xml.tags.iter().find(|t| t.name == tag).map_or([100, 100, 220], |t| t.color);
+                    ctx.set_paint(peniko::Color::from_rgb8(c[0], c[1], c[2]));
+                    let (x0, x1) = (gs[i].x, gs[j - 1].x + gs[j - 1].adv);
+                    let (top, bot) = (l.baseline - l.ascent, l.baseline + l.descent);
+                    let (w, t) = (2.5 * px, px.max(0.3));
+                    // [ before the element, ] after it.
+                    for (x, dir) in [(x0, 1.0), (x1, -1.0)] {
+                        ctx.fill_rect(&kurbo::Rect::new(x - t / 2.0, top, x + t / 2.0, bot));
+                        for y in [top, bot - t] {
+                            let (a, b) = if dir > 0.0 { (x, x + w) } else { (x - w, x) };
+                            ctx.fill_rect(&kurbo::Rect::new(a, y, b, y + t));
+                        }
+                    }
+                    i = j;
+                }
+            }
+        }
         if f.opts.change_markup && cs.styles.iter().any(|s| s.inserted) {
             ctx.set_transform(m);
             for l in &ft.lines {

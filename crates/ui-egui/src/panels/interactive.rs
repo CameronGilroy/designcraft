@@ -120,6 +120,8 @@ pub fn tags(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let Ok(info) = app.session.execute("xml.tags", &json!({})) else { return };
     let has_sel = app.session.active().is_some_and(|d| !d.selection.items.is_empty());
+    // Selected text is tagged inline instead of its frame.
+    let text_sel = app.session.active().and_then(|d| d.selection.text).is_some_and(|t| !t.range().is_empty());
     let id = egui::Id::new("new_tag_name");
     let mut name: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     ui.horizontal(|ui| {
@@ -140,8 +142,8 @@ pub fn tags(app: &mut DesignApp, ui: &mut egui::Ui) {
             if c.len() == 3 {
                 ui.painter().rect_filled(r, 2.0, egui::Color32::from_rgb(c[0], c[1], c[2]));
             }
-            if ui.add_enabled(has_sel, egui::Button::new(&n).frame(false)).on_hover_text("Tag the selection").clicked() {
-                let _ = app.run("xml.tag", json!({"tag": n}));
+            if ui.add_enabled(has_sel || text_sel, egui::Button::new(&n).frame(false)).on_hover_text("Tag the selection").clicked() {
+                let _ = if text_sel { app.run("xml.tagText", json!({"tag": n})) } else { app.run("xml.tag", json!({"tag": n})) };
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.small_button("Delete").clicked() {
@@ -150,8 +152,12 @@ pub fn tags(app: &mut DesignApp, ui: &mut egui::Ui) {
             });
         });
     }
-    if has_sel && ui.small_button("Untag Selection").clicked() {
-        let _ = app.run("xml.tag", json!({"tag": null}));
+    if (has_sel || text_sel) && ui.small_button("Untag Selection").clicked() {
+        let _ = if text_sel { app.run("xml.tagText", json!({"tag": null})) } else { app.run("xml.tag", json!({"tag": null})) };
+    }
+    let mut markers = app.ui.tag_markers;
+    if ui.checkbox(&mut markers, "Show Tag Markers").changed() {
+        let _ = app.run("view.tagMarkers", json!({"on": markers}));
     }
     ui.separator();
     ui.label(egui::RichText::new("Structure").strong());

@@ -60,6 +60,8 @@ pub struct RunStyle {
     pub condition: Option<String>,
     /// Added while tracking changes (marked on screen).
     pub inserted: bool,
+    /// XML element the text is tagged with (tag markers on screen).
+    pub xml_tag: Option<String>,
 }
 
 /// An underline or strikethrough bar: its top edge `offset` below the baseline (negative =
