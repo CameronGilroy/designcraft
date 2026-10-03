@@ -30,7 +30,7 @@ mod links;
 mod marks;
 mod text;
 
-pub use export::{BookletKind, BookletOptions, booklet_pairs, export_booklet, export_pdf, export_pdf_with_report};
+pub use export::{BookletKind, BookletOptions, booklet_pairs, export_booklet, export_pdf, export_pdf_with_report, merge_pdfs};
 
 /// PDF standard to target.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

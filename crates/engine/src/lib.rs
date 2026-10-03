@@ -201,6 +201,8 @@ pub struct Session {
     pub(crate) text_drag: bool,
     /// The open Object Library (File › New / Open Library).
     pub library: Option<cmd::library::Library>,
+    /// The open book (File › Open Book).
+    pub book: Option<cmd::book::Book>,
     /// Content Collector conveyor: collected objects as snippets (name, bytes).
     pub conveyor: Vec<(String, Vec<u8>)>,
 }
@@ -229,6 +231,7 @@ impl Session {
             text_drag: false,
             library: None,
             conveyor: Vec::new(),
+            book: None,
             untitled: 0,
         }
     }

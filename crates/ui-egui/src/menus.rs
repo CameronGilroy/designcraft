@@ -514,6 +514,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:window.panel|Bookmarks|{\"panel\": \"bookmarks\"}",
             "ui:window.panel|Articles|{\"panel\": \"articles\"}",
             "ui:window.panel|Tags|{\"panel\": \"tags\"}",
+            "ui:window.panel|Book|{\"panel\": \"book\"}",
             "<",
             ">Utilities",
             "cmd:data.merge",

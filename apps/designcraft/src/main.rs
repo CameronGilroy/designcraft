@@ -93,6 +93,8 @@ fn services() -> Services {
             let d = rfd::FileDialog::new();
             let d = if purpose == "swatches" {
                 d.add_filter("Swatch Exchange (ASE)", &["ase"])
+            } else if purpose == "book" {
+                d.add_filter("Book", &["dcbook"])
             } else if purpose == "xml" {
                 d.add_filter("XML", &["xml"])
             } else if purpose == "library" {

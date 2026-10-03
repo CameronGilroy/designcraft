@@ -5,7 +5,7 @@ use designcraft_doc::{Content, Document, Item, ItemId, ParaFormat, Story, StoryI
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, cmd, has_doc, ids_param, ok, str_param};
-use crate::{EngineError, Result, Session};
+use crate::{Result, Session};
 
 const COLORS: [[u8; 3]; 6] = [[230, 120, 40], [60, 140, 220], [70, 170, 90], [200, 70, 160], [150, 110, 220], [200, 170, 40]];
 
@@ -256,7 +256,7 @@ pub fn specs() -> Vec<CommandSpec> {
             match str_param(p, "path") {
                 Some(path) => {
                     #[cfg(not(target_arch = "wasm32"))]
-                    std::fs::write(path, text.as_bytes()).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+                    std::fs::write(path, text.as_bytes()).map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))?;
                     Ok(json!({"path": path, "bytes": text.len()}))
                 }
                 None => Ok(json!({"text": text, "bytes": text.len()})),
@@ -280,9 +280,12 @@ fn import_xml(s: &mut Session, p: &Value) -> Result<Value> {
         (Some(t), _) => t.to_string(),
         (None, Some(path)) => {
             #[cfg(not(target_arch = "wasm32"))]
-            let t = std::fs::read_to_string(path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+            let t = std::fs::read_to_string(path).map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))?;
             #[cfg(target_arch = "wasm32")]
-            let t = String::new();
+            let t = {
+                let _ = path;
+                String::new()
+            };
             t
         }
         _ => return Err(bad(ID, "`path` or `text` required")),

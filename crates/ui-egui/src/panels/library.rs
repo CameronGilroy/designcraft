@@ -66,3 +66,69 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
         });
     }
 }
+
+/// Book panel: the open book's documents with their page ranges; numbering, synchronising and
+/// exporting the whole book.
+pub fn book(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        if ui.button("New Book…").clicked()
+            && let Some(path) = app.services.pick_save.as_mut().and_then(|f| f("Book.dcbook"))
+            && let Err(e) = app.run("book.new", json!({"path": path}))
+        {
+            app.status(format!("Book: {e}"));
+        }
+        if ui.button("Open…").clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("book"))
+            && let Err(e) = app.run("book.open", json!({"path": path}))
+        {
+            app.status(format!("Book: {e}"));
+        }
+    });
+    let Ok(info) = app.session.execute("book.list", &json!({})) else {
+        ui.label(egui::RichText::new("No book open.").size(11.0).color(t.text_dim));
+        return;
+    };
+    let source = info["styleSource"].as_u64().unwrap_or(0) as usize;
+    ui.separator();
+    for (i, d) in info["documents"].as_array().cloned().unwrap_or_default().iter().enumerate() {
+        let path = d["path"].as_str().unwrap_or("").to_string();
+        let name = std::path::Path::new(&path).file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let (first, pages) = (d["firstPage"].as_u64().unwrap_or(1), d["pages"].as_u64().unwrap_or(0));
+        ui.horizontal(|ui| {
+            if ui.selectable_label(i == source, if i == source { "◆" } else { "◇" }).on_hover_text("Style source").clicked() {
+                let _ = app.run("book.styleSource", json!({"index": i}));
+            }
+            if ui.selectable_label(false, &name).on_hover_text("Open").clicked() {
+                let _ = app.run("file.open", json!({"path": path}));
+            }
+            ui.label(egui::RichText::new(format!("{first}–{}", first + pages.saturating_sub(1))).size(10.5).color(t.text_dim));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("Remove").clicked() {
+                    let _ = app.run("book.remove", json!({"index": i}));
+                }
+            });
+        });
+    }
+    ui.separator();
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("Add Document…").clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("open"))
+            && let Err(e) = app.run("book.add", json!({"path": path}))
+        {
+            app.status(format!("Book: {e}"));
+        }
+        if ui.button("Update Numbering").clicked() {
+            let _ = app.run("book.paginate", json!({}));
+        }
+        if ui.button("Synchronize").clicked() {
+            let _ = app.run("book.syncStyles", json!({}));
+        }
+        if ui.button("Export PDF…").clicked()
+            && let Some(path) = app.services.pick_save.as_mut().and_then(|f| f("Book.pdf"))
+            && let Err(e) = app.run("book.exportPdf", json!({"path": path}))
+        {
+            app.status(format!("Book: {e}"));
+        }
+    });
+}
