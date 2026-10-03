@@ -280,7 +280,12 @@ impl Tool for SelectionTool {
                     let off = cx.layout.offset(spread);
                     let to = resize_rect(from, handle, p - off, ev.mods);
                     let _ = start;
-                    vec![Action::Preview("transform.resize".into(), json!({"from": rect_json(from), "to": rect_json(to), "content": ev.mods.cmd}))]
+                    // Space while dragging: Live Distribute (several objects keep their size).
+                    let distribute = ev.mods.space && cx.selection.items.len() > 1;
+                    vec![Action::Preview(
+                        "transform.resize".into(),
+                        json!({"from": rect_json(from), "to": rect_json(to), "content": ev.mods.cmd, "distribute": distribute}),
+                    )]
                 }
                 Drag::Marquee { start, .. } => {
                     self.drag = Drag::Marquee { start, cur: p };

@@ -1254,8 +1254,10 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
             }
         }
     }
-    // Space-drag = hand.
-    if space && resp.dragged() {
+    // Space-drag = hand (unless a tool drag is under way: then Space is a modifier, e.g. Live
+    // Distribute while resizing).
+    let tool_drag: bool = ui.data(|d| d.get_temp(egui::Id::new("canvas_pointer_down"))).unwrap_or(false);
+    if space && !tool_drag && resp.dragged() {
         let d = resp.drag_delta();
         if let Some(v) = app.view_mut() {
             v.origin = Point::new(v.origin.x - d.x as f64 / v.zoom, v.origin.y - d.y as f64 / v.zoom);

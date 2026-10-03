@@ -26,7 +26,15 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("line.create", "Create Line", [], None, "{spread?, a: [x,y], b: [x,y]}", has_doc, line_create),
         cmd!("transform.move", "Move", ["Object", "Transform"], None, "{dx, dy, copy?: bool, ids?, toSpread?}", has_selection, transform_move),
-        cmd!("transform.resize", "Resize", [], None, "{from: rect, to: rect, content?: bool (scale content), ids?}", has_selection, transform_resize),
+        cmd!(
+            "transform.resize",
+            "Resize",
+            [],
+            None,
+            "{from: rect, to: rect, content?: bool (scale content), distribute?: bool (Live Distribute: objects keep their size, their centres spread with the bounds), ids?}",
+            has_selection,
+            transform_resize
+        ),
         cmd!("transform.rotate", "Rotate", ["Object", "Transform"], None, "{angle (degrees, CCW), ids?}", has_selection, transform_rotate),
         cmd!("transform.scale", "Scale", ["Object", "Transform"], None, "{sx, sy, ids?} (about the selection centre)", has_selection, |s, p| {
             let sx = f64_or(p, "sx", 1.0);
@@ -807,6 +815,7 @@ fn transform_resize(s: &mut Session, p: &Value) -> Result<Value> {
     let from = rect_param(p, "from").ok_or_else(|| bad("transform.resize", "missing from"))?;
     let to = rect_param(p, "to").ok_or_else(|| bad("transform.resize", "missing to"))?;
     let scale_content = bool_or(p, "content", false);
+    let distribute = bool_or(p, "distribute", false);
     if from.width().abs() < 1e-9 || from.height().abs() < 1e-9 {
         return Err(bad("transform.resize", "degenerate source rect"));
     }
@@ -822,7 +831,10 @@ fn transform_resize(s: &mut Session, p: &Value) -> Result<Value> {
             if it.locked {
                 continue;
             }
-            if scale_content {
+            if distribute {
+                let c = it.bounds().center();
+                it.xf = Affine::translate(m * c - c) * it.xf;
+            } else if scale_content {
                 scale_item(it, m, (sx * sy).abs().sqrt(), strokes);
             } else if matches!(it.content, Content::Group { .. }) {
                 it.xf = m * it.xf;
@@ -2010,6 +2022,20 @@ mod attributes_tests {
 #[cfg(test)]
 mod fitting_tests {
     use super::*;
+
+    #[test]
+    fn live_distribute_spreads_objects_without_resizing() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [100, 100, 120, 120]})).unwrap()["id"].as_u64().unwrap();
+        let b = s.execute("frame.create", &json!({"rect": [180, 100, 200, 120]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("transform.resize", &json!({"ids": [a, b], "from": [100, 100, 200, 120], "to": [100, 100, 300, 120], "distribute": true})).unwrap();
+        let d = &s.doc().unwrap().doc;
+        let (ra, rb) = (d.item(ItemId(a)).unwrap().bounds(), d.item(ItemId(b)).unwrap().bounds());
+        assert!((ra.width() - 20.0).abs() < 1e-9 && (rb.width() - 20.0).abs() < 1e-9, "sizes kept");
+        assert!((ra.center().x - 120.0).abs() < 1e-9, "{ra:?}");
+        assert!((rb.center().x - 280.0).abs() < 1e-9, "{rb:?}");
+    }
 
     #[test]
     fn frame_fitting_options_align_crop_and_auto_fit() {
