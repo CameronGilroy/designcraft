@@ -154,7 +154,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 
 ## How far from full parity (estimate, 2026-10-02, updated)
 
-**Breadth: ~96% weighted** (P0 core 99%, P1 98%, P2 76%) over the 275 features of the InDesign catalogue, scored
+**Breadth: ~96% weighted** (P0 core 99%, P1 98%, P2 80%) over the 275 features of the InDesign catalogue, scored
 row by row in [docs/parity.md](docs/parity.md) (`cargo xtask parity` recomputes it). Many features scored done still
 lack some of InDesign's options or dialog details, so **overall parity including depth is about 77%**.
 
@@ -165,7 +165,7 @@ four agents in parallel on separate crates:
 |---|---|
 | Open P0 (2: PDF/X-4 validation against a certified checker, PostScript interpretation for EPS) | 8 h |
 | Open P1 (3 partial: New Window as a separate OS window, language support, on-screen blending in the blend space) | 10 h |
-| Open P2 (33: 3 missing — vertical type, math, placed-file layer options — and 30 partial) | 75 h |
+| Open P2 (31 partial, none missing) | 70 h |
 | Depth and pixel fidelity of every dialog, panel and menu against InDesign 2026 | 90 h |
 | Performance (incremental composition, GPU raster) and interchange hardening (IDML/PDF corpus) | 55 h |
 
