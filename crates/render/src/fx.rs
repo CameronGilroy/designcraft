@@ -108,7 +108,8 @@ impl Renderer {
         // Gradient feather: the object (feathered or not) drawn in its own layer, then kept as
         // much as the opacity gradient says.
         let gf = &e.gradient_feather;
-        if gf.on {
+        let directional = e.directional_feather.on && e.directional_feather.widths.iter().any(|w| *w > 0.0);
+        if gf.on || directional {
             ctx.set_transform(Affine::IDENTITY);
             ctx.push_layer(None, None, None, None, None);
         }
@@ -140,6 +141,34 @@ impl Renderer {
         } else {
             self.draw_body(ctx, f, it, bp, xf, page_name);
         }
+        // Directional feather: one fading ramp per side, multiplied in.
+        let df = &e.directional_feather;
+        if df.on && df.widths.iter().any(|w| *w > 0.0) {
+            let b = it.inner_bounds();
+            let area = if xf.determinant().abs() > 1e-12 { xf.inverse().transform_rect_bbox(reach) } else { b };
+            let ramps = [
+                (df.widths[0], kurbo::Point::new(b.x0, b.y0), kurbo::Point::new(b.x0, b.y0 + df.widths[0])),
+                (df.widths[1], kurbo::Point::new(b.x0, b.y0), kurbo::Point::new(b.x0 + df.widths[1], b.y0)),
+                (df.widths[2], kurbo::Point::new(b.x0, b.y1), kurbo::Point::new(b.x0, b.y1 - df.widths[2])),
+                (df.widths[3], kurbo::Point::new(b.x1, b.y0), kurbo::Point::new(b.x1 - df.widths[3], b.y0)),
+            ];
+            for (w, p0, p1) in ramps {
+                if w <= 0.0 {
+                    continue;
+                }
+                let stops = [
+                    peniko::ColorStop::from((0.0, peniko::Color::from_rgba8(0, 0, 0, 0))),
+                    peniko::ColorStop::from((1.0, peniko::Color::from_rgba8(0, 0, 0, 255))),
+                ];
+                ctx.set_transform(Affine::IDENTITY);
+                ctx.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestIn)), None, None, None);
+                ctx.set_transform(f.view * xf);
+                ctx.set_paint(peniko::Gradient::new_linear(p0, p1).with_stops(stops.as_slice()));
+                ctx.fill_rect(&area.inflate(4.0, 4.0));
+                ctx.reset_paint_transform();
+                ctx.pop_layer();
+            }
+        }
         if gf.on {
             let (p0, p1) = gf.points(it.inner_bounds());
             let stop = |o: f32, a: f32| peniko::ColorStop::from((o, peniko::Color::from_rgba8(0, 0, 0, (a.clamp(0.0, 1.0) * 255.0).round() as u8)));
@@ -157,6 +186,8 @@ impl Renderer {
             ctx.fill_rect(&area.inflate(4.0, 4.0));
             ctx.reset_paint_transform();
             ctx.pop_layer();
+        }
+        if gf.on || directional {
             ctx.pop_layer();
         }
         if !it.path.is_closed() {

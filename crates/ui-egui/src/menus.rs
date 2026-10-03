@@ -446,6 +446,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:object.bevel",
             "cmd:object.satin",
             "cmd:object.feather",
+            "cmd:object.directionalFeather",
             "<",
             ">Select",
             "cmd:select.firstAbove",

@@ -237,7 +237,14 @@ fn threaded(d: &designcraft_doc::Document, it: &designcraft_doc::Item) -> bool {
 /// Soft effects other than the gradient feather (which PDF export draws itself).
 fn raster_effects(it: &designcraft_doc::Item) -> bool {
     let e = &it.effects;
-    e.drop_shadow.on || e.feather > 0.0 || e.inner_shadow.on || e.outer_glow.on || e.inner_glow.on || e.bevel.on || e.satin.on
+    e.drop_shadow.on
+        || e.feather > 0.0
+        || e.inner_shadow.on
+        || e.outer_glow.on
+        || e.inner_glow.on
+        || e.bevel.on
+        || e.satin.on
+        || e.directional_feather.on
 }
 
 /// A copy of `d` where spread-level objects with soft effects are 300 ppi images of their whole

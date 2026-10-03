@@ -403,6 +403,38 @@ pub fn specs() -> Vec<CommandSpec> {
                 )
             }
         ),
+        cmd!(
+            "object.directionalFeather",
+            "Directional Feather",
+            ["Object", "Effects"],
+            None,
+            "{on?: bool, widths?: [top, left, bottom, right] | number, ids?}",
+            has_selection,
+            |s, p| {
+                let p2 = p.clone();
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        let e = &mut i.effects.directional_feather;
+                        e.on = p2.get("on").and_then(Value::as_bool).unwrap_or(!e.on);
+                        match p2.get("widths") {
+                            Some(Value::Number(n)) => e.widths = [n.as_f64().unwrap_or(0.0).max(0.0); 4],
+                            Some(v @ Value::Array(_)) => {
+                                if let Ok(w) = serde_json::from_value::<[f64; 4]>(v.clone()) {
+                                    e.widths = w.map(|x| x.max(0.0));
+                                }
+                            }
+                            _ => {}
+                        }
+                        if e.on && e.widths.iter().all(|w| *w <= 0.0) {
+                            e.widths = [9.0; 4];
+                        }
+                    },
+                    false,
+                )
+            }
+        ),
         cmd!("object.feather", "Basic Feather", ["Object", "Effects"], None, "{width (0 = off), ids?}", has_selection, |s, p| {
             let w = f64_or(p, "width", 9.0).max(0.0);
             set_flag(s, p, move |i| i.effects.feather = w, false)
@@ -2150,6 +2182,12 @@ mod fitting_tests {
             .flat_map(|x| (110..290).step_by(10).map(move |y| (x, y)))
             .any(|(x, y)| (st.pixel(x, y)[1] as i32) < plain.pixel(x, y)[1] as i32 - 30);
         assert!(darker);
+        s.execute("object.satin", &json!({"ids": [id], "on": false})).unwrap();
+        // Directional feather: only the left edge fades.
+        s.execute("object.directionalFeather", &json!({"ids": [id], "on": true, "widths": [0, 40, 0, 0]})).unwrap();
+        let df = shot(&s);
+        assert!(df.pixel(102, 200)[0] > 200, "left edge faded to paper: {:?}", df.pixel(102, 200));
+        assert_eq!(df.pixel(298, 200), plain.pixel(298, 200), "right edge untouched");
         // PDF export carries effects (as an image of the object).
         let r = s.execute("file.exportPdf", &json!({})).unwrap();
         assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("soft effects")), "{r}");

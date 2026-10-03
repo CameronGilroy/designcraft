@@ -718,6 +718,17 @@ pub struct Effects {
     pub bevel: Bevel,
     #[serde(skip_serializing_if = "is_default")]
     pub satin: Satin,
+    #[serde(skip_serializing_if = "is_default")]
+    pub directional_feather: DirectionalFeather,
+}
+
+/// Directional Feather: each side fades over its own width (item space, before rotation).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DirectionalFeather {
+    pub on: bool,
+    /// Top, left, bottom, right widths in points.
+    pub widths: [f64; 4],
 }
 
 /// Inner Glow: a glow inside the edge (or from the centre).
@@ -843,6 +854,7 @@ impl Effects {
             || self.inner_glow.on
             || self.bevel.on
             || self.satin.on
+            || self.directional_feather.on
     }
 }
 
