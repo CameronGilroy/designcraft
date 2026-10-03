@@ -490,6 +490,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             ">Interactive",
             "ui:window.panel|Hyperlinks|{\"panel\": \"hyperlinks\"}",
             "ui:window.panel|Bookmarks|{\"panel\": \"bookmarks\"}",
+            "ui:window.panel|Articles|{\"panel\": \"articles\"}",
             "<",
             ">Utilities",
             "cmd:data.merge",

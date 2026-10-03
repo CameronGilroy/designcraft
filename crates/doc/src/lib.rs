@@ -228,6 +228,16 @@ impl InkManager {
     }
 }
 
+/// An article: objects in reading order; `export` includes it when exporting.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Article {
+    pub name: String,
+    pub items: Vec<ItemId>,
+    #[serde(default = "yes")]
+    pub export: bool,
+}
+
 /// A Swatches panel colour group: a named folder of swatches (by name).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -408,6 +418,9 @@ pub struct Document {
     /// the top level.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub color_groups: Vec<ColorGroup>,
+    /// Articles panel: named reading-order lists of objects (EPUB / HTML export order).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub articles: Vec<Article>,
     /// Custom stroke styles (Object › Stroke Styles).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stroke_styles: Vec<StrokeStyleDef>,

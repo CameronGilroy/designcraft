@@ -260,6 +260,26 @@ pub enum Block {
 }
 
 pub fn reading_order(doc: &Document) -> Vec<Block> {
+    // Articles, when there are any to export, decide the order (and what's included).
+    if doc.articles.iter().any(|a| a.export) {
+        let mut out = Vec::new();
+        let mut seen = Vec::new();
+        for a in doc.articles.iter().filter(|a| a.export) {
+            for id in &a.items {
+                let Some(top) = doc.item(*id) else { continue };
+                let mut push = |it: &Item| match &it.content {
+                    Content::Text(tf) if !seen.contains(&tf.story) => {
+                        seen.push(tf.story);
+                        out.push(Block::Story(tf.story));
+                    }
+                    Content::Graphic(_) => out.push(Block::Image(it.id)),
+                    _ => {}
+                };
+                top.walk(&mut |i| push(i));
+            }
+        }
+        return out;
+    }
     let mut keyed: Vec<((usize, i64, i64), Block)> = Vec::new();
     let mut seen_stories = Vec::new();
     for (si, sp) in doc.spreads.iter().enumerate() {

@@ -2090,6 +2090,7 @@ impl<'r> Importer<'r> {
             conditions: std::mem::take(&mut self.conditions),
             inks: std::mem::take(&mut self.inks),
             stroke_styles: std::mem::take(&mut self.stroke_styles),
+            articles: vec![],
             endnote_options: Default::default(),
             endnote_story: None,
             sections: std::mem::take(&mut self.sections),

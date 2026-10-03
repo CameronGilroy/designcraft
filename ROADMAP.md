@@ -71,6 +71,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Stroke styles: striped (thick-thin… and custom bands), wavy and straight-hash strokes now draw on screen and in PDF; named custom stripe/dash/dot styles (`strokeStyle.new/delete/list`, Stroke panel Type list; IDML Striped/Dashed/DottedStrokeStyle).
 - Object ▸ Primary Text Frame (`object.primaryTextFrame`): any text frame's story can become (or stop being) the primary story Smart Text Reflow follows.
 - Place a page of an IDML or DesignCraft document (`file.place {layoutPage}`): its objects, stories, styles and swatches as one group (INDD files are not readable).
+- Articles panel (`article.new/add/remove/options/delete/list`): reading order and content of EPUB and HTML exports.
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.

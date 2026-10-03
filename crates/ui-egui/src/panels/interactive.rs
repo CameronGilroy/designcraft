@@ -80,3 +80,36 @@ pub fn bookmarks(app: &mut DesignApp, ui: &mut egui::Ui) {
         });
     }
 }
+
+/// Articles panel: reading-order lists for EPUB / HTML export.
+pub fn articles(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let has_sel = app.session.active().is_some_and(|d| !d.selection.items.is_empty());
+    if ui.add_enabled(has_sel, egui::Button::new("New Article from Selection")).clicked() {
+        let _ = app.run("article.new", json!({}));
+    }
+    ui.separator();
+    let list = app.session.execute("article.list", &json!({})).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    if list.is_empty() {
+        ui.label(egui::RichText::new("No articles: exports follow page order.").size(11.0).color(t.text_dim));
+    }
+    for a in list {
+        let name = a["name"].as_str().unwrap_or("").to_string();
+        let mut export = a["export"].as_bool().unwrap_or(true);
+        ui.horizontal(|ui| {
+            if ui.checkbox(&mut export, "").on_hover_text("Include when exporting").changed() {
+                let _ = app.run("article.options", json!({"name": name, "export": export}));
+            }
+            ui.label(egui::RichText::new(&name).strong());
+            ui.label(egui::RichText::new(format!("{} objects", a["items"].as_array().map_or(0, Vec::len))).size(10.5).color(t.text_dim));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("Delete").clicked() {
+                    let _ = app.run("article.delete", json!({"name": name}));
+                }
+                if ui.add_enabled(has_sel, egui::Button::new("Add").small()).on_hover_text("Add the selection").clicked() {
+                    let _ = app.run("article.add", json!({"name": name}));
+                }
+            });
+        });
+    }
+}
