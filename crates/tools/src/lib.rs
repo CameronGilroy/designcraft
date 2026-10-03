@@ -279,6 +279,8 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "page" => Box::new(nav::PageTool),
         "typeOnPath" => Box::new(nav::PathTypeTool),
         "gap" => Box::new(nav::GapTool::default()),
+        "contentCollector" => Box::new(nav::ConveyorTool::new(false)),
+        "contentPlacer" => Box::new(nav::ConveyorTool::new(true)),
         other => Box::new(NoopTool(tool_info(other).map(|t| t.id).unwrap_or("selection"))),
     }
 }

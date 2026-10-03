@@ -201,6 +201,8 @@ pub struct Session {
     pub(crate) text_drag: bool,
     /// The open Object Library (File › New / Open Library).
     pub library: Option<cmd::library::Library>,
+    /// Content Collector conveyor: collected objects as snippets (name, bytes).
+    pub conveyor: Vec<(String, Vec<u8>)>,
 }
 
 impl Default for Session {
@@ -226,6 +228,7 @@ impl Session {
             transforms: Default::default(),
             text_drag: false,
             library: None,
+            conveyor: Vec::new(),
             untitled: 0,
         }
     }

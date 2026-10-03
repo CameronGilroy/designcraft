@@ -113,6 +113,46 @@ pub fn specs() -> Vec<CommandSpec> {
             lib.save()?;
             ok()
         }),
+        cmd!(noundo "conveyor.collect", "Collect", [], None, "{ids? (default: the selection)} — each object onto the Content Collector conveyor → {count}", has_selection, |s, p| {
+            let ids = super::ids_param(p, "ids").unwrap_or_else(|| s.active().map(|d| d.selection.items.clone()).unwrap_or_default());
+            let keep = s.active().map(|d| d.selection.clone());
+            for id in ids {
+                let name = s.doc()?.doc.item(id).map(|it| it.default_label().trim_matches(|c| c == '<' || c == '>').to_string()).unwrap_or_default();
+                if let Ok(st) = s.doc_mut() {
+                    st.selection = designcraft_doc::Selection::items(vec![id]);
+                }
+                let snip = super::file::snippet_bytes(s)?;
+                s.conveyor.push((name, snip));
+            }
+            if let (Some(k), Ok(st)) = (keep, s.doc_mut()) {
+                st.selection = k;
+            }
+            Ok(json!({"count": s.conveyor.len()}))
+        }),
+        cmd!(
+            "conveyor.place",
+            "Place",
+            [],
+            None,
+            "{index? (0), spread?, x?, y?, keep?: bool (stay on the conveyor)} — the Content Placer: the collected object at x/y (top-left)",
+            has_doc,
+            |s, p| {
+                let i = p.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let (_, snip) = s.conveyor.get(i).cloned().ok_or_else(|| bad("conveyor.place", "the conveyor is empty"))?;
+                let mut q = p.clone();
+                q["base64"] = json!(super::file::base64_encode(&snip));
+                let r = super::file::snippet_place(s, &q)?;
+                if !p.get("keep").and_then(Value::as_bool).unwrap_or(false) {
+                    s.conveyor.remove(i);
+                }
+                Ok(r)
+            }
+        ),
+        cmd!(query "conveyor.list", "Conveyor", [], None, "{} → [name]", always, |s, _| Ok(json!(s.conveyor.iter().map(|c| c.0.clone()).collect::<Vec<_>>()))),
+        cmd!(noundo "conveyor.clear", "Clear Conveyor", [], None, "{}", always, |s, _| {
+            s.conveyor.clear();
+            ok()
+        }),
         cmd!(noundo "library.close", "Close Library", [], None, "{}", has_library, |s, _| {
             s.library = None;
             ok()
@@ -152,5 +192,23 @@ mod tests {
         t.execute("library.remove", &json!({"index": 0})).unwrap();
         assert!(t.execute("library.list", &json!({})).unwrap().as_array().unwrap().is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn content_collector_and_placer() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 2})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [72, 72, 172, 122], "content": "text", "text": "Reused", "caret": false})).unwrap()["id"]
+            .clone();
+        let b = s.execute("frame.create", &json!({"rect": [200, 72, 260, 122]})).unwrap()["id"].clone();
+        assert_eq!(s.execute("conveyor.collect", &json!({"ids": [a, b]})).unwrap()["count"], 2);
+        let r = s.execute("conveyor.place", &json!({"spread": 1, "x": 300, "y": 300})).unwrap();
+        let id = designcraft_doc::ItemId(r["ids"][0].as_u64().unwrap());
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.item(id).unwrap().bounds().x0, 300.0);
+        assert!(d.find(id).is_some_and(|l| l.spread == designcraft_doc::SpreadRef::Doc(1)));
+        assert_eq!(s.execute("conveyor.list", &json!({})).unwrap().as_array().unwrap().len(), 1, "placed objects leave the conveyor");
+        s.execute("conveyor.place", &json!({"keep": true})).unwrap();
+        assert_eq!(s.execute("conveyor.list", &json!({})).unwrap().as_array().unwrap().len(), 1);
     }
 }

@@ -253,3 +253,39 @@ impl Tool for GapTool {
         self.active
     }
 }
+
+/// Content Collector (B): click objects to put copies on the conveyor. Content Placer: click to
+/// place the next collected object there.
+pub struct ConveyorTool {
+    placer: bool,
+}
+
+impl ConveyorTool {
+    pub fn new(placer: bool) -> Self {
+        Self { placer }
+    }
+}
+
+impl Tool for ConveyorTool {
+    fn id(&self) -> &'static str {
+        if self.placer { "contentPlacer" } else { "contentCollector" }
+    }
+
+    fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
+        if ev.kind != PointerKind::Down {
+            return vec![];
+        }
+        if self.placer {
+            let Some((sr, p)) = cx.layout.spread_at(ev.pos) else { return vec![] };
+            return vec![Action::Exec("conveyor.place".into(), json!({"spread": crate::spread_json(sr), "x": p.x, "y": p.y, "keep": ev.mods.alt}))];
+        }
+        match cx.hit(ev.pos) {
+            Some((_, id)) => vec![Action::Exec("conveyor.collect".into(), json!({"ids": [id.0]}))],
+            None => vec![],
+        }
+    }
+
+    fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
+        Cursor::Crosshair
+    }
+}

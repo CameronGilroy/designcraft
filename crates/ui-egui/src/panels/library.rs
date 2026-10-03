@@ -8,6 +8,20 @@ use crate::theme::Tokens;
 
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
+    // Content Collector conveyor.
+    let conveyor = app.session.conveyor.iter().map(|c| c.0.clone()).collect::<Vec<_>>();
+    ui.label(egui::RichText::new(format!("Conveyor ({})", conveyor.len())).strong());
+    if conveyor.is_empty() {
+        ui.label(
+            egui::RichText::new("Collect objects with the Content Collector (B); place them with the Content Placer.").size(10.5).color(t.text_dim),
+        );
+    } else {
+        ui.label(egui::RichText::new(conveyor.join(", ")).size(10.5));
+        if ui.small_button("Clear").clicked() {
+            let _ = app.run("conveyor.clear", json!({}));
+        }
+    }
+    ui.separator();
     ui.horizontal(|ui| {
         if ui.button("New Library…").clicked() {
             let path = app.services.pick_save.as_mut().and_then(|f| f("Library.dclib"));
