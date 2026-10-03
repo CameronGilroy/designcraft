@@ -262,6 +262,8 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "pen" => Box::new(pen::PenTool::default()),
         "gradientSwatch" => Box::new(gradient::GradientTool::default()),
         "pencil" => Box::new(pencil::PencilTool::default()),
+        "smooth" => Box::new(pencil::PathDragTool::new(false)),
+        "erase" => Box::new(pencil::PathDragTool::new(true)),
         "addAnchor" => Box::new(anchors::AnchorTool::new(anchors::Kind::Add)),
         "deleteAnchor" => Box::new(anchors::AnchorTool::new(anchors::Kind::Delete)),
         "convertDirection" => Box::new(anchors::AnchorTool::new(anchors::Kind::Convert)),

@@ -71,3 +71,72 @@ impl Tool for PencilTool {
         self.stroke.is_some()
     }
 }
+
+/// Smooth and Erase tools (Pencil group): drag along a selected path.
+pub struct PathDragTool {
+    erase: bool,
+    /// Target path, canvas offset of its spread, and the drag in spread coordinates.
+    drag: Option<(u64, designcraft_geom::Vec2, Vec<Point>)>,
+}
+
+impl PathDragTool {
+    pub fn new(erase: bool) -> Self {
+        Self { erase, drag: None }
+    }
+}
+
+impl Tool for PathDragTool {
+    fn id(&self) -> &'static str {
+        if self.erase { "erase" } else { "smooth" }
+    }
+
+    fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
+        match ev.kind {
+            PointerKind::Down => {
+                // The selected path, or the one under the pointer.
+                let id = cx.selection.items.first().copied().or_else(|| cx.hit(ev.pos).map(|h| h.1));
+                let Some(id) = id else { return vec![] };
+                let Some(loc) = cx.doc.find(id) else { return vec![] };
+                let off = cx.layout.offset(loc.spread);
+                self.drag = Some((id.0, off, vec![ev.pos - off]));
+                vec![]
+            }
+            PointerKind::Drag => {
+                if let Some((_, off, pts)) = &mut self.drag {
+                    pts.push(ev.pos - *off);
+                }
+                vec![]
+            }
+            PointerKind::Up => {
+                let Some((id, off, mut pts)) = self.drag.take() else { return vec![] };
+                pts.push(ev.pos - off);
+                let points: Vec<_> = pts.iter().map(|p| json!([p.x, p.y])).collect();
+                let cmd = if self.erase { "path.erase" } else { "path.smooth" };
+                vec![Action::Exec(cmd.into(), json!({"id": id, "points": points, "tolerance": cx.tol(6.0)}))]
+            }
+            _ => vec![],
+        }
+    }
+
+    fn overlays(&self, _cx: &ToolContext) -> Vec<Overlay> {
+        let Some((_, off, pts)) = &self.drag else { return vec![] };
+        let mut path = BezPath::new();
+        for (i, p) in pts.iter().enumerate() {
+            let p = *p + *off;
+            if i == 0 {
+                path.move_to(p);
+            } else {
+                path.line_to(p);
+            }
+        }
+        vec![Overlay::Path { path, color: if self.erase { [220, 60, 60] } else { [60, 120, 220] }, dashed: true }]
+    }
+
+    fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
+        Cursor::Pen
+    }
+
+    fn busy(&self) -> bool {
+        self.drag.is_some()
+    }
+}

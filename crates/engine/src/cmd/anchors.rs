@@ -37,7 +37,76 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             convert_anchor
         ),
+        cmd!(
+            "path.erase",
+            "Erase",
+            [],
+            None,
+            "{id, points: [[x,y], …] (spread coords: the Erase tool's drag), tolerance?: pt (default 4)} — removes the stretch of path the drag ran along",
+            has_doc,
+            |s, p| erase_or_smooth(s, p, false)
+        ),
+        cmd!(
+            "path.smooth",
+            "Smooth",
+            [],
+            None,
+            "{id, points: [[x,y], …] (spread coords), tolerance?: pt (default 4)} — re-fits the stretch the drag ran along with fewer, smoother anchors",
+            has_doc,
+            |s, p| erase_or_smooth(s, p, true)
+        ),
     ]
+}
+
+/// Erase / Smooth: the stretch of one subpath touched by the drag.
+fn erase_or_smooth(s: &mut Session, p: &Value, smooth: bool) -> Result<Value> {
+    let cmd = if smooth { "path.smooth" } else { "path.erase" };
+    let id = super::id_param(p, "id").ok_or_else(|| bad(cmd, "missing id"))?;
+    let tol = p.get("tolerance").and_then(Value::as_f64).unwrap_or(4.0);
+    let pts: Vec<Point> = p
+        .get("points")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|v| Some(Point::new(v.get(0)?.as_f64()?, v.get(1)?.as_f64()?))).collect())
+        .unwrap_or_default();
+    s.edit(|d, _| {
+        let inv = to_inner(d, id).ok_or(designcraft_doc::DocError::NoItem(id))?;
+        let scale = inv.determinant().abs().sqrt().max(1e-9);
+        let it = d.item_mut(id).ok_or(designcraft_doc::DocError::NoItem(id))?;
+        // Where the drag touched the path, per subpath.
+        let mut hits: Vec<(usize, usize, f64)> = Vec::new();
+        for q in &pts {
+            if let Some((si, seg, t, _, dist)) = it.path.nearest(inv * *q)
+                && dist <= tol * scale
+            {
+                hits.push((si, seg, t));
+            }
+        }
+        let Some(si) =
+            (0..it.path.subpaths.len()).max_by_key(|i| hits.iter().filter(|h| h.0 == *i).count()).filter(|i| hits.iter().any(|h| h.0 == *i))
+        else {
+            return Err(bad(cmd, "the drag didn't touch the path"));
+        };
+        let on: Vec<(usize, f64)> = hits.iter().filter(|h| h.0 == si).map(|h| (h.1, h.2)).collect();
+        let k = |a: &(usize, f64)| a.0 as f64 + a.1;
+        let a = *on.iter().min_by(|x, y| k(x).total_cmp(&k(y))).expect("hits");
+        let b = *on.iter().max_by(|x, y| k(x).total_cmp(&k(y))).expect("hits");
+        let sp = it.path.subpaths[si].clone();
+        if smooth {
+            it.path.subpaths[si] = designcraft_geom::edit_path::smooth(&sp, a, b, tol * scale);
+        } else {
+            let parts = designcraft_geom::edit_path::erase(&sp, a, b);
+            it.path.subpaths.remove(si);
+            for (k, part) in parts.into_iter().enumerate() {
+                it.path.subpaths.insert(si + k, part);
+            }
+        }
+        as_path(&mut it.shape);
+        if it.path.subpaths.is_empty() {
+            d.remove_item(id)?;
+            return Ok(json!({"deleted": true}));
+        }
+        Ok(json!({"subpaths": it.path.subpaths.len()}))
+    })
 }
 
 /// Spread → item-space transform of `id`.
@@ -182,6 +251,23 @@ pub fn anchor_near(d: &Document, id: ItemId, at: Point, tol: f64) -> Option<(usi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn erase_and_smooth_along_a_drag() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let pts: Vec<Value> = (0..=20).map(|i| json!({"p": [100.0 + i as f64 * 20.0, if i % 2 == 0 { 300.0 } else { 306.0 }]})).collect();
+        let id = s.execute("path.create", &json!({"anchors": pts})).unwrap()["id"].as_u64().unwrap();
+        let n = s.doc().unwrap().doc.item(ItemId(id)).unwrap().path.anchor_count();
+        let drag: Vec<Value> = (0..=12).map(|i| json!([150.0 + i as f64 * 20.0, 303.0])).collect();
+        s.execute("path.smooth", &json!({"id": id, "points": drag})).unwrap();
+        let after = s.doc().unwrap().doc.item(ItemId(id)).unwrap().path.anchor_count();
+        assert!(after < n, "{after} < {n}");
+        let drag: Vec<Value> = (0..=5).map(|i| json!([200.0 + i as f64 * 20.0, 303.0])).collect();
+        let r = s.execute("path.erase", &json!({"id": id, "points": drag})).unwrap();
+        assert_eq!(r["subpaths"], 2, "a gap in the middle");
+        assert!(s.execute("path.erase", &json!({"id": id, "points": [[100, 600]]})).is_err());
+    }
 
     #[test]
     fn add_convert_delete_anchor_points() {

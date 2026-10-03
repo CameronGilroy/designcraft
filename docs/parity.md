@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 63 | 26 | 8 | 78% |
+| P1 | 97 | 64 | 25 | 8 | 79% |
 | P2 | 76 | 8 | 7 | 61 | 15% |
 
 | Area | Parity |
@@ -18,7 +18,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Application shell & workspace | 80% |
 | Documents, pages, spreads | 84% |
 | Layers | 95% |
-| Frames, shapes & paths | 87% |
+| Frames, shapes & paths | 88% |
 | Transform | 93% |
 | Fill, stroke, colour | 81% |
 | Effects & transparency | 50% |
@@ -99,7 +99,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Frames, shapes & paths | Polygon settings | P0 | D |
 | Frames, shapes & paths | Line tool | P0 | D |
 | Frames, shapes & paths | Pen, add/delete anchor, convert direction | P0 | D |
-| Frames, shapes & paths | Pencil, Smooth, Erase | P1 | P |
+| Frames, shapes & paths | Pencil, Smooth, Erase | P1 | D |
 | Frames, shapes & paths | Scissors | P1 | D |
 | Frames, shapes & paths | Content type | P0 | D |
 | Frames, shapes & paths | Convert Shape | P1 | P |
