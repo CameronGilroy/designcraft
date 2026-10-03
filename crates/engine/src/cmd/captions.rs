@@ -14,7 +14,7 @@ pub fn specs() -> Vec<CommandSpec> {
         "Generate Static Caption",
         ["Object", "Captions"],
         None,
-        "{text?: template (default \"{name}\"; variables {name} {path} {altText} {label} {ppi} {dimensions} {format}), position?: below|above|left|right, offset? (pt, 0), height? (pt, 24), style?: paragraph style, ids?} → {ids}",
+        "{text?: template (default \"{name}\"; variables {name} {path} {altText} {label} {ppi} {dimensions} {format}), position?: below|above|left|right, offset? (pt, 0), height? (pt, 24), style?: paragraph style, live?: bool (kept current as the source changes), ids?} → {ids}",
         has_selection,
         caption
     )]
@@ -44,7 +44,7 @@ fn variable(d: &Document, it: &Item, xf: designcraft_geom::Affine, name: &str) -
     }
 }
 
-fn fill(d: &Document, it: &Item, xf: designcraft_geom::Affine, template: &str) -> String {
+pub(crate) fn fill(d: &Document, it: &Item, xf: designcraft_geom::Affine, template: &str) -> String {
     let mut out = String::new();
     let mut rest = template;
     while let Some(i) = rest.find('{') {
@@ -75,6 +75,7 @@ fn caption(s: &mut Session, p: &Value) -> Result<Value> {
     let offset = p.get("offset").and_then(Value::as_f64).unwrap_or(0.0);
     let height = p.get("height").and_then(Value::as_f64).unwrap_or(24.0).max(1.0);
     let style = str_param(p, "style").map(str::to_string);
+    let live = p.get("live").and_then(Value::as_bool).unwrap_or(false);
     if let Some(st) = &style
         && s.doc()?.doc.styles.para(st).is_none()
     {
@@ -96,7 +97,11 @@ fn caption(s: &mut Session, p: &Value) -> Result<Value> {
                 _ => Rect::new(b.x0, b.y1 + offset, b.x1, b.y1 + offset + height),
             };
             let para = ParaFormat { style: style.clone().unwrap_or_else(|| d.styles.default_paragraph.clone()), ..Default::default() };
+            let source = *id;
             let (cid, _) = d.add_text_frame(loc.spread, r, lid, &text, para)?;
+            if live && let Some(c) = d.item_mut(cid) {
+                c.live_caption = Some(designcraft_doc::LiveCaption { source, template: template.clone() });
+            }
             made.push(cid);
         }
         if made.is_empty() {
@@ -105,6 +110,29 @@ fn caption(s: &mut Session, p: &Value) -> Result<Value> {
         *sel = Selection::items(made.clone());
         Ok(json!({"ids": made.iter().map(|i: &ItemId| i.0).collect::<Vec<_>>()}))
     })
+}
+
+/// Bring live captions up to date with their source objects (the text frame's story is
+/// replaced when its text changed; a caption whose source is gone keeps its last text).
+pub(crate) fn refresh_live(d: &mut Document) -> bool {
+    let mut todo = Vec::new();
+    for id in d.all_items() {
+        let Some(c) = d.item(id) else { continue };
+        let (Some(lc), Some(tf)) = (&c.live_caption, c.text_frame()) else { continue };
+        let (Some(loc), Some(src)) = (d.find(lc.source), d.item(lc.source)) else { continue };
+        let text = fill(d, src, d.parent_xf(&loc) * src.xf, &lc.template);
+        if d.story(tf.story).is_some_and(|st| st.text != text) {
+            todo.push((tf.story, text));
+        }
+    }
+    let changed = !todo.is_empty();
+    for (sid, text) in todo {
+        if let Some(st) = d.story_mut(sid) {
+            let len = st.len();
+            st.replace(0..len, &text);
+        }
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -129,5 +157,24 @@ mod tests {
         let sid = c.text_frame().unwrap().story;
         assert_eq!(d.stories[&sid].text, "Figure fig-1: Harbour at dawn");
         assert!(s.execute("object.caption", &json!({"ids": [a], "position": "sideways"})).is_err());
+    }
+
+    #[test]
+    fn live_caption_follows_its_source() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [72, 72, 272, 172]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.altText", &json!({"text": "First", "ids": [a]})).unwrap();
+        let r = s.execute("object.caption", &json!({"ids": [a], "text": "Photo: {altText}", "live": true})).unwrap();
+        let cid = designcraft_doc::ItemId(r["ids"][0].as_u64().unwrap());
+        let text = |s: &Session| {
+            let d = &s.doc().unwrap().doc;
+            d.stories[&d.item(cid).unwrap().text_frame().unwrap().story].text.clone()
+        };
+        assert_eq!(text(&s), "Photo: First");
+        s.execute("object.altText", &json!({"text": "Second", "ids": [a]})).unwrap();
+        assert_eq!(text(&s), "Photo: Second", "updated with the source");
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(text(&s), "Photo: First", "one undo step for both");
     }
 }

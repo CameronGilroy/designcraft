@@ -467,6 +467,14 @@ pub struct ObjectLiquid {
     pub pin_right: bool,
 }
 
+/// The source and template of a live caption.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveCaption {
+    pub source: ItemId,
+    pub template: String,
+}
+
 /// Media panel options for a placed video or sound.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -908,6 +916,10 @@ pub struct Item {
     /// Liquid Layout (object-based pages): pins and resize permissions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquid: Option<ObjectLiquid>,
+    /// Live caption: this text frame shows `template` filled from the source object's metadata,
+    /// kept current as the source changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_caption: Option<LiveCaption>,
     /// Object › Object Layer Options: layers of a placed PDF that are hidden.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pdf_hidden_layers: Vec<String>,
@@ -967,6 +979,7 @@ impl Item {
             xml_tag: String::new(),
             button: None,
             pdf_hidden_layers: Vec::new(),
+            live_caption: None,
             media: None,
             liquid: None,
             states: Vec::new(),

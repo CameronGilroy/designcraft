@@ -483,6 +483,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "<",
             ">Captions",
             "cmd:object.caption",
+            "cmd:object.caption|Generate Live Caption|{\"live\": true}",
             "<",
             ">Anchored Object",
             "cmd:anchored.options",

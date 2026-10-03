@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 100 | 2 | 0 | 99% |
 | P1 | 97 | 94 | 3 | 0 | 98% |
-| P2 | 76 | 51 | 25 | 0 | 84% |
+| P2 | 76 | 53 | 23 | 0 | 85% |
 
 | Area | Parity |
 |---|---|
@@ -22,12 +22,12 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Transform | 100% |
 | Fill, stroke, colour | 99% |
 | Effects & transparency | 92% |
-| Placing & links | 91% |
+| Placing & links | 93% |
 | Type & text frames | 99% |
 | Typography | 98% |
 | Styles | 97% |
 | Tables | 98% |
-| Long documents | 96% |
+| Long documents | 100% |
 | Interactivity & digital | 90% |
 | Output & production | 82% |
 | XML & automation | 83% |
@@ -176,7 +176,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Placing & links | Effective/actual PPI | P0 | D |
 | Placing & links | Relink to folder / extension | P1 | D |
 | Placing & links | Copy Links To / Package | P1 | D |
-| Placing & links | Captions | P2 | P |
+| Placing & links | Captions | P2 | D |
 | Placing & links | Image import options | P1 | D |
 | Placing & links | Linked text/stories | P2 | D |
 | Placing & links | Display performance | P0 | D |
@@ -267,7 +267,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Long documents | Cross-references | P2 | D |
 | Long documents | Running headers via variables | P1 | D |
 | Long documents | Footnotes/endnotes | P1 | D |
-| Long documents | Captions | P2 | P |
+| Long documents | Captions | P2 | D |
 | Interactivity & digital | Hyperlinks panel | P1 | D |
 | Interactivity & digital | Bookmarks | P1 | D |
 | Interactivity & digital | Buttons and Forms | P2 | P |

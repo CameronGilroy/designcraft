@@ -5,7 +5,7 @@ pub mod anchors;
 mod articles;
 pub mod book;
 mod buttons;
-mod captions;
+pub(crate) mod captions;
 mod changes;
 mod colorsettings;
 mod conditions;

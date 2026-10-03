@@ -348,6 +348,17 @@ impl Session {
         if self.prefs.smart_text_reflow && spec.undoable {
             self.smart_reflow();
         }
+        // Live captions follow their sources.
+        if spec.undoable
+            && let Some(st) = self.active_mut()
+            && st.interaction.is_none()
+            && st.doc.spreads.iter().any(|sp| sp.items.iter().any(|i| i.live_caption.is_some()))
+        {
+            let mut d = (*st.doc).clone();
+            if cmd::captions::refresh_live(&mut d) {
+                st.doc = Arc::new(d);
+            }
+        }
         // Record undo if the document changed (and we're not previewing an interaction).
         if let (Some((uid, old)), Some(st)) = (before, self.active_mut())
             && st.uid == uid
