@@ -1219,6 +1219,27 @@ impl<'a> Ex<'a> {
             props.push(p("ParagraphShadingColor", "object", self.sw(c)));
         }
         n!(shading_tint, "ParagraphShadingTint", pct);
+        const SIDES: [&str; 4] = ["Top", "Left", "Bottom", "Right"];
+        if let Some(o) = a.shading_offsets {
+            for (i, side) in SIDES.iter().enumerate() {
+                el.set(&format!("ParagraphShading{side}Offset"), num(o[i]));
+            }
+        }
+        b!(border_on, "ParagraphBorderOn");
+        if let Some(c) = &a.border_color {
+            props.push(p("ParagraphBorderColor", "object", self.sw(c)));
+        }
+        n!(border_tint, "ParagraphBorderTint", pct);
+        if let Some(w) = a.border_weights {
+            for (i, side) in SIDES.iter().enumerate() {
+                el.set(&format!("ParagraphBorder{side}LineWeight"), num(w[i]));
+            }
+        }
+        if let Some(o) = a.border_offsets {
+            for (i, side) in SIDES.iter().enumerate() {
+                el.set(&format!("ParagraphBorder{side}Offset"), num(o[i]));
+            }
+        }
     }
 
     fn rule(&mut self, el: &mut El, props: &mut Vec<El>, k: &str, r: &Rule) {

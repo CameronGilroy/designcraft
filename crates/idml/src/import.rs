@@ -1192,6 +1192,18 @@ impl<'r> Importer<'r> {
             a.shading_color = Some(self.swatch_ref(c.trim()));
         }
         a.shading_tint = tint(e.num("ParagraphShadingTint"));
+        let sides = |f: &dyn Fn(&str) -> String| -> Option<[f64; 4]> {
+            let v = ["Top", "Left", "Bottom", "Right"].map(|s| e.num(&f(s)));
+            v.iter().any(Option::is_some).then(|| v.map(|x| x.unwrap_or(0.0)))
+        };
+        a.shading_offsets = sides(&|s| format!("ParagraphShading{s}Offset"));
+        a.border_on = e.boolean("ParagraphBorderOn");
+        if let Some(c) = e.prop("ParagraphBorderColor") {
+            a.border_color = Some(self.swatch_ref(c.trim()));
+        }
+        a.border_tint = tint(e.num("ParagraphBorderTint"));
+        a.border_weights = sides(&|s| format!("ParagraphBorder{s}LineWeight"));
+        a.border_offsets = sides(&|s| format!("ParagraphBorder{s}Offset"));
         a
     }
 

@@ -534,10 +534,18 @@ attr_set! {
         list_separator: String = "\t".into(),
         balance_ragged: bool = false,
         optical_margin: bool = false,
-        /// Paragraph shading.
+        /// Paragraph shading, and how far it reaches past the text: top, left, bottom, right.
         shading_on: bool = false,
         shading_color: String = "[Black]".into(),
         shading_tint: f32 = 0.2,
+        shading_offsets: [f64; 4] = [0.0; 4],
+        /// Paragraph border: stroke weights (top, left, bottom, right), colour, and offsets past the
+        /// text (top, left, bottom, right).
+        border_on: bool = false,
+        border_weights: [f64; 4] = [1.0; 4],
+        border_color: String = "[Black]".into(),
+        border_tint: f32 = 1.0,
+        border_offsets: [f64; 4] = [0.0; 4],
     }
 }
 

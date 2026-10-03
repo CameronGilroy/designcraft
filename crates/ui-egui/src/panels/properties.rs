@@ -1327,6 +1327,45 @@ pub fn paragraph_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
             let _ = app.run("type.para", json!({"attrs": {"composer": "singleLine"}}));
         }
     });
+    // Paragraph Border and Shading.
+    let swatches: Vec<String> =
+        app.session.active().map(|d| d.doc.swatches.iter().filter(|w| !w.hidden).map(|w| w.name.clone()).collect()).unwrap_or_default();
+    for (on_key, color_key, label) in [("shadingOn", "shadingColor", "Shading"), ("borderOn", "borderColor", "Border")] {
+        ui.horizontal(|ui| {
+            let mut on = p[on_key].as_bool().unwrap_or(false);
+            if ui.checkbox(&mut on, label).changed() {
+                let _ = app.run("type.para", json!({ on_key: on }));
+            }
+            if on {
+                let cur = p[color_key].as_str().unwrap_or("[Black]").to_string();
+                egui::ComboBox::from_id_salt(("pbs", label)).selected_text(&cur).width(110.0).show_ui(ui, |ui| {
+                    for w in &swatches {
+                        if ui.selectable_label(*w == cur, w).clicked() {
+                            let _ = app.run("type.para", json!({ color_key: w }));
+                        }
+                    }
+                });
+                if label == "Shading" {
+                    if let Some(v) = number(ui, "pshtint", p["shadingTint"].as_f64().map(|t| t * 100.0), "%", 46.0, 0) {
+                        let _ = app.run("type.para", json!({"shadingTint": (v / 100.0).clamp(0.0, 1.0)}));
+                    }
+                } else if let Some(v) = number(ui, "pbw", p["borderWeights"][0].as_f64(), " pt", 50.0, 2) {
+                    let w = [v.max(0.0); 4];
+                    let _ = app.run("type.para", json!({ "borderWeights": w }));
+                }
+            }
+        });
+    }
+    if p["shadingOn"].as_bool().unwrap_or(false) || p["borderOn"].as_bool().unwrap_or(false) {
+        ui.horizontal(|ui| {
+            caption(ui, "Offsets");
+            let o = p["borderOffsets"][0].as_f64().or(p["shadingOffsets"][0].as_f64());
+            if let Some(v) = number(ui, "pbo", o, " pt", 50.0, 2) {
+                let o = [v; 4];
+                let _ = app.run("type.para", json!({ "borderOffsets": o, "shadingOffsets": o }));
+            }
+        });
+    }
     let ps = a["paragraphStyle"].as_str().unwrap_or("").to_string();
     let ov = a["paraOverrides"].as_u64().unwrap_or(0) + a["charOverrides"].as_u64().unwrap_or(0);
     ui.horizontal(|ui| {

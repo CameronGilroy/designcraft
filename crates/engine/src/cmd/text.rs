@@ -977,3 +977,38 @@ mod nested_line_style_tests {
         assert_eq!(nl[0].style, "Lead");
     }
 }
+
+#[cfg(test)]
+mod border_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn paragraph_border_and_shading_follow_each_column() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let text = "word ".repeat(80);
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 160], "content": "text", "text": text, "caret": false})).unwrap();
+        s.execute("object.textFrameOptions", &json!({"ids": [r["id"]], "columns": 2})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+        s.execute("type.para", &json!({"borderOn": true, "borderWeights": [2, 1, 2, 1], "borderOffsets": [4, 4, 4, 4], "borderColor": "[Black]", "shadingOn": true, "shadingOffsets": [4, 4, 4, 4]})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        let cs = s.cache.get(&s.doc().unwrap().doc, sid, None);
+        let decos = &cs.frames[0].decos;
+        let shading: Vec<_> = decos.iter().filter(|d| d.tint < 0.5).collect();
+        assert_eq!(shading.len(), 2, "one shaded box per column");
+        let edges = decos.len() - shading.len();
+        assert_eq!(edges, 6, "top on the first part, bottom on the last, sides on both");
+        let top = decos.iter().filter(|d| d.tint >= 0.5).map(|d| d.rect).fold(f64::MAX, |a, r| a.min(r.y0));
+        let first_line = &cs.frames[0].lines[0];
+        assert!((top - (first_line.baseline - first_line.ascent - 4.0 - 2.0)).abs() < 1e-6, "offset 4 + weight 2 above the text");
+        let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&s.doc().unwrap().doc)).unwrap();
+        let p = &back.stories.values().find(|st| st.text.starts_with("word")).unwrap().paras[0].para;
+        assert_eq!(
+            (p.border_on, p.border_weights, p.shading_offsets),
+            (Some(true), Some([2.0, 1.0, 2.0, 1.0]), Some([4.0; 4])),
+            "IDML paragraph border"
+        );
+    }
+}
