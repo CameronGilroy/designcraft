@@ -53,6 +53,21 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         cmd!(query "snippet.export", "Export Selection as Snippet", ["File", "Export"], None,
             "{path?} — the selected items (with their stories, styles and images) as a .designcraft snippet; no path: {base64}", super::has_selection, snippet_export),
+        cmd!(query "place.styles", "Import Options: Styles", [], None,
+        "{path | base64, name} → {paragraph: [name], character: [name], conflicts: [name]} — the styles a Word/RTF file brings (for styleMap / styleConflicts)",
+        has_doc, |s, p| {
+            let (bytes, name, _) = read_source(p)?;
+            let imp = designcraft_textimport::import(&name, &bytes).map_err(|e| bad("place.styles", e.to_string()))?;
+            let st = &s.doc()?.doc.styles;
+            let conflicts: Vec<&str> = imp
+                .para_styles
+                .iter()
+                .filter(|x| st.para(&x.name).is_some())
+                .chain(imp.char_styles.iter().filter(|x| st.char_style(&x.name).is_some()))
+                .map(|x| x.name.as_str())
+                .collect();
+            Ok(json!({"paragraph": imp.para_styles.iter().map(|x| &x.name).collect::<Vec<_>>(), "character": imp.char_styles.iter().map(|x| &x.name).collect::<Vec<_>>(), "conflicts": conflicts}))
+        }),
         cmd!(
             "snippet.place",
             "Place Snippet",
@@ -77,7 +92,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Place…",
             ["File"],
             Some("Cmd+D"),
-            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options)} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) and Excel workbooks (.xlsx, as a table) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?}",
+            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options)} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) and Excel workbooks (.xlsx, as a table) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?, styleMap?: {imported name: document style}, styleConflicts?: useExisting|redefine|autoRename}",
             has_doc,
             file_place
         ),

@@ -23,6 +23,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.qrCode", "Generate QR Code…", None, "{} — the QR Code dialog (object.qrCode does the work)"),
     ("app.userDictionary", "User Dictionary…", None, "{} — hyphenation exceptions (hyphenation.* commands)"),
     ("app.fittingOptions", "Frame Fitting Options…", None, "{} — the dialog for object.fittingOptions"),
+    ("app.placeWithOptions", "Place with Import Options…", Some("Cmd+Shift+D"), "{} — Word/RTF style mapping before placing"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
@@ -108,6 +109,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:file.revert",
             "-",
             "ui:app.placeDialog",
+            "ui:app.placeWithOptions",
             "-",
             "ui:app.exportPdf",
             "ui:app.packageDialog",
@@ -534,6 +536,23 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "app.openDialog" => app.pick_and_open("open"),
         "app.placeDialog" => app.pick_and_open("place"),
+        "app.placeWithOptions" => {
+            // Word/RTF Import Options: style mapping and conflicts before the text lands.
+            let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) else { return Some(Ok(Value::Null)) };
+            let l = path.to_lowercase();
+            if !(l.ends_with(".docx") || l.ends_with(".rtf")) {
+                return Some(app.run("file.place", json!({"path": path})));
+            }
+            let info = match app.run("place.styles", json!({"path": path})) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            app.ui.dialog = Some(crate::dialogs::Dialog::new(
+                "importOptions",
+                json!({"path": path, "styles": info["paragraph"], "charStyles": info["character"], "conflicts": info["conflicts"], "styleConflicts": "useExisting", "removeStyles": false, "map": {}}),
+            ));
+            Ok(Value::Null)
+        }
         "app.save" | "app.saveDialog" if app.services.download.is_some() => download_document(app),
         "app.save" => {
             if app.session.active().is_some_and(|d| d.path.is_some()) {

@@ -28,6 +28,7 @@ log = { workspace = true }
 regex = { workspace = true }
 
 [dev-dependencies]
+zip = { workspace = true }
 hayro-syntax = "0.7.2"
 hayro-interpret = { version = "0.7.0", default-features = false, features = ["embed-fonts"] }
 hayro-cmap = "0.1"

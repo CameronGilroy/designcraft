@@ -11,8 +11,72 @@ use crate::{Result, Session};
 
 /// Add the imported styles the document doesn't have yet (existing styles win, as in InDesign's
 /// default style-conflict option).
-fn add_styles(d: &mut Document, imp: &designcraft_textimport::Imported) {
+/// How imported styles that share a name with the document's are handled (Word Import Options).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Conflict {
+    /// Use the document's definition.
+    UseExisting,
+    /// The imported definition replaces the document's.
+    Redefine,
+    /// Import under a new name (`Name_wrd_1`).
+    AutoRename,
+}
+
+/// Map imported style names (`styleMap`) and resolve name clashes in the import before it lands.
+fn map_styles(d: &Document, imp: &mut designcraft_textimport::Imported, map: &std::collections::HashMap<String, String>, conflict: Conflict) {
+    let mut rename: std::collections::HashMap<String, String> = map.clone();
+    if conflict == Conflict::AutoRename {
+        let st = &d.styles;
+        for s in imp.para_styles.iter().filter(|s| !map.contains_key(&s.name) && st.para(&s.name).is_some()) {
+            let n = (1..).map(|i| format!("{}_wrd_{i}", s.name)).find(|n| st.para(n).is_none()).expect("free name");
+            rename.insert(s.name.clone(), n);
+        }
+        for s in imp.char_styles.iter().filter(|s| !map.contains_key(&s.name) && st.char_style(&s.name).is_some()) {
+            let n = (1..).map(|i| format!("{}_wrd_{i}", s.name)).find(|n| st.char_style(n).is_none()).expect("free name");
+            rename.insert(s.name.clone(), n);
+        }
+    }
+    if rename.is_empty() {
+        return;
+    }
+    // Mapped styles aren't imported; renamed ones come in under their new name.
+    imp.para_styles.retain(|s| !map.contains_key(&s.name));
+    imp.char_styles.retain(|s| !map.contains_key(&s.name));
+    for s in imp.para_styles.iter_mut().chain(imp.char_styles.iter_mut()) {
+        if let Some(n) = rename.get(&s.name) {
+            s.name = n.clone();
+        }
+        if let Some(b) = s.based_on.as_ref().and_then(|b| rename.get(b)) {
+            s.based_on = Some(b.clone());
+        }
+    }
+    let n = imp.story.len();
+    imp.story.format_paras(0..n, |p| {
+        if let Some(m) = rename.get(&p.style) {
+            p.style = m.clone();
+        }
+    });
+    imp.story.format_chars(0..n, |f| {
+        if let Some(m) = rename.get(&f.style) {
+            f.style = m.clone();
+        }
+    });
+}
+
+fn add_styles(d: &mut Document, imp: &designcraft_textimport::Imported, conflict: Conflict) {
     let st = d.styles_mut();
+    if conflict == Conflict::Redefine {
+        for s in &imp.para_styles {
+            if let Some(ps) = st.paragraph.iter_mut().find(|p| p.name == s.name) {
+                (ps.para, ps.chars) = (s.para.clone(), s.chars.clone());
+            }
+        }
+        for s in &imp.char_styles {
+            if let Some(cs) = st.character.iter_mut().find(|c| c.name == s.name) {
+                cs.chars = s.chars.clone();
+            }
+        }
+    }
     for s in &imp.para_styles {
         if st.para(&s.name).is_none() {
             st.paragraph.push(ParagraphStyle {
@@ -86,6 +150,18 @@ pub(super) fn place_text(s: &mut Session, p: &Value, name: &str, bytes: &[u8]) -
         imp.para_styles.clear();
         imp.char_styles.clear();
     }
+    let conflict = match p.get("styleConflicts").and_then(Value::as_str).unwrap_or("useExisting") {
+        "useExisting" => Conflict::UseExisting,
+        "redefine" => Conflict::Redefine,
+        "autoRename" => Conflict::AutoRename,
+        c => return Err(bad("file.place", format!("unknown styleConflicts `{c}` (useExisting, redefine, autoRename)"))),
+    };
+    let map: std::collections::HashMap<String, String> = p
+        .get("styleMap")
+        .and_then(Value::as_object)
+        .map(|o| o.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect())
+        .unwrap_or_default();
+    map_styles(&s.doc()?.doc, &mut imp, &map, conflict);
     let autoflow_on = p.get("autoflow").and_then(Value::as_bool).unwrap_or(false);
     let st = s.doc()?;
     let caret = st.selection.text.filter(|t| t.cell.is_none());
@@ -96,7 +172,7 @@ pub(super) fn place_text(s: &mut Session, p: &Value, name: &str, bytes: &[u8]) -
     let rect = super::rect_param(p, "rect");
     let warnings = imp.warnings.clone();
     s.edit(|d, sel| {
-        add_styles(d, &imp);
+        add_styles(d, &imp, conflict);
         let sid = if let Some(t) = caret {
             // Into the text at the insertion point (replacing the selection).
             let story = d.story_mut(t.story).ok_or(designcraft_doc::DocError::NoStory(t.story))?;
@@ -324,5 +400,49 @@ mod pdf_page_tests {
         let pdf = designcraft_pdf::export_pdf(&d, &s.cache, &Default::default()).unwrap();
         assert!(String::from_utf8_lossy(&pdf).contains("/Subtype /Form") || String::from_utf8_lossy(&pdf).contains("/Subtype/Form"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn word_file() -> Vec<u8> {
+        use std::io::Write;
+        const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
+        let styles = format!(
+            r#"<w:styles {W}><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+            <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:rPr><w:sz w:val="56"/></w:rPr></w:style>
+            <w:style w:type="paragraph" w:styleId="Body"><w:name w:val="Body"/><w:rPr><w:sz w:val="20"/></w:rPr></w:style></w:styles>"#
+        );
+        let doc = format!(
+            r#"<w:document {W}><w:body><w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Head</w:t></w:r></w:p>
+            <w:p><w:pPr><w:pStyle w:val="Body"/></w:pPr><w:r><w:t>Text</w:t></w:r></w:p></w:body></w:document>"#
+        );
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let o = zip::write::SimpleFileOptions::default();
+        for (n, c) in [("word/document.xml", doc), ("word/styles.xml", styles)] {
+            w.start_file(n, o).unwrap();
+            w.write_all(c.as_bytes()).unwrap();
+        }
+        w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn word_import_options_map_and_rename_styles() {
+        let b64 = crate::cmd::base64_encode(&word_file());
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("style.paragraph.create", &json!({"name": "Body", "chars": {"size": 9}})).unwrap();
+        s.execute("style.paragraph.create", &json!({"name": "Headline", "chars": {"size": 30}})).unwrap();
+        let info = s.execute("place.styles", &json!({"base64": b64, "name": "a.docx"})).unwrap();
+        assert_eq!(info["conflicts"], json!(["Body"]));
+        // Title → the document's Headline; Body clashes → imported as Body_wrd_1.
+        let r = s
+            .execute("file.place", &json!({"base64": b64, "name": "a.docx", "styleMap": {"Title": "Headline"}, "styleConflicts": "autoRename"}))
+            .unwrap();
+        let d = &s.doc().unwrap().doc;
+        let st = d.story(designcraft_doc::StoryId(r["story"].as_u64().unwrap())).unwrap();
+        assert_eq!(st.paras.iter().map(|p| p.style.as_str()).collect::<Vec<_>>(), ["Headline", "Body_wrd_1"]);
+        assert!(d.styles.para("Title").is_none(), "mapped styles aren't imported");
+        assert_eq!(d.styles.para("Body").unwrap().chars.size, Some(9.0), "the document's Body is untouched");
+        // Redefine: the imported definition replaces the document's.
+        s.execute("file.place", &json!({"base64": b64, "name": "a.docx", "styleConflicts": "redefine", "rect": [72, 400, 300, 500]})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.styles.para("Body").unwrap().chars.size, Some(10.0));
     }
 }

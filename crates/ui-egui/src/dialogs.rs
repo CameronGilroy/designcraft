@@ -642,6 +642,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "polygonSettings" => "Polygon Settings",
         "userDictionary" => "User Dictionary",
         "newWorkspace" => "New Workspace",
+        "importOptions" => "Import Options",
         "fittingOptions" => "Frame Fitting Options",
         "qrCode" => "Generate QR Code",
         "preferences" => "Preferences",
@@ -851,6 +852,50 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
             "userDictionary" => user_dictionary(app, ui, &mut d),
+            "importOptions" => {
+                ui.label(egui::RichText::new(d.s("path")).size(10.5));
+                check(ui, &mut d, "removeStyles", "Remove Styles and Formatting from Text and Tables");
+                if !d.b("removeStyles") {
+                    ui.label(egui::RichText::new("Style Name Conflicts").font(semibold(12.0)));
+                    let conflicts: Vec<String> = d.fields.get("conflicts").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+                    ui.label(if conflicts.is_empty() { "No conflicts".to_string() } else { format!("{} conflict(s): {}", conflicts.len(), conflicts.join(", ")) });
+                    let cur = d.s("styleConflicts");
+                    ui.horizontal(|ui| {
+                        for (v, l) in [("useExisting", "Use Document Style Definition"), ("redefine", "Redefine Document Style"), ("autoRename", "Auto Rename")] {
+                            if ui.radio(cur == v, l).clicked() {
+                                d.fields.insert("styleConflicts".into(), json!(v));
+                            }
+                        }
+                    });
+                    ui.label(egui::RichText::new("Style Mapping").font(semibold(12.0)));
+                    let names: Vec<String> = app.session.active().map(|s| s.doc.styles.paragraph.iter().map(|p| p.name.clone()).collect()).unwrap_or_default();
+                    let imported: Vec<String> = d.fields.get("styles").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+                    egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                        egui::Grid::new("imp_map").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+                            for w in &imported {
+                                ui.label(w);
+                                let mapped = d.fields.get("map").and_then(|m| m.get(w)).and_then(Value::as_str).unwrap_or("").to_string();
+                                let shown = if mapped.is_empty() { "(import)".to_string() } else { mapped.clone() };
+                                egui::ComboBox::from_id_salt(("imp_map", w)).selected_text(shown).width(170.0).show_ui(ui, |ui| {
+                                    if ui.selectable_label(mapped.is_empty(), "(import)").clicked()
+                                        && let Some(m) = d.fields.get_mut("map").and_then(Value::as_object_mut)
+                                    {
+                                        m.remove(w);
+                                    }
+                                    for n in &names {
+                                        if ui.selectable_label(*n == mapped, n).clicked()
+                                            && let Some(m) = d.fields.get_mut("map").and_then(Value::as_object_mut)
+                                        {
+                                            m.insert(w.clone(), json!(n));
+                                        }
+                                    }
+                                });
+                                ui.end_row();
+                            }
+                        });
+                    });
+                }
+            }
             "newWorkspace" => {
                 ui.horizontal(|ui| {
                     ui.label("Name:");
@@ -1200,6 +1245,10 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             app.run("document.preferences", doc)
         }
         "newWorkspace" => app.run("window.newWorkspace", json!({"name": d.s("name")})),
+        "importOptions" => app.run(
+            "file.place",
+            json!({"path": d.s("path"), "removeStyles": d.b("removeStyles"), "styleConflicts": d.s("styleConflicts"), "styleMap": d.fields.get("map").cloned().unwrap_or(json!({}))}),
+        ),
         "fittingOptions" => {
             let m = |k: &str| d.fields.get(k).and_then(Value::as_str).and_then(|s| parse_measure(s, Unit::Points).ok()).unwrap_or(0.0);
             app.run(
