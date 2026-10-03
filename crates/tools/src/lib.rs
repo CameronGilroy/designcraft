@@ -259,6 +259,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "directSelection" => Box::new(select::SelectionTool::new(true)),
         "rectangleFrame" | "ellipseFrame" | "polygonFrame" | "rectangle" | "ellipse" | "polygon" | "line" => Box::new(frame::FrameTool::new(id)),
         "type" => Box::new(text::TypeTool::default()),
+        "verticalType" => Box::new(text::TypeTool::vertical()),
         "pen" => Box::new(pen::PenTool::default()),
         "gradientSwatch" => Box::new(gradient::GradientTool::default()),
         "gradientFeather" => Box::new(gradient::GradientTool::feather()),

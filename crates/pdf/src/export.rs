@@ -816,7 +816,14 @@ impl Exporter<'_> {
                     }
                 } else if let Some(ft) = cs.frame(it.id) {
                     let text = doc.story(tfr.story).map(|st| st.text.as_str()).unwrap_or("");
+                    let local = it.text_local();
+                    if local != Affine::IDENTITY {
+                        s.push_transform(&tf(local));
+                    }
                     self.frame_text(s, &cs, ft, text);
+                    if local != Affine::IDENTITY {
+                        s.pop();
+                    }
                 }
             }
             _ => {}

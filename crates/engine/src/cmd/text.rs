@@ -189,7 +189,7 @@ fn hit_byte(s: &Session, frame: ItemId, pt: Point) -> Option<(StoryId, usize, Op
     let loc = st.doc.find(frame)?;
     let it = st.doc.item_at(&loc)?;
     let sid = it.text_frame()?.story;
-    let xf = st.doc.parent_xf(&loc) * it.xf;
+    let xf = st.doc.parent_xf(&loc) * it.text_xf();
     let inner = xf.inverse() * pt;
     let cs = s.cache.get(&st.doc, sid, None);
     let fi = cs.frames.iter().position(|f| f.frame == frame)?;

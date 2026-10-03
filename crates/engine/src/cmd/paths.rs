@@ -274,7 +274,7 @@ fn create_outlines(s: &mut Session, p: &Value) -> Result<Value> {
             let at = d.spread(sr).and_then(|sp| sp.items.iter().position(|i| i.id == *id));
             let make = |d: &mut Document, ((fill, ft, stroke, stt, sw), bp): ((String, f32, String, f32, f64), BezPath)| {
                 let mut o = Item::new(ItemId(d.alloc()), it.layer, Shape::Path, PathData::from_bezpath(&bp));
-                o.xf = it.xf;
+                o.xf = it.text_xf();
                 o.fill = Fill { swatch: fill, tint: ft, ..Fill::none() };
                 o.stroke = if stroke == designcraft_color::swatch::NONE {
                     Stroke::none()

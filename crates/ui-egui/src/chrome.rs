@@ -128,7 +128,8 @@ pub fn control_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
         )
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                let text_mode = app.session.tool_id() == "type" || app.session.active().is_some_and(|d| d.selection.text.is_some());
+                let text_mode =
+                    matches!(app.session.tool_id(), "type" | "verticalType") || app.session.active().is_some_and(|d| d.selection.text.is_some());
                 if text_mode {
                     control_text(app, ui);
                 } else {

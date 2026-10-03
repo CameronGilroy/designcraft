@@ -840,3 +840,48 @@ fn bidi_matches_the_reference_order() {
         assert_eq!(ours, reference, "rtl={rtl}");
     }
 }
+
+#[test]
+fn vertical_frames_compose_in_the_turned_box() {
+    let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
+    let lid = d.default_layer();
+    let (fid, sid) =
+        d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 400.0), lid, "縦書きの文章です。Latin", ParaFormat::default()).unwrap();
+    if let Some(tf) = d.item_mut(fid).and_then(|i| i.text_frame_mut()) {
+        tf.options.vertical = true;
+        tf.options.inset = [0.0; 4];
+    }
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let ft = &cs.frames[0];
+    assert!(ft.vertical);
+    // The line runs along the frame's height (300 pt), so it all fits on one line.
+    assert_eq!(ft.lines.len(), 1);
+    let l = &ft.lines[0];
+    assert!(l.x1 - l.x0 > 290.0, "{} {}", l.x0, l.x1);
+    assert!(l.glyphs.iter().filter(|g| g.len > 0).take(5).all(|g| g.upright));
+    assert!(!l.glyphs.iter().rev().find(|g| g.len > 0).unwrap().upright, "Latin turns");
+    // Text space → frame: the first line sits at the right edge and runs down.
+    let it = d.item(fid).unwrap();
+    let p0 = it.text_xf() * designcraft_geom::Point::new(l.glyphs[0].x, l.baseline);
+    let p1 = it.text_xf() * designcraft_geom::Point::new(l.glyphs[3].x, l.baseline);
+    assert!(p0.x > 150.0 && p1.y > p0.y && (p1.x - p0.x).abs() < 1e-6, "{p0:?} {p1:?}");
+}
+
+#[test]
+fn cjk_text_breaks_between_characters_with_kinsoku() {
+    use crate::breaker::cjk_break_between;
+    assert!(cjk_break_between('日', '本'));
+    assert!(!cjk_break_between('す', '。'), "no line starts with a full stop");
+    assert!(!cjk_break_between('「', '日'), "no line ends with an opening bracket");
+    assert!(!cjk_break_between('a', 'b'));
+    let text = "日本語の文章は単語の間に空白を入れずに書くので、文字と文字の間で改行します。";
+    let (d, sid, _) = doc_with(text, Rect::new(36.0, 36.0, 156.0, 400.0), ParaAttrs::default());
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let lines = all_lines(&cs);
+    assert!(lines.len() > 1, "wraps");
+    for l in &lines {
+        assert!(l.end_x <= l.x1 + 0.5, "line fits: {} > {}", l.end_x, l.x1);
+        let first = text[l.range.clone()].chars().next().unwrap_or(' ');
+        assert!(!"、。".contains(first), "kinsoku: {:?}", &text[l.range.clone()]);
+    }
+}

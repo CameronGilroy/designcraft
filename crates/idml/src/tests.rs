@@ -549,3 +549,14 @@ fn round_trips_frames_with_pasted_in_items() {
     let b = f.bounds();
     assert!((b.x0 - 100.0).abs() < 0.01 && (b.x1 - 200.0).abs() < 0.01, "{b:?}");
 }
+
+#[test]
+fn vertical_story_orientation_round_trips() {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (fid, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(72.0, 72.0, 200.0, 400.0), lid, "縦書き", ParaFormat::default()).unwrap();
+    d.item_mut(fid).unwrap().text_frame_mut().unwrap().options.vertical = true;
+    let back = import_idml(&export_idml(&d)).unwrap();
+    let frame = back.spreads[0].items.iter().find_map(|i| i.text_frame()).unwrap();
+    assert!(frame.options.vertical);
+}

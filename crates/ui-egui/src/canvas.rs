@@ -927,7 +927,7 @@ fn draw_text_selection(
     if let Some(sel) = cells.filter(|c| c.story == ts.story) {
         for ft in &cs.frames {
             let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { continue };
-            let m = a * it.xf;
+            let m = a * it.text_xf();
             for t in ft.tables.iter().filter(|t| t.table == sel.table) {
                 for c in t.cells.iter().filter(|c| sel.range.contains(c.row, c.col)) {
                     let q = [
@@ -950,7 +950,7 @@ fn draw_text_selection(
     for (fi, ft) in cs.frames.iter().enumerate() {
         let Some((a, _)) = item_canvas_xf(doc, layout, ft.frame) else { continue };
         let Some(it) = doc.item(ft.frame) else { continue };
-        let m = a * it.xf;
+        let m = a * it.text_xf();
         // Show the frame edge while typing.
         for poly in path_screen(it, xf, a) {
             painter.add(egui::Shape::line(poly, Stroke::new(1.0, layer_color(doc, it).gamma_multiply(0.6))));
@@ -992,7 +992,7 @@ fn draw_text_selection(
         && let Some(ft) = cs.frames.get(fi)
         && let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame))
     {
-        let m = a * it.xf;
+        let m = a * it.text_xf();
         let blink = (painter.ctx().input(|i| i.time) * 1.6) as i64 % 2 == 0;
         if blink {
             let p0 = xf.to_screen(m * Point::new(x, bl - asc));
@@ -1023,7 +1023,7 @@ fn draw_cell_selection(
     let Some((fi, origin, text)) = found else { return };
     let Some(ft) = cs.frames.get(fi) else { return };
     let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { return };
-    let m = a * it.xf * designcraft_geom::Affine::translate(origin.to_vec2());
+    let m = a * it.text_xf() * designcraft_geom::Affine::translate(origin.to_vec2());
     let range = ts.range();
     if !range.is_empty()
         && let Some(cft) = text.frames.first()
@@ -1051,7 +1051,7 @@ fn draw_cell_selection(
             None => compose::cell_caret(cs, cell.table, cell.row, cell.col, ts.focus),
         }
     {
-        let m = a * it.xf;
+        let m = a * it.text_xf();
         let blink = (painter.ctx().input(|i| i.time) * 1.6) as i64 % 2 == 0;
         if blink {
             painter.line_segment(
@@ -1437,7 +1437,7 @@ fn draw_hidden_characters(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc
         let cs = app.session.cache.get(doc, story.id, None);
         for ft in &cs.frames {
             let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { continue };
-            let m = a * it.xf;
+            let m = a * it.text_xf();
             let col = layer_color(doc, it);
             for l in &ft.lines {
                 let size = (l.ascent * 0.75 * xf.zoom).clamp(6.0, 40.0) as f32;
@@ -1489,7 +1489,7 @@ fn draw_dynamic_spelling(app: &DesignApp, ctx: &egui::Context, painter: &egui::P
         let red = Stroke::new(1.0, Color32::from_rgb(230, 30, 30));
         for ft in &cs.frames {
             let (Some((a, _)), Some(it)) = (item_canvas_xf(doc, layout, ft.frame), doc.item(ft.frame)) else { continue };
-            let m = a * it.xf;
+            let m = a * it.text_xf();
             for l in &ft.lines {
                 for r in bad.iter().filter(|r| r.start < l.range.end && r.end > l.range.start) {
                     let gs: Vec<_> = l.glyphs.iter().filter(|g| g.len > 0 && g.byte >= r.start && g.byte < r.end).collect();

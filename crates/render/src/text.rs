@@ -114,7 +114,7 @@ fn union(r: Option<Rect>, b: Rect) -> Option<Rect> {
     Some(r.map_or(b, |r| r.union(b)))
 }
 
-fn build_line(db: &FontDb, cs: &ComposedStory, l: &Line) -> LineGlyphs {
+fn build_line(db: &FontDb, cs: &ComposedStory, l: &Line, vertical: bool) -> LineGlyphs {
     let mut runs: Vec<(u32, BezPath)> = Vec::new();
     let mut decos = Vec::new();
     let mut glyphs = 0;
@@ -131,7 +131,12 @@ fn build_line(db: &FontDb, cs: &ComposedStory, l: &Line) -> LineGlyphs {
             continue;
         }
         let skew = if style.skew != 0.0 { Affine::new([1.0, 0.0, -style.skew.to_radians().tan(), 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
-        let a = Affine::translate((g.x, l.baseline + g.y)) * skew * Affine::scale_non_uniform(g.sx, g.sy);
+        let mut a = Affine::translate((g.x, l.baseline + g.y)) * skew * Affine::scale_non_uniform(g.sx, g.sy);
+        if vertical && g.upright {
+            // Upright in vertical text: turned back a quarter about the em box centre.
+            let c = kurbo::Point::new(g.x + g.adv / 2.0, l.baseline + g.y - g.adv * 0.38);
+            a = Affine::rotate_about(-std::f64::consts::FRAC_PI_2, c) * a;
+        }
         let bp = match runs.iter_mut().find(|r| r.0 == g.style) {
             Some(r) => &mut r.1,
             None => {
@@ -158,7 +163,7 @@ fn build_line(db: &FontDb, cs: &ComposedStory, l: &Line) -> LineGlyphs {
 
 fn build(cs: &ComposedStory, ft: &FrameText) -> FrameGlyphs {
     let db = FontDb::global();
-    let lines: Vec<LineGlyphs> = ft.lines.iter().map(|l| build_line(db, cs, l)).collect();
+    let lines: Vec<LineGlyphs> = ft.lines.iter().map(|l| build_line(db, cs, l, ft.vertical)).collect();
     let elements = lines.iter().flat_map(|l| &l.runs).map(|(_, bp)| bp.elements().len()).sum();
     FrameGlyphs { lines, elements }
 }

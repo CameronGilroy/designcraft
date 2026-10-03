@@ -32,7 +32,7 @@ fn source_rects(doc: &Document, cache: &designcraft_compose::Cache, src: &Hyperl
                 if loc.spread != SpreadRef::Doc(si) {
                     continue;
                 }
-                let m: Affine = doc.parent_xf(&loc) * it.xf;
+                let m: Affine = doc.parent_xf(&loc) * it.text_xf();
                 for l in &ft.lines {
                     if l.range.end <= *start || l.range.start >= *end {
                         continue;

@@ -254,3 +254,19 @@ fn type_on_path_tool_targets_paths() {
     let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 200.0 + off.x, 100.0 + off.y));
     assert_eq!(a, vec![Action::Exec("type.onPath".into(), serde_json::json!({"id": id.0})), Action::SwitchTool("type".into())]);
 }
+
+#[test]
+fn vertical_type_tool_draws_vertical_frames() {
+    let d = Document::new(&NewDocument::default());
+    let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
+    let cx = ctx(&d, &s, &c, &l);
+    let mut t = create("verticalType");
+    assert_eq!(t.id(), "verticalType");
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 100.0, 100.0));
+    let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 200.0, 300.0));
+    let p = a.iter().find_map(|x| match x {
+        Action::Preview(id, p) if id == "frame.create" => Some(p.clone()),
+        _ => None,
+    });
+    assert_eq!(p.unwrap()["vertical"], true);
+}

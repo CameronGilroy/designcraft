@@ -164,6 +164,19 @@ impl Item {
 const INF: f64 = 10000.0;
 
 /// Does the glyph force a line end after it?
+/// A line may break between `a` and `b` in CJK text (any break next to an ideograph, kana or
+/// hangul), except where kinsoku forbids it: no line starts with closing punctuation, small
+/// kana or the prolonged sound mark, and none ends with opening brackets.
+pub fn cjk_break_between(a: char, b: char) -> bool {
+    let cjk = |c: char| crate::upright_in_vertical(c) || matches!(c as u32, 0x3000..=0x303F);
+    if !(cjk(a) || cjk(b)) {
+        return false;
+    }
+    const NO_START: &str = "、。，．・：；？！ー）」』】〕〉》｝］〙〗ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ々〻ゝゞヽヾ!),.:;?]}";
+    const NO_END: &str = "（「『【〔〈《｛［〘〖([{";
+    !NO_START.contains(b) && !NO_END.contains(a)
+}
+
 pub fn is_forced(c: char) -> bool {
     use designcraft_doc::story::*;
     matches!(c, FORCED_LINE_BREAK | COLUMN_BREAK | FRAME_BREAK | PAGE_BREAK)
@@ -293,7 +306,7 @@ fn items(glyphs: &[Glyph], hyph_after: &[bool], sp: &Spacing) -> (Vec<Item>, Vec
                 let mut p = Item::penalty(0.0, 50.0, true);
                 p.hang = if sp.optical { hang_right(g) } else { 0.0 };
                 push_inword(&mut it, &mut ig, p, i + 1, sp);
-            } else if matches!(g.ch, '\u{2013}' | '\u{2014}' | '/') {
+            } else if matches!(g.ch, '\u{2013}' | '\u{2014}' | '/') || cjk_break_between(g.ch, glyphs[i + 1].ch) {
                 let mut p = Item::penalty(0.0, 0.0, false);
                 p.hang = if sp.optical { hang_right(g) } else { 0.0 };
                 push_inword(&mut it, &mut ig, p, i + 1, sp);
@@ -626,7 +639,7 @@ pub fn greedy(glyphs: &[Glyph], hyph_after: &[bool], sp: &Spacing, width: &dyn F
                 shrink += sp.box_elastic(g).1.iter().sum::<f64>();
             }
             if i + 1 < n && !glyphs[i + 1].is_space() && !g.no_break {
-                if matches!(g.ch, '-' | '\u{2010}' | '\u{2013}' | '\u{2014}' | '/') {
+                if matches!(g.ch, '-' | '\u{2010}' | '\u{2013}' | '\u{2014}' | '/') || cjk_break_between(g.ch, glyphs[i + 1].ch) {
                     last_ok = Some((i + 1, false));
                 } else if hyph_after[i] && may_hyphenate(hyphens) {
                     let hy = hyphen_width(g, &mut hy_cache) * if sp.optical { 1.0 - hang('-').1 } else { 1.0 };

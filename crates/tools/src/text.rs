@@ -9,14 +9,22 @@ use crate::{Action, Cursor, Mods, PointerEvent, PointerKind, Tool, ToolContext, 
 
 #[derive(Default)]
 pub struct TypeTool {
+    /// Vertical Type Tool: frames it draws set text vertically.
+    pub vertical: bool,
     start: Option<Point>,
     selecting: Option<u64>,
     drawing: bool,
 }
 
+impl TypeTool {
+    pub fn vertical() -> Self {
+        TypeTool { vertical: true, ..Default::default() }
+    }
+}
+
 impl Tool for TypeTool {
     fn id(&self) -> &'static str {
-        "type"
+        if self.vertical { "verticalType" } else { "type" }
     }
 
     fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
@@ -61,7 +69,7 @@ impl Tool for TypeTool {
                 }
                 out.push(Action::Preview(
                     "frame.create".into(),
-                    json!({"spread": spread_json(sr), "shape": "rectangle", "content": "text", "rect": rect_json(r), "caret": true}),
+                    json!({"spread": spread_json(sr), "shape": "rectangle", "content": "text", "rect": rect_json(r), "caret": true, "vertical": self.vertical}),
                 ));
                 out
             }

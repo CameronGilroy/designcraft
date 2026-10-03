@@ -113,6 +113,8 @@ struct Importer<'r> {
     layer_ids: HashMap<String, LayerId>,
     stories: BTreeMap<StoryId, Story>,
     story_ids: HashMap<String, StoryId>,
+    /// Stories with a vertical StoryOrientation (their frames set text vertically).
+    vertical_stories: std::collections::HashSet<StoryId>,
     parents: Vec<Spread>,
     parent_ids: HashMap<String, SpreadId>,
     spreads: Vec<Spread>,
@@ -194,6 +196,7 @@ impl<'r> Importer<'r> {
             layers: Vec::new(),
             layer_ids: HashMap::new(),
             stories: BTreeMap::new(),
+            vertical_stories: Default::default(),
             story_ids: HashMap::new(),
             parents: Vec::new(),
             parent_ids: HashMap::new(),
@@ -324,6 +327,9 @@ impl<'r> Importer<'r> {
                 self.story_ids.insert(s.to_string(), id);
             }
             let story = self.story(id, e);
+            if e.find("StoryPreference").and_then(|p| p.get("StoryOrientation")) == Some("Vertical") {
+                self.vertical_stories.insert(id);
+            }
             self.stories.insert(id, story);
         }
         // Topic cross-references (See / See also) become markers at the start of the first story
@@ -1915,6 +1921,7 @@ impl<'r> Importer<'r> {
                     }
                 };
                 let mut options = e.find("TextFramePreference").map(text_frame_options).unwrap_or_default();
+                options.vertical = self.vertical_stories.contains(&story);
                 if let Some(g) = e.find("BaselineFrameGridOption")
                     && g.get("UseCustomBaselineFrameGrid") == Some("true")
                 {

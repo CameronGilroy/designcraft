@@ -97,6 +97,16 @@ pub struct PlacedGlyph {
     pub len: usize,
     /// Control characters (tabs, breaks, markers' carriers) are not drawn.
     pub visible: bool,
+    /// Stays upright in vertical frames (CJK ideographs, kana, hangul, full-width forms).
+    pub upright: bool,
+}
+
+/// Characters set upright (unrotated) in vertical text.
+pub fn upright_in_vertical(c: char) -> bool {
+    matches!(c as u32,
+        0x1100..=0x11FF | 0x2E80..=0x2FFF | 0x3040..=0x30FF | 0x3100..=0x31FF | 0x3200..=0x9FFF
+        | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xF900..=0xFAFF | 0xFF01..=0xFF60 | 0xFFE0..=0xFFE6
+        | 0x20000..=0x3FFFF)
 }
 
 #[derive(Clone, Debug)]
@@ -139,6 +149,8 @@ pub struct Deco {
 #[derive(Clone, Debug, Default)]
 pub struct FrameText {
     pub frame: ItemId,
+    /// Vertical Type frame (upright glyphs turn back in it).
+    pub vertical: bool,
     pub lines: Vec<Line>,
     pub decos: Vec<Deco>,
     /// Byte range of the story shown in this frame.
@@ -345,6 +357,15 @@ pub fn frame_specs(doc: &Document, sid: StoryId) -> Vec<FrameSpec> {
             }
             None => (item.text_area(), tf.options.clone()),
         };
+        // Vertical type: composed in the turned box; wraps and page rects turned with it.
+        let (area, exclusions, grid, page_rect) = if tf.options.vertical && tf.options.path.is_none() {
+            let v = designcraft_doc::vertical_text_xf(area).inverse();
+            let ex = exclusions.into_iter().map(|e| Exclusion { rect: v.transform_rect_bbox(e.rect), ..e }).collect();
+            let pr = page_rect.map(|(a, b)| (v.transform_rect_bbox(a), v.transform_rect_bbox(b)));
+            (Rect::new(0.0, 0.0, area.height(), area.width()), ex, None, pr)
+        } else {
+            (area, exclusions, grid, page_rect)
+        };
         out.push(FrameSpec {
             id: fid,
             area,
@@ -377,7 +398,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
     let mut out = ComposedStory { story: story.id, rev: story.rev, text_len: story.text.len(), ..Default::default() };
     let mut styles_tab: Vec<RunStyle> = Vec::new();
     let mut missing_fonts: HashMap<String, bool> = HashMap::new();
-    out.frames = frames.iter().map(|f| FrameText { frame: f.id, columns: f.columns(), ..Default::default() }).collect();
+    out.frames = frames.iter().map(|f| FrameText { frame: f.id, vertical: f.opts.vertical, columns: f.columns(), ..Default::default() }).collect();
     let cols: Vec<Vec<Rect>> = frames.iter().map(FrameSpec::columns).collect();
     let mut cur = Cursor { fi: 0, col: 0, last_baseline: None, last_descent: 0.0, pending: 0.0 };
     let para_ranges = story.para_ranges();
@@ -1604,6 +1625,7 @@ fn tab_leader(tab: &Glyph, leader: &str, x: f64, w: f64, origin: f64, out: &mut 
                 byte: tab.byte,
                 len: 0,
                 visible: true,
+                upright: false,
             });
             at += adv;
         }
@@ -1704,6 +1726,7 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
         byte: g.byte,
         len: g.len,
         visible,
+        upright: upright_in_vertical(g.ch),
     }
 }
 

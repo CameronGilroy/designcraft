@@ -326,7 +326,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Text Frame Options…",
             ["Object"],
             Some("Cmd+B"),
-            "{columns?, gutter?, inset?: number|[t,l,b,r], verticalJustification?: top|center|bottom|justify, firstBaseline?, autoSize?, ignoreWrap?, balanceColumns?, ids?}",
+            "{columns?, gutter?, inset?: number|[t,l,b,r], verticalJustification?: top|center|bottom|justify, firstBaseline?, autoSize?, ignoreWrap?, balanceColumns?, vertical?: bool (Vertical Type), ids?}",
             has_selection,
             text_frame_options
         ),
@@ -646,6 +646,7 @@ fn frame_create(s: &mut Session, p: &Value) -> Result<Value> {
     let lid = s.doc()?.active_layer;
     let text = str_param(p, "text").unwrap_or("").to_string();
     let caret = bool_or(p, "caret", content == "text");
+    let vertical = bool_or(p, "vertical", false);
     let sides = p.get("sides").and_then(Value::as_u64).map_or(s.prefs.polygon_sides, |v| v as u32).clamp(3, 100);
     let inset = p.get("starInset").and_then(Value::as_f64).map_or(s.prefs.star_inset, |v| v / 100.0).clamp(0.0, 1.0);
     let rect = Rect::new(rect.x0, rect.y0, rect.x1.max(rect.x0 + 0.5), rect.y1.max(rect.y0 + 0.5));
@@ -663,6 +664,9 @@ fn frame_create(s: &mut Session, p: &Value) -> Result<Value> {
             if let Some(it) = d.item_mut(id) {
                 it.path = path;
                 it.shape = sh;
+                if vertical && let Some(tf) = it.text_frame_mut() {
+                    tf.options.vertical = true;
+                }
             }
             *sel = if caret {
                 Selection::text(TextSel { story: sid, anchor: text.len(), focus: text.len(), frame: Some(id), cell: None })
@@ -1297,6 +1301,9 @@ fn text_frame_options(s: &mut Session, p: &Value) -> Result<Value> {
             }
             if let Some(v) = p.get("ignoreWrap").and_then(Value::as_bool) {
                 o.ignore_wrap = v;
+            }
+            if let Some(v) = p.get("vertical").and_then(Value::as_bool) {
+                o.vertical = v;
             }
             if let Some(v) = p.get("balanceColumns").and_then(Value::as_bool) {
                 o.balance_columns = v;

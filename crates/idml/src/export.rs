@@ -1669,13 +1669,14 @@ impl<'a> Ex<'a> {
     // ---------- stories ----------
 
     fn story_el(&mut self, s: &Story) -> El {
+        let vertical = s.frames.iter().any(|f| self.d.item(*f).and_then(|i| i.text_frame()).is_some_and(|t| t.options.vertical));
         let mut el = El::new("Story").attr("Self", uid(s.id.0)).attr("AppliedTOCStyle", "n").attr("TrackChanges", "false").attr("StoryTitle", "$ID/");
         el.push(
             El::new("StoryPreference")
                 .attr("OpticalMarginAlignment", "false")
                 .attr("OpticalMarginSize", "12")
                 .attr("FrameType", "TextFrameType")
-                .attr("StoryOrientation", "Horizontal")
+                .attr("StoryOrientation", if vertical { "Vertical" } else { "Horizontal" })
                 .attr("StoryDirection", "LeftToRightDirection"),
         );
         for psr in self.story_paras(s) {

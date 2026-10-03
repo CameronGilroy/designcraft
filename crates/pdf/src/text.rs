@@ -85,8 +85,17 @@ impl Exporter<'_> {
                     i += 1;
                     continue;
                 }
+                // Vertical type: an upright glyph turns back a quarter about its em box centre.
+                if ft.vertical && g.upright {
+                    let c = designcraft_geom::Point::new(g.x + g.adv / 2.0, l.baseline + g.y - g.adv * 0.38);
+                    s.push_transform(&crate::export::tf(Affine::rotate_about(-std::f64::consts::FRAC_PI_2, c)));
+                    self.run(s, cs, &gs[i..i + 1], l.baseline, story);
+                    s.pop();
+                    i += 1;
+                    continue;
+                }
                 let mut j = i + 1;
-                while j < gs.len() && same_run(g, &gs[j]) {
+                while j < gs.len() && same_run(g, &gs[j]) && !(ft.vertical && gs[j].upright) {
                     j += 1;
                 }
                 self.run(s, cs, &gs[i..j], l.baseline, story);
