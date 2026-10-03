@@ -487,7 +487,17 @@ fn body_html<'a>(
                 images.insert(name.clone(), (a.mime.as_str(), a.data.as_slice()));
                 // Alt text from Object Export Options, else the file name.
                 let alt = doc.item(*iid).map(|i| i.alt_text.as_str()).filter(|t| !t.is_empty()).unwrap_or(&a.name);
-                let _ = writeln!(body, "<figure><img src=\"{}\" alt=\"{}\"/></figure>", img_src(&name, &a.mime, &a.data), esc(alt));
+                // Object Export Options: alignment and a page break before.
+                let eo = doc.item(*iid).map(|i| i.export_options.clone()).unwrap_or_default();
+                let mut css = String::new();
+                if matches!(eo.align.as_str(), "left" | "center" | "right") {
+                    css.push_str(&format!("text-align:{};", eo.align));
+                }
+                if eo.page_break_before {
+                    css.push_str("page-break-before:always;break-before:page;");
+                }
+                let style = if css.is_empty() { String::new() } else { format!(" style=\"{css}\"") };
+                let _ = writeln!(body, "<figure{style}><img src=\"{}\" alt=\"{}\"/></figure>", img_src(&name, &a.mime, &a.data), esc(alt));
             }
         }
     }

@@ -317,6 +317,40 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "object.exportOptions",
+            "Object Export Options…",
+            ["Object"],
+            None,
+            "{ids?, artifact?: bool (tagged PDF decoration), rasterize?: bool (EPUB/HTML image), align?: left|center|right|\"\", pageBreakBefore?: bool, altText?}",
+            has_selection,
+            |s, p| {
+                let ids = targets(s, p)?;
+                let p = p.clone();
+                s.edit(|d, _| {
+                    for id in &ids {
+                        let Some(it) = d.item_mut(*id) else { continue };
+                        let e = &mut it.export_options;
+                        if let Some(v) = p.get("artifact").and_then(Value::as_bool) {
+                            e.artifact = v;
+                        }
+                        if let Some(v) = p.get("rasterize").and_then(Value::as_bool) {
+                            e.rasterize = v;
+                        }
+                        if let Some(v) = p.get("align").and_then(Value::as_str) {
+                            e.align = v.to_string();
+                        }
+                        if let Some(v) = p.get("pageBreakBefore").and_then(Value::as_bool) {
+                            e.page_break_before = v;
+                        }
+                        if let Some(v) = p.get("altText").and_then(Value::as_str) {
+                            it.alt_text = v.to_string();
+                        }
+                    }
+                    Ok(json!({"objects": ids.len()}))
+                })
+            }
+        ),
+        cmd!(
             "object.innerGlow",
             "Inner Glow",
             ["Object", "Effects"],

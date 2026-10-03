@@ -448,6 +448,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "cmd:object.textFrameOptions",
             "ui:app.layerOptions",
+            "cmd:object.exportOptions",
             "cmd:object.primaryTextFrame",
             "cmd:object.cornerOptions",
             "-",

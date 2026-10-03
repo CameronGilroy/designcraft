@@ -467,6 +467,26 @@ pub struct ObjectLiquid {
     pub pin_right: bool,
 }
 
+/// Object Export Options: tagged PDF and EPUB/HTML handling of one object.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportOptions {
+    /// Tagged PDF: the object is decoration (an artifact), not content.
+    pub artifact: bool,
+    /// EPUB/HTML: export the object as an image (whatever it is).
+    pub rasterize: bool,
+    /// EPUB/HTML: "left", "center" or "right" ("" = as the flow puts it).
+    pub align: String,
+    /// EPUB/HTML: start a new page (screen) before the object.
+    pub page_break_before: bool,
+}
+
+impl ExportOptions {
+    pub fn is_default(&self) -> bool {
+        *self == ExportOptions::default()
+    }
+}
+
 /// A PDF form field.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -948,6 +968,9 @@ pub struct Item {
     /// Liquid Layout (object-based pages): pins and resize permissions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquid: Option<ObjectLiquid>,
+    /// Object Export Options (beyond alt text).
+    #[serde(default, skip_serializing_if = "ExportOptions::is_default")]
+    pub export_options: ExportOptions,
     /// Buttons and Forms: an interactive PDF form field drawn in this frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub form_field: Option<FormField>,
@@ -1016,6 +1039,7 @@ impl Item {
             pdf_hidden_layers: Vec::new(),
             live_caption: None,
             form_field: None,
+            export_options: ExportOptions::default(),
             media: None,
             liquid: None,
             states: Vec::new(),

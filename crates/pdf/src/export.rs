@@ -614,7 +614,7 @@ impl Exporter<'_> {
         }
         let story = it.text_frame().map(|t| t.story);
         let figure = !it.alt_text.is_empty() || matches!(it.content, Content::Graphic(_)) || it.has_nested_items();
-        if on_parent || (story.is_none() && !figure) {
+        if on_parent || it.export_options.artifact || (story.is_none() && !figure) {
             // Page furniture and decoration.
             let kind = if on_parent { ArtifactType::Page } else { ArtifactType::Other };
             s.start_tagged(ContentTag::Artifact(Artifact::new(kind, None)));

@@ -124,6 +124,9 @@ fn page_text(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, 
 
 fn export_epub(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.doc()?;
+    // Object Export Options › Rasterize: those objects go in as images.
+    let (raster, _) = rasterize_where(&st.doc, &s.cache, 144.0, |it| it.export_options.rasterize && !threaded(&st.doc, it));
+    let epub_doc: &designcraft_doc::Document = raster.as_ref().unwrap_or(&st.doc);
     let fixed = p.get("fixedLayout").and_then(Value::as_bool).unwrap_or(false);
     let want_cover = p.get("cover").and_then(Value::as_bool).unwrap_or(false);
     let mut rr = designcraft_render::Renderer::new();
@@ -155,7 +158,7 @@ fn export_epub(s: &mut Session, p: &Value) -> Result<Value> {
             None => Ok(serde_json::json!({"base64": super::base64_encode(&bytes), "bytes": bytes.len(), "pages": pages.len()})),
         };
     }
-    let bytes = designcraft_epub::export_epub(&st.doc, &opts).map_err(|e| crate::EngineError::Other(e.to_string()))?;
+    let bytes = designcraft_epub::export_epub(epub_doc, &opts).map_err(|e| crate::EngineError::Other(e.to_string()))?;
     match p.get("path").and_then(Value::as_str) {
         Some(path) => {
             #[cfg(not(target_arch = "wasm32"))]
@@ -359,20 +362,27 @@ fn raster_effects(it: &designcraft_doc::Item) -> bool {
 /// A copy of `d` where spread-level objects with soft effects are 300 ppi images of their whole
 /// appearance (transparent around them, so they composite over what's behind).
 fn rasterize_effects(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache) -> (Option<designcraft_doc::Document>, usize) {
+    rasterize_where(d, cache, 300.0, |it| raster_effects(it) && !threaded(d, it))
+}
+
+/// A copy of `d` where the spread-level objects `pred` picks are images of their appearance at
+/// `ppi` (transparent around them).
+fn rasterize_where(
+    d: &designcraft_doc::Document,
+    cache: &designcraft_compose::Cache,
+    ppi: f64,
+    pred: impl Fn(&designcraft_doc::Item) -> bool,
+) -> (Option<designcraft_doc::Document>, usize) {
     use designcraft_doc::{Asset, AssetId, Content, Graphic, Item, ItemId, Shape, SpreadRef};
-    let todo: Vec<(usize, ItemId)> = d
-        .spreads
-        .iter()
-        .enumerate()
-        .flat_map(|(si, sp)| sp.items.iter().filter(|it| !it.hidden && raster_effects(it) && !threaded(d, it)).map(move |it| (si, it.id)))
-        .collect();
+    let todo: Vec<(usize, ItemId)> =
+        d.spreads.iter().enumerate().flat_map(|(si, sp)| sp.items.iter().filter(|it| !it.hidden && pred(it)).map(move |it| (si, it.id))).collect();
     if todo.is_empty() {
         return (None, 0);
     }
     let mut out = d.clone();
     let mut rr = designcraft_render::Renderer::new();
     rr.threads = designcraft_render::default_threads();
-    let k = 300.0 / 72.0;
+    let k = ppi / 72.0;
     let mut n = 0;
     for (si, id) in todo {
         let Some(it) = d.item(id) else { continue };
@@ -426,6 +436,7 @@ fn rasterize_effects(d: &designcraft_doc::Document, cache: &designcraft_compose:
         });
         img_item.stroke.weight = 0.0;
         img_item.alt_text = it.alt_text.clone();
+        img_item.export_options = it.export_options.clone();
         // Same place in the stacking order.
         let osp = std::sync::Arc::make_mut(&mut out.spreads[si]);
         if let Some(pos) = osp.items.iter().position(|x| x.id == id) {
@@ -609,6 +620,38 @@ mod text_tests {
         let mut s = String::new();
         std::io::Read::read_to_string(&mut z.by_name(name).unwrap(), &mut s).unwrap();
         s
+    }
+
+    #[test]
+    fn object_export_options() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        // A plain rectangle rasterised for EPUB, centred, after a page break.
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 200, 200], "shape": "ellipse"})).unwrap();
+        s.execute("object.fill", &json!({"swatch": "[Black]", "ids": [r["id"]]})).unwrap();
+        s.execute(
+            "object.exportOptions",
+            &json!({"ids": [r["id"]], "rasterize": true, "align": "center", "pageBreakBefore": true, "altText": "A dot"}),
+        )
+        .unwrap();
+        let e = s.execute("file.exportEpub", &json!({})).unwrap();
+        let mut z = unzip(e["base64"].as_str().unwrap());
+        let x = read(&mut z, "OEBPS/content.xhtml");
+        assert!(
+            x.contains("<figure style=\"text-align:center;page-break-before:always;break-before:page;\"><img") && x.contains("alt=\"A dot\""),
+            "{x}"
+        );
+        // Tagged PDF: an artifact object adds no figure.
+        let pdf = |s: &mut Session| {
+            String::from_utf8_lossy(&super::super::file::base64_decode(
+                s.execute("file.exportPdf", &json!({"tagged": true})).unwrap()["base64"].as_str().unwrap(),
+            ))
+            .matches("/S/Figure")
+            .count()
+        };
+        let figures = pdf(&mut s);
+        s.execute("object.exportOptions", &json!({"ids": [r["id"]], "artifact": true})).unwrap();
+        assert!(pdf(&mut s) < figures);
     }
 
     #[test]
