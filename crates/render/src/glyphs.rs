@@ -43,6 +43,38 @@ pub fn glyph_grid(family: &str, style: &str, chars: &[char], cols: u32, cell: u3
     Rendered { width: w as u32, height: h as u32, pixels }
 }
 
+/// `text` set in `family`/`style` on one line, `height` pixels tall (the em fits the height), in
+/// `color` on transparency — for font menus that preview each family.
+pub fn text_line(family: &str, style: &str, text: &str, height: u32, color: [u8; 4]) -> Rendered {
+    let db = FontDb::global();
+    let face = db.face(family, style);
+    let upem = face.units_per_em().max(1.0);
+    let k = height as f64 * 0.72 / upem;
+    let glyphs = designcraft_fonts::shape(&face, text, &[], |c| c);
+    let width: f64 = glyphs.iter().map(|g| g.x_advance as f64 * k).sum::<f64>().ceil() + 2.0;
+    let (w, h) = ((width as u32).clamp(1, 2048) as u16, height.clamp(1, 512) as u16);
+    let mut ctx = RenderContext::new(w, h);
+    ctx.set_paint(peniko::Color::from_rgba8(color[0], color[1], color[2], color[3]));
+    let (asc, desc) = face.vertical_metrics();
+    let baseline = h as f64 / 2.0 + (asc - desc.abs()) / 2.0 * k;
+    let mut x = 1.0;
+    for g in &glyphs {
+        let outline = db.outline(&face, g.gid);
+        if !outline.elements().is_empty() {
+            ctx.set_transform(
+                kurbo::Affine::translate((x + g.x_offset as f64 * k, baseline - g.y_offset as f64 * k)) * kurbo::Affine::scale_non_uniform(k, -k),
+            );
+            ctx.fill_path(&outline);
+        }
+        x += g.x_advance as f64 * k;
+    }
+    ctx.flush();
+    let mut pixels = vec![0u8; w as usize * h as usize * 4];
+    let mut res = Resources::new();
+    ctx.render(vello_cpu::PixmapMut::new(w, h, &mut pixels).expect("buffer size"), &mut res);
+    Rendered { width: w as u32, height: h as u32, pixels }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,5 +88,14 @@ mod tests {
         };
         assert!(ink(0, 0) > 30 && ink(1, 0) > 30 && ink(0, 1) > 30, "letters drawn");
         assert_eq!(ink(1, 1), 0, "a space is blank");
+    }
+
+    #[test]
+    fn text_line_draws_the_name() {
+        let img = text_line(designcraft_fonts::DEFAULT_FAMILY, "Regular", "Serif", 24, [0, 0, 0, 255]);
+        assert_eq!(img.height, 24);
+        assert!(img.width > 30);
+        let ink = (0..img.width).flat_map(|x| (0..img.height).map(move |y| (x, y))).filter(|&(x, y)| img.pixel(x, y)[3] > 128).count();
+        assert!(ink > 40, "{ink}");
     }
 }

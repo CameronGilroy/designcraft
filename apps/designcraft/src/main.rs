@@ -63,6 +63,13 @@ fn load_prefs(app: &mut DesignApp) {
     {
         app.ui = ui;
     }
+    // Engine preferences (Preferences dialog, favourites…) live beside the UI state.
+    if let Some(p) = prefs_path().map(|p| p.with_file_name("prefs.json"))
+        && let Ok(bytes) = std::fs::read(&p)
+        && let Ok(prefs) = serde_json::from_slice::<designcraft_engine::Prefs>(&bytes)
+    {
+        app.session.prefs = prefs;
+    }
 }
 
 fn save_prefs(app: &DesignApp) {
@@ -72,7 +79,10 @@ fn save_prefs(app: &DesignApp) {
     if let Some(p) = prefs_path() {
         let _ = std::fs::create_dir_all(p.parent().unwrap_or(std::path::Path::new(".")));
         if let Ok(bytes) = serde_json::to_vec_pretty(&app.ui) {
-            let _ = std::fs::write(p, bytes);
+            let _ = std::fs::write(&p, bytes);
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(&app.session.prefs) {
+            let _ = std::fs::write(p.with_file_name("prefs.json"), bytes);
         }
     }
 }

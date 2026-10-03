@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 83 | 13 | 1 | 92% |
+| P1 | 97 | 84 | 12 | 1 | 93% |
 | P2 | 76 | 23 | 13 | 40 | 39% |
 
 | Area | Parity |
@@ -23,7 +23,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Fill, stroke, colour | 93% |
 | Effects & transparency | 71% |
 | Placing & links | 82% |
-| Type & text frames | 92% |
+| Type & text frames | 94% |
 | Typography | 94% |
 | Styles | 92% |
 | Tables | 92% |
@@ -202,7 +202,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Type & text frames | Create Outlines | P1 | D |
 | Type & text frames | Change Case | P0 | D |
 | Type & text frames | Show Hidden Characters | P0 | D |
-| Type & text frames | Font menu with preview, favourites | P1 | P |
+| Type & text frames | Font menu with preview, favourites | P1 | D |
 | Type & text frames | Missing fonts handling | P0 | D |
 | Type & text frames | Footnotes | P1 | D |
 | Type & text frames | Endnotes | P2 | D |
