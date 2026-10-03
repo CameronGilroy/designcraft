@@ -422,6 +422,70 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"sides": s.prefs.polygon_sides, "starInset": (s.prefs.star_inset * 100.0).round()}))
             }
         ),
+        cmd!(
+            "object.label",
+            "Script Label",
+            ["Window", "Utilities", "Script Label"],
+            None,
+            "{label, ids?} — free text scripts and agents can find objects by",
+            has_selection,
+            |s, p| {
+                let label = str_param(p, "label").unwrap_or("").to_string();
+                set_flag(s, p, move |i| i.label = label.clone(), false)
+            }
+        ),
+        cmd!(
+            "object.altText",
+            "Object Export Options",
+            ["Object"],
+            None,
+            "{text, ids?} — alternative text for tagged PDF and EPUB",
+            has_selection,
+            |s, p| {
+                let text = str_param(p, "text").unwrap_or("").to_string();
+                set_flag(s, p, move |i| i.alt_text = text.clone(), false)
+            }
+        ),
+        cmd!(
+            "object.transparencyGroup",
+            "Group Transparency",
+            [],
+            None,
+            "{isolate?: bool, knockout?: bool, ids?} — Effects panel: Isolate Blending, Knockout Group",
+            has_selection,
+            |s, p| {
+                let iso = p.get("isolate").and_then(Value::as_bool);
+                let ko = p.get("knockout").and_then(Value::as_bool);
+                set_flag(
+                    s,
+                    p,
+                    move |i| {
+                        if let Some(v) = iso {
+                            i.isolate = v;
+                        }
+                        if let Some(v) = ko {
+                            i.knockout = v;
+                        }
+                    },
+                    false,
+                )
+            }
+        ),
+        cmd!(query "object.findByLabel", "Find by Script Label", [], None, "{label} → ids of objects whose label is `label`", has_doc, |s, p| {
+            let label = str_param(p, "label").unwrap_or("");
+            let d = &s.doc()?.doc;
+            let mut ids = Vec::new();
+            for sp in d.spreads.iter().chain(d.parents.iter()) {
+                for it in &sp.items {
+                    it.walk(&mut |x| {
+                        if x.label == label {
+                            ids.push(x.id.0);
+                        }
+                    });
+                }
+            }
+            Ok(json!({"ids": ids}))
+        }),
         cmd!("object.setLayer", "Move to Layer", [], None, "{layer, ids?}", has_selection, |s, p| {
             let l = designcraft_doc::LayerId(p.get("layer").and_then(Value::as_u64).unwrap_or(0));
             set_flag(s, p, move |i| i.layer = l, false)
@@ -1406,5 +1470,28 @@ mod again_tests {
         assert_eq!(d.spreads[0].items.len(), n + 2);
         let ys: Vec<f64> = d.spreads[0].items[n..].iter().map(|i| i.bounds().y0.round()).collect();
         assert_eq!(ys[1] - ys[0], 60.0, "{ys:?}");
+    }
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::*;
+
+    #[test]
+    fn script_label_alt_text_and_group_transparency() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [10, 10, 50, 50]})).unwrap()["id"].as_u64().unwrap();
+        let b = s.execute("frame.create", &json!({"rect": [60, 10, 90, 50]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.label", &json!({"label": "price", "ids": [a, b]})).unwrap();
+        s.execute("object.altText", &json!({"text": "A red square", "ids": [a]})).unwrap();
+        assert_eq!(s.execute("object.findByLabel", &json!({"label": "price"})).unwrap()["ids"], json!([a, b]));
+        assert_eq!(s.execute("object.findByLabel", &json!({"label": "nope"})).unwrap()["ids"], json!([]));
+        assert_eq!(s.doc().unwrap().doc.item(ItemId(a)).unwrap().alt_text, "A red square");
+        s.execute("object.transparencyGroup", &json!({"knockout": true, "ids": [b]})).unwrap();
+        let it = s.doc().unwrap().doc.item(ItemId(b)).unwrap().clone();
+        assert!(it.knockout && !it.isolate);
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert!(!s.doc().unwrap().doc.item(ItemId(b)).unwrap().knockout);
     }
 }

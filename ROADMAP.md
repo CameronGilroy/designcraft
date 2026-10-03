@@ -31,6 +31,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Color panel (fill/stroke proxy, CMYK/RGB/Lab sliders with channel ramps, tint slider for swatches, spectrum ramp, Add to Swatches) and Color Picker (double-click the proxy); mixed colours are unnamed (not listed in Swatches until added); `object.color`, `swatch.addToSwatches`, `swatch.addUnnamed`.
 - Place text files: Word (.docx: styles by name with their attributes, bold/italic/underline/size/font, footnotes, tables, tabs, breaks), RTF and plain text, into the insertion point, the selected frame or a new frame; autoflow adds pages and threaded frames until the text fits; Remove Styles option (`designcraft-textimport`).
 - Gradient Feather (⇧G tool, `object.gradientFeather`): objects fade along a linear or radial opacity gradient, on screen and as a soft mask in PDF.
+- Script Label (`object.label`, `object.findByLabel`), alt text (`object.altText`), Isolate Blending / Knockout Group (`object.transparencyGroup`; on screen, PDF isolates), Table ▸ Sort (`table.sortRows`, numeric-aware, header/footer fixed).
 - Drag and drop text editing: drag selected text to move it (Alt copies) with its formatting (`text.release`).
 - Image Import Options: place any page of a multi-page PDF (`file.place {pdfPage}`; the app asks which page), shown on screen and embedded as that page in PDF export.
 - Define Lists: named numbered lists that continue across stories in page order (`list.define`, paragraph `listName` / `startAt`), round-tripped through IDML; `null` in `type.para` / `type.char` now removes an override.
@@ -79,18 +80,18 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 
 ## How far from full parity (estimate, 2026-10-02, updated)
 
-**Breadth: ~79% weighted** (P0 core 99%, P1 73%, P2 15%) over the 275 features of the InDesign catalogue, scored
+**Breadth: ~83% weighted** (P0 core 99%, P1 82%, P2 19%) over the 275 features of the InDesign catalogue, scored
 row by row in [docs/parity.md](docs/parity.md) (`cargo xtask parity` recomputes it). Many features scored done still
-lack some of InDesign's options or dialog details, so **overall parity including depth is about 68%**.
+lack some of InDesign's options or dialog details, so **overall parity including depth is about 70%**.
 
-**Remaining work: about 430 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 110–150 hours with
+**Remaining work: about 405 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 110–150 hours with
 four agents in parallel on separate crates:
 
 | Work | Estimate |
 |---|---|
 | Open P0 (3: PDF/X-4 output intent and validation, EPS place, remaining Preferences sections) | 12 h |
-| Open P1 (39: type on a path, variable fonts, overprint preview, per-page sizes, pages per spread, image import options, gradient feather, nested line styles, Smooth/Erase tools, …) | 85 h |
-| Open P2 (68: liquid/alternate layouts, books, buttons & forms, XML, conditional text, HTML, tagged PDF, …) | 190 h |
+| Open P1 (30: variable fonts, nested line styles, transparency blend space, New Window, on-path caret, …) | 65 h |
+| Open P2 (66: liquid/alternate layouts, books, buttons & forms, XML, conditional text, HTML, tagged PDF, …) | 185 h |
 | Depth and pixel fidelity of every dialog, panel and menu against InDesign 2026 | 90 h |
 | Performance (incremental composition, GPU raster) and interchange hardening (IDML/PDF corpus) | 55 h |
 

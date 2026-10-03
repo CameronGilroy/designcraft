@@ -590,6 +590,18 @@ pub struct Item {
     /// For items on a document page that override a parent-page item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<ItemId>,
+    /// Script Label (for scripts and agents).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    /// Alternative text (Object Export Options) for tagged PDF and EPUB.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub alt_text: String,
+    /// Groups: Isolate Blending (blend modes only within the group) and Knockout Group (the
+    /// group's objects don't show through each other).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub isolate: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub knockout: bool,
 }
 
 fn identity() -> Affine {
@@ -621,6 +633,10 @@ impl Item {
             object_style: crate::styles::NO_OBJECT_STYLE.into(),
             content: Content::Unassigned,
             overrides: None,
+            label: String::new(),
+            alt_text: String::new(),
+            isolate: false,
+            knockout: false,
         }
     }
 

@@ -397,13 +397,30 @@ impl Renderer {
         }
         if !it.children().is_empty() {
             // Groups: children carry their own transforms relative to the group.
-            let layered = it.opacity < 0.999 || it.blend != DcBlend::Normal;
+            // Isolate Blending / Knockout: the group is its own layer (blend modes stop at it).
+            let layered = it.opacity < 0.999 || it.blend != DcBlend::Normal || it.isolate || it.knockout;
             if layered {
                 ctx.set_transform(Affine::IDENTITY);
                 ctx.push_layer(None, Some(blend_mode(it.blend)), Some(it.opacity), None, None);
             }
-            for c in it.children() {
-                self.draw_item(ctx, f, c, xf, page_name);
+            if it.knockout {
+                // Knockout: each object first clears its area of those behind it, so it composites
+                // with the group's backdrop rather than with its siblings.
+                for c in it.children() {
+                    if !c.hidden {
+                        ctx.set_transform(Affine::IDENTITY);
+                        ctx.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestOut)), None, None, None);
+                        ctx.set_transform(f.view * xf * c.xf);
+                        ctx.set_paint(peniko::Color::BLACK);
+                        ctx.fill_path(&c.path.to_bezpath());
+                        ctx.pop_layer();
+                    }
+                    self.draw_item(ctx, f, c, xf, page_name);
+                }
+            } else {
+                for c in it.children() {
+                    self.draw_item(ctx, f, c, xf, page_name);
+                }
             }
             if layered {
                 ctx.pop_layer();
@@ -904,6 +921,37 @@ mod tests {
         let on = px(true, &mut r);
         assert!(off[2] > 100, "magenta knocks out: {off:?}");
         assert!(on[2] < 60 && on[0] > 180, "magenta over yellow → red: {on:?}");
+    }
+
+    #[test]
+    fn knockout_group_hides_its_own_objects() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        let mut kids = Vec::new();
+        for (sw, x) in [("C=0 M=0 Y=100 K=0", 100.0), ("C=0 M=100 Y=0 K=0", 150.0)] {
+            let id = designcraft_doc::ItemId(d.alloc());
+            let mut it =
+                Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(x, 100.0, x + 100.0, 200.0)));
+            it.fill = Fill::swatch(sw);
+            it.opacity = 0.5;
+            kids.push(std::sync::Arc::new(it));
+        }
+        let gid = designcraft_doc::ItemId(d.alloc());
+        let mut g = Item::new(gid, lid, designcraft_doc::Shape::Group, designcraft_geom::shapes::rectangle(Rect::new(100.0, 100.0, 250.0, 200.0)));
+        g.content = designcraft_doc::Content::Group { items: kids };
+        d.insert_item(SpreadRef::Doc(0), g, None).unwrap();
+        let cache = Cache::new();
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let overlap = |d: &Document, r: &mut Renderer| r.render_page(d, &cache, 0, 1.0, false, &RenderOptions::default()).unwrap().pixel(175, 150);
+        let plain = overlap(&d, &mut r);
+        d.item_mut(gid).unwrap().knockout = true;
+        let ko = overlap(&d, &mut r);
+        let magenta_only = r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions::default()).unwrap().pixel(225, 150);
+        assert_ne!(plain, ko, "{plain:?} {ko:?}");
+        for c in 0..3 {
+            assert!((ko[c] as i32 - magenta_only[c] as i32).abs() <= 3, "the overlap shows magenta alone: {ko:?} vs {magenta_only:?}");
+        }
     }
 
     #[test]

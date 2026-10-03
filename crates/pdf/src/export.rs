@@ -409,6 +409,17 @@ impl Exporter<'_> {
         n
     }
 
+    /// Isolate Blending / Knockout groups: an isolated transparency group (knockout is drawn
+    /// isolated too).
+    fn push_isolation(s: &mut Surface, it: &Item) -> usize {
+        if it.isolate || it.knockout {
+            s.push_isolated();
+            1
+        } else {
+            0
+        }
+    }
+
     fn item(&mut self, s: &mut Surface, it: &Item, parent: Affine, page_name: Option<&str>) {
         let gf = &it.effects.gradient_feather;
         if !gf.on || it.hidden || it.nonprinting {
@@ -519,7 +530,7 @@ impl Exporter<'_> {
             return;
         }
         if !it.children().is_empty() {
-            let pushes = Self::push_group(s, it.opacity, it.blend);
+            let pushes = Self::push_group(s, it.opacity, it.blend) + Self::push_isolation(s, it);
             for c in it.children() {
                 self.item(s, c, xf, page_name);
             }

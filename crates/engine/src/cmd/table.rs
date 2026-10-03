@@ -112,6 +112,15 @@ fn table_specs() -> Vec<CommandSpec> {
         cmd!("table.deleteColumn", "Delete Column", ["Table", "Delete"], None, "{} — the columns of the target cells", in_table, delete_cols),
         cmd!("table.delete", "Delete Table", ["Table", "Delete"], None, "{}", in_table, delete_table),
         cmd!("table.merge", "Merge Cells", ["Table"], None, "{} — merge the target cell range", in_table, merge),
+        cmd!(
+            "table.sortRows",
+            "Sort",
+            ["Table"],
+            None,
+            "{column?: 0-based (default: the target cell's), descending?: bool} — body rows by that column's text (numbers numerically)",
+            in_table,
+            sort_rows
+        ),
         cmd!("table.unmerge", "Unmerge Cells", ["Table"], None, "{}", in_table, unmerge),
         cmd!(
             "table.setCell",
@@ -1052,5 +1061,72 @@ mod style_tests {
         s.execute("style.table.edit", &json!({"name": "Data", "border": {"weight": 4}})).unwrap();
         assert_eq!(t(&s).options.border.weight, 4.0);
         assert!(s.execute("style.cell.apply", &json!({"name": "Nope"})).is_err());
+    }
+}
+
+fn sort_rows(s: &mut Session, p: &Value) -> Result<Value> {
+    let g = target(s, p, "table.sortRows")?;
+    let col = p.get("column").and_then(Value::as_u64).map_or(g.range.c0, |c| c as usize);
+    let desc = p.get("descending").and_then(Value::as_bool).unwrap_or(false);
+    edit_table(s, &g, "table.sortRows", |t| {
+        let (nr, nc) = (t.nrows(), t.ncols());
+        if col >= nc {
+            return Err(bad("table.sortRows", format!("no column {col}")));
+        }
+        if t.cells.iter().any(|c| c.row_span > 1) {
+            return Err(bad("table.sortRows", "unmerge cells that span rows first"));
+        }
+        let (h, f) = (t.header_rows(), t.footer_rows());
+        let body: Vec<usize> = (h..nr - f).collect();
+        let key = |r: usize| t.cell(r, col).map(|c| c.text.text.trim().to_string()).unwrap_or_default();
+        let mut order = body.clone();
+        order.sort_by(|a, b| {
+            let (ka, kb) = (key(*a), key(*b));
+            let o = match (ka.replace(',', "").parse::<f64>(), kb.replace(',', "").parse::<f64>()) {
+                (Ok(x), Ok(y)) => x.total_cmp(&y),
+                _ => ka.to_lowercase().cmp(&kb.to_lowercase()),
+            };
+            if desc { o.reverse() } else { o }
+        });
+        let rows = t.rows.clone();
+        let cells = t.cells.clone();
+        for (k, src) in order.iter().enumerate() {
+            let dst = body[k];
+            t.rows[dst] = rows[*src].clone();
+            for c in 0..nc {
+                t.cells[dst * nc + c] = cells[src * nc + c].clone();
+            }
+        }
+        Ok(json!({"sorted": body.len()}))
+    })
+}
+
+#[cfg(test)]
+mod sort_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn sort_body_rows_by_a_column() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 500, 400], "content": "text", "text": ""})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+        s.execute("table.insert", &json!({"rows": 3, "cols": 2, "headerRows": 1})).unwrap();
+        let cells = [("Name", "Qty"), ("pear", "10"), ("Apple", "9"), ("fig", "100")];
+        for (r, (a, b)) in cells.iter().enumerate() {
+            s.execute("table.setCell", &json!({"rows": [r, r], "cols": [0, 0], "text": a})).unwrap();
+            s.execute("table.setCell", &json!({"rows": [r, r], "cols": [1, 1], "text": b})).unwrap();
+        }
+        let col = |s: &Session, c: usize| -> Vec<String> {
+            let d = &s.doc().unwrap().doc;
+            let t = d.stories.values().flat_map(|st| st.tables.values()).next().unwrap();
+            (0..t.nrows()).map(|r| t.cell(r, c).unwrap().text.text.clone()).collect()
+        };
+        s.execute("table.sortRows", &json!({"column": 0})).unwrap();
+        assert_eq!(col(&s, 0), ["Name", "Apple", "fig", "pear"], "header stays; case-insensitive");
+        s.execute("table.sortRows", &json!({"column": 1, "descending": true})).unwrap();
+        assert_eq!(col(&s, 1), ["Qty", "100", "10", "9"], "numbers by value");
     }
 }
