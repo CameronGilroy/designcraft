@@ -10,8 +10,8 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 74 | 21 | 2 | 87% |
-| P2 | 76 | 16 | 13 | 47 | 30% |
+| P1 | 97 | 75 | 20 | 2 | 88% |
+| P2 | 76 | 17 | 13 | 46 | 31% |
 
 | Area | Parity |
 |---|---|
@@ -23,11 +23,11 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Fill, stroke, colour | 88% |
 | Effects & transparency | 62% |
 | Placing & links | 82% |
-| Type & text frames | 89% |
+| Type & text frames | 91% |
 | Typography | 88% |
 | Styles | 92% |
 | Tables | 88% |
-| Long documents | 79% |
+| Long documents | 88% |
 | Interactivity & digital | 45% |
 | Output & production | 70% |
 | XML & automation | 50% |
@@ -205,7 +205,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Type & text frames | Font menu with preview, favourites | P1 | P |
 | Type & text frames | Missing fonts handling | P0 | D |
 | Type & text frames | Footnotes | P1 | D |
-| Type & text frames | Endnotes | P2 | M |
+| Type & text frames | Endnotes | P2 | D |
 | Type & text frames | Cross-references | P2 | D |
 | Type & text frames | Text anchors & hyperlinks | P1 | D |
 | Type & text frames | Data merge | P2 | D |
@@ -266,7 +266,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Long documents | Numbered lists across stories | P1 | D |
 | Long documents | Cross-references | P2 | D |
 | Long documents | Running headers via variables | P1 | D |
-| Long documents | Footnotes/endnotes | P1 | P |
+| Long documents | Footnotes/endnotes | P1 | D |
 | Long documents | Captions | P2 | P |
 | Interactivity & digital | Hyperlinks panel | P1 | P |
 | Interactivity & digital | Bookmarks | P1 | P |

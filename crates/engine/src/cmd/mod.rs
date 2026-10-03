@@ -6,6 +6,7 @@ mod captions;
 mod conditions;
 mod datamerge;
 mod edit;
+mod endnotes;
 mod export;
 mod file;
 mod find;
@@ -133,6 +134,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(interchange::specs());
         v.extend(export::specs());
         v.extend(edit::specs());
+        v.extend(endnotes::specs());
         v.extend(object::specs());
         v.extend(anchors::specs());
         v.extend(paths::specs());

@@ -284,6 +284,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "<",
             "-",
             "cmd:footnote.insert",
+            "cmd:endnote.insert",
             "ui:app.footnoteOptionsDialog",
             "cmd:footnote.goToReference",
         ],

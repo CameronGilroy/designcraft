@@ -458,6 +458,13 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             hidden_conditions: doc.conditions.iter().filter(|c| !c.visible).map(|c| c.name.clone()).collect(),
             ..Default::default()
         };
+        if !story.endnotes.is_empty() {
+            // Endnote reference numbers continue through the document.
+            let first = doc.endnote_start(story.id) + story.text[..prange.start].matches(designcraft_doc::ENDNOTE_REF).count() as u32;
+            for (k, (i, _)) in story.text[prange.clone()].match_indices(designcraft_doc::ENDNOTE_REF).enumerate() {
+                sub.notes.insert(prange.start + i, doc.endnote_options.label(first + k as u32));
+            }
+        }
         if !story.objects.is_empty() {
             let before = story.text[..prange.start].matches(designcraft_doc::OBJECT_MARK).count();
             for (k, (i, _)) in story.text[prange.clone()].match_indices(designcraft_doc::OBJECT_MARK).enumerate() {

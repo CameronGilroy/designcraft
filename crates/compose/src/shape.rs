@@ -207,11 +207,13 @@ pub(crate) fn shape_para(
             }
             continue;
         }
-        if !story.text[a..b].contains(designcraft_doc::FOOTNOTE_REF) {
+        let is_ref = |c: char| c == designcraft_doc::FOOTNOTE_REF || c == designcraft_doc::ENDNOTE_REF;
+        if !story.text[a..b].contains(is_ref) {
             shape_run(db, &story.text, a..b, &props, auto_leading, style, sub, &mut glyphs);
             continue;
         }
-        // Footnote references take the reference position / character style.
+        // Footnote references take the reference position / character style; endnote references
+        // are superscript.
         let mut rf = fmt.clone();
         if let Some(cs) = &sub.note_style {
             rf.style = cs.clone();
@@ -219,14 +221,22 @@ pub(crate) fn shape_para(
         rf.over.position = Some(sub.note_position);
         let rprops = styles.resolve_char(para_chars, &rf);
         let rstyle = table.intern(&rprops);
+        let mut ef = fmt.clone();
+        ef.over.position = Some(designcraft_doc::Position::Superscript);
+        let eprops = styles.resolve_char(para_chars, &ef);
+        let estyle = table.intern(&eprops);
         let mut k = a;
-        for (i, _) in story.text[a..b].match_indices(designcraft_doc::FOOTNOTE_REF) {
+        for (i, m) in story.text[a..b].match_indices(is_ref) {
             let i = a + i;
             if k < i {
                 shape_run(db, &story.text, k..i, &props, auto_leading, style, sub, &mut glyphs);
             }
-            let e = i + designcraft_doc::FOOTNOTE_REF.len_utf8();
-            shape_run(db, &story.text, i..e, &rprops, auto_leading, rstyle, sub, &mut glyphs);
+            let e = i + m.len();
+            if m.starts_with(designcraft_doc::ENDNOTE_REF) {
+                shape_run(db, &story.text, i..e, &eprops, auto_leading, estyle, sub, &mut glyphs);
+            } else {
+                shape_run(db, &story.text, i..e, &rprops, auto_leading, rstyle, sub, &mut glyphs);
+            }
             k = e;
         }
         if k < b {
@@ -307,6 +317,7 @@ fn shape_run(
                 | story::RIGHT_INDENT_TAB
                 | story::TABLE_ANCHOR
                 | designcraft_doc::FOOTNOTE_REF
+                | designcraft_doc::ENDNOTE_REF
                 | designcraft_doc::XREF_MARK
                 | designcraft_doc::ANCHOR_MARK
                 | designcraft_doc::INDEX_MARK
@@ -363,7 +374,7 @@ fn shape_run(
                         out.push(g);
                     }
                 },
-                designcraft_doc::FOOTNOTE_REF => {
+                designcraft_doc::FOOTNOTE_REF | designcraft_doc::ENDNOTE_REF => {
                     let s = sub.notes.get(&i).map_or("#", String::as_str);
                     shape_segment(db, text, i..i + c.len_utf8(), Some(s), p, &primary, auto_leading, style, out);
                 }

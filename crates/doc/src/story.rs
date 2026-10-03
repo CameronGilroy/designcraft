@@ -98,6 +98,9 @@ pub struct Story {
     /// Footnotes, one per [`crate::notes::FOOTNOTE_REF`] in text order (see [`crate::notes`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<Arc<crate::notes::Footnote>>,
+    /// Endnotes, one per [`crate::endnotes::ENDNOTE_REF`] in text order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endnotes: Vec<Arc<crate::notes::Footnote>>,
     /// Text anchors, one per [`crate::xref::ANCHOR_MARK`] in text order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub anchors: Vec<Arc<crate::xref::TextAnchor>>,
@@ -123,6 +126,7 @@ impl Story {
             rev: 0,
             tables: BTreeMap::new(),
             notes: Vec::new(),
+            endnotes: Vec::new(),
             anchors: Vec::new(),
             xrefs: Vec::new(),
             index_refs: Vec::new(),
@@ -215,6 +219,11 @@ impl Story {
             let k = self.notes_before(pos);
             self.notes_inserted(k, refs);
         }
+        let erefs = text.matches(crate::endnotes::ENDNOTE_REF).count();
+        if erefs > 0 {
+            let k = self.endnotes_before(pos);
+            self.endnotes_inserted(k, erefs);
+        }
         if text.contains([crate::xref::ANCHOR_MARK, crate::xref::XREF_MARK, crate::index::INDEX_MARK, crate::anchored::OBJECT_MARK]) {
             self.marks_inserted(pos, text);
         }
@@ -245,6 +254,11 @@ impl Story {
         if refs > 0 {
             let k = self.notes_before(a);
             self.notes.drain(k..(k + refs).min(self.notes.len()));
+        }
+        let erefs = self.text[a..b].matches(crate::endnotes::ENDNOTE_REF).count();
+        if erefs > 0 {
+            let k = self.endnotes_before(a);
+            self.endnotes.drain(k..(k + erefs).min(self.endnotes.len()));
         }
         self.marks_deleted(a, b);
         let pi = self.para_at(a);
@@ -351,6 +365,7 @@ impl Story {
         }
         self.check_tables()?;
         self.check_notes()?;
+        self.check_endnotes()?;
         self.check_marks()
     }
 

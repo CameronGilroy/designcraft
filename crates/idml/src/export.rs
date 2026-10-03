@@ -1776,6 +1776,9 @@ impl<'a> Ex<'a> {
                             csrs.push(src);
                             self.xref_sources.push((me, x.target));
                         }
+                    } else if ch == designcraft_doc::ENDNOTE_REF {
+                        // Endnotes aren't written to IDML yet: the endnote frame keeps their text
+                        // (numbers included) and the references are left out.
                     } else if ch == designcraft_doc::FOOTNOTE_REF {
                         // The reference: its own range carrying the reference position.
                         flush_text(&mut cur, &mut pending);

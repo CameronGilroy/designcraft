@@ -88,6 +88,10 @@ impl Cache {
             format!("{:?}", doc.footnote_options).hash(&mut h);
             sig.extend([doc.footnote_start(sid) as usize, h.finish() as usize]);
         }
+        // Endnote numbers continue from stories on earlier pages.
+        if !story.endnotes.is_empty() {
+            sig.push(doc.endnote_start(sid) as usize);
+        }
         // Hidden conditions take their text out of the layout.
         for (i, c) in doc.conditions.iter().enumerate() {
             if !c.visible {

@@ -390,6 +390,7 @@ impl Session {
         let mut doc = (*st.doc).clone();
         let mut sel = st.selection.clone();
         let r = f(&mut doc, &mut sel)?;
+        doc.sync_endnote_story();
         st.doc = Arc::new(doc);
         st.selection = sel;
         st.revision += 1;

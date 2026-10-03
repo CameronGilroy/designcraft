@@ -13,6 +13,7 @@ pub mod arrow;
 pub mod attrs;
 pub mod build;
 mod edit;
+pub mod endnotes;
 pub mod ids;
 pub mod index;
 pub mod item;
@@ -35,6 +36,7 @@ pub use attrs::*;
 pub use designcraft_color as color;
 pub use designcraft_geom as geom;
 pub use edit::{ItemLoc, ItemPath, SpreadRef, item_hit as edit_hit};
+pub use endnotes::{ENDNOTE_REF, EndnoteOptions};
 pub use ids::*;
 pub use index::{INDEX_MARK, IndexRef};
 pub use item::*;
@@ -322,6 +324,11 @@ pub struct Document {
     /// the top level.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub color_groups: Vec<ColorGroup>,
+    /// Document Endnote Options, and the story shown in the endnote frame (generated).
+    #[serde(default)]
+    pub endnote_options: EndnoteOptions,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endnote_story: Option<StoryId>,
     /// Conditional text conditions; text whose conditions are all hidden isn't composed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<Condition>,
