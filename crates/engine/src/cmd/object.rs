@@ -438,6 +438,36 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "frame.grid",
+            "Gridify",
+            [],
+            None,
+            "{rect, cols, rows, gutter? (pt, 12), shape?, content?, spread?} — a grid of frames filling `rect` (frame tools: arrow keys while dragging)",
+            has_doc,
+            |s, p| {
+                let rect = rect_param(p, "rect").ok_or_else(|| bad("frame.grid", "missing rect"))?;
+                let cols = p.get("cols").and_then(Value::as_u64).unwrap_or(1).clamp(1, 100) as usize;
+                let rows = p.get("rows").and_then(Value::as_u64).unwrap_or(1).clamp(1, 100) as usize;
+                let gutter = p.get("gutter").and_then(Value::as_f64).unwrap_or(12.0).max(0.0);
+                let cw = ((rect.width() - gutter * (cols - 1) as f64) / cols as f64).max(0.5);
+                let ch = ((rect.height() - gutter * (rows - 1) as f64) / rows as f64).max(0.5);
+                let mut ids = Vec::new();
+                for r in 0..rows {
+                    for c in 0..cols {
+                        let x0 = rect.x0 + c as f64 * (cw + gutter);
+                        let y0 = rect.y0 + r as f64 * (ch + gutter);
+                        let mut q = p.clone();
+                        q["rect"] = json!([x0, y0, x0 + cw, y0 + ch]);
+                        q["caret"] = json!(false);
+                        ids.push(frame_create(s, &q)?["id"].clone());
+                    }
+                }
+                let sel: Vec<ItemId> = ids.iter().filter_map(Value::as_u64).map(ItemId).collect();
+                s.doc_mut()?.selection = designcraft_doc::Selection::items(sel);
+                Ok(json!({"ids": ids}))
+            }
+        ),
+        cmd!(
             "object.clippingPath",
             "Clipping Path…",
             ["Object", "Clipping Path"],

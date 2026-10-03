@@ -12,12 +12,29 @@ pub struct FrameTool {
     cur: Point,
     active: bool,
     guides: Vec<crate::Overlay>,
+    /// Gridify: columns and rows (arrow keys while dragging), and the last drawn rect.
+    grid: (u32, u32),
+    last: Option<(serde_json::Value, Rect)>,
 }
 
 impl FrameTool {
     pub fn new(id: &str) -> Self {
         let id = crate::tool_info(id).map(|t| t.id).unwrap_or("rectangleFrame");
-        Self { id, start: None, cur: Point::ZERO, active: false, guides: vec![] }
+        Self { id, start: None, cur: Point::ZERO, active: false, guides: vec![], grid: (1, 1), last: None }
+    }
+
+    /// The preview for `r`: one frame, or a grid of them.
+    fn preview(&self, spread: serde_json::Value, r: Rect) -> Action {
+        let (shape, content) = self.kind();
+        let (c, rw) = self.grid;
+        if c * rw > 1 {
+            Action::Preview(
+                "frame.grid".into(),
+                json!({"spread": spread, "shape": shape, "content": content, "rect": rect_json(r), "cols": c, "rows": rw}),
+            )
+        } else {
+            Action::Preview("frame.create".into(), json!({"spread": spread, "shape": shape, "content": content, "rect": rect_json(r)}))
+        }
     }
     fn kind(&self) -> (&'static str, &'static str) {
         match self.id {
@@ -62,6 +79,8 @@ impl Tool for FrameTool {
                 self.start = Some(pos);
                 self.cur = ev.pos;
                 self.active = false;
+                self.grid = (1, 1);
+                self.last = None;
                 vec![]
             }
             PointerKind::Drag => {
@@ -98,10 +117,8 @@ impl Tool for FrameTool {
                     out.push(Action::Preview("line.create".into(), json!({"spread": spread_json(sr), "a": [sa.x, sa.y], "b": [b.x, b.y]})));
                 } else {
                     let r = drag_rect(sa, ev.pos - off, ev.mods);
-                    out.push(Action::Preview(
-                        "frame.create".into(),
-                        json!({"spread": spread_json(sr), "shape": shape, "content": content, "rect": rect_json(r)}),
-                    ));
+                    self.last = Some((spread_json(sr), r));
+                    out.push(self.preview(spread_json(sr), r));
                 }
                 out
             }
@@ -125,6 +142,25 @@ impl Tool for FrameTool {
                 vec![]
             }
             _ => vec![],
+        }
+    }
+
+    fn key(&mut self, _cx: &ToolContext, key: crate::ToolKey, _mods: Mods) -> Vec<Action> {
+        // Gridify while dragging: ←/→ columns, ↑/↓ rows.
+        if !self.active || self.kind().0 == "line" {
+            return vec![];
+        }
+        let (c, r) = &mut self.grid;
+        match key {
+            crate::ToolKey::Right => *c += 1,
+            crate::ToolKey::Left => *c = (*c).saturating_sub(1).max(1),
+            crate::ToolKey::Up => *r += 1,
+            crate::ToolKey::Down => *r = (*r).saturating_sub(1).max(1),
+            _ => return vec![],
+        }
+        match self.last.clone() {
+            Some((sp, rect)) => vec![self.preview(sp, rect)],
+            None => vec![],
         }
     }
 

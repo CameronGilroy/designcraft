@@ -369,3 +369,24 @@ fn object_set_flags_and_wrap_invert() {
     s.execute("object.textWrap", &json!({"mode": "boundingBox", "invert": true})).unwrap();
     assert!(item(&s).wrap.invert);
 }
+
+#[test]
+fn gridify_while_drawing_frames() {
+    use designcraft_tools::{Mods, PointerEvent, PointerKind, ToolKey};
+    let mut s = session();
+    let n0 = s.doc().unwrap().doc.spreads[0].items.len();
+    s.set_tool("rectangleFrame");
+    let v = ViewInfo { zoom: 1.0 };
+    s.pointer(&PointerEvent::new(PointerKind::Down, 100.0, 100.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 312.0, 212.0), v).unwrap();
+    for k in [ToolKey::Right, ToolKey::Right, ToolKey::Up, ToolKey::Left] {
+        assert!(s.tool_key(k, Mods::default(), v).unwrap(), "arrow keys gridify while dragging");
+    }
+    s.pointer(&PointerEvent::new(PointerKind::Up, 312.0, 212.0), v).unwrap();
+    let d = &s.doc().unwrap().doc;
+    let new: Vec<_> = d.spreads[0].items[n0..].iter().map(|i| i.bounds()).collect();
+    assert_eq!(new.len(), 4, "2 columns × 2 rows");
+    assert!((new[0].width() - 100.0).abs() < 1e-6 && (new[1].x0 - 212.0).abs() < 1e-6, "12 pt gutters: {new:?}");
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.spreads[0].items.len(), n0, "one undo step");
+}
