@@ -345,6 +345,13 @@ impl Session {
         (spec.enabled)(self).map_err(|e| EngineError::Disabled(id.into(), e))?;
         let before = self.active().map(|d| (d.uid, d.doc.clone()));
         let r = (spec.run)(self, params)?;
+        // Undo, redo or deleting layers can take the active layer away: new objects would land on
+        // a layer that isn't there (invisible, not exported). Fall back to the top layer.
+        if let Some(st) = self.active_mut()
+            && st.doc.layer(st.active_layer).is_none()
+        {
+            st.active_layer = st.doc.default_layer();
+        }
         self.record_transform(id, params);
         if self.prefs.smart_text_reflow && spec.undoable {
             self.smart_reflow();

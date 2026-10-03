@@ -255,6 +255,30 @@ fn serialized_document_opens_again() {
 }
 
 #[test]
+fn active_layer_survives_undoing_new_layer() {
+    let mut s = session();
+    let layer_of = |s: &mut Session, id: u64| {
+        let d = s.execute("document.inspect", &json!({})).unwrap();
+        let items = d["spreads"].as_array().unwrap().iter().flat_map(|sp| sp["items"].as_array().unwrap().clone()).collect::<Vec<_>>();
+        let it = items.into_iter().find(|i| i["id"] == id).unwrap();
+        let layers: Vec<Value> = d["layers"].as_array().unwrap().iter().map(|l| l["id"].clone()).collect();
+        (it["layer"].clone(), layers)
+    };
+    // New Layer, then Undo: the new layer is gone, so it can't stay the active one.
+    s.execute("layer.new", &json!({})).unwrap();
+    s.execute("edit.undo", &json!({})).unwrap();
+    let f = s.execute("frame.create", &json!({"rect": [36, 36, 300, 200], "content": "text", "text": "Visible"})).unwrap();
+    let (layer, layers) = layer_of(&mut s, f["id"].as_u64().unwrap());
+    assert!(layers.contains(&layer), "frame on layer {layer} not in {layers:?}");
+    // Delete Unused Layers removing the (empty) active layer.
+    s.execute("layer.new", &json!({})).unwrap();
+    s.execute("layer.deleteUnused", &json!({})).unwrap();
+    let f = s.execute("frame.create", &json!({"rect": [36, 236, 300, 400], "content": "text", "text": "Also visible"})).unwrap();
+    let (layer, layers) = layer_of(&mut s, f["id"].as_u64().unwrap());
+    assert!(layers.contains(&layer), "frame on layer {layer} not in {layers:?}");
+}
+
+#[test]
 fn step_and_repeat_grid() {
     let mut s = session();
     s.execute("frame.create", &json!({"rect": [36, 36, 66, 66], "content": "unassigned"})).unwrap();
