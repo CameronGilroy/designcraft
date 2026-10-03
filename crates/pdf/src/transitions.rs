@@ -111,3 +111,32 @@ pub fn add_page_entries(pdf: &[u8], extra: &[Option<String>]) -> Option<Vec<u8>>
     out.extend_from_slice(x.as_bytes());
     Some(out)
 }
+
+/// Add `entries` (raw dictionary entries, e.g. `/PageMode/FullScreen`) to the catalog as an
+/// incremental update.
+pub fn add_catalog_entries(pdf: &[u8], entries: &str) -> Option<Vec<u8>> {
+    if entries.is_empty() {
+        return Some(pdf.to_vec());
+    }
+    let t_at = rfind(pdf, b"trailer")?;
+    let trailer = String::from_utf8_lossy(&pdf[t_at..]).to_string();
+    let size = int_after(&trailer, "/Size")?;
+    let root = int_after(&trailer, "/Root")?;
+    let prev = int_after(&trailer, "startxref")?;
+    let info = int_after(&trailer, "/Info").map(|i| format!("/Info {i} 0 R")).unwrap_or_default();
+    let id = trailer.find("/ID").and_then(|i| trailer[i..].find(']').map(|j| trailer[i..i + j + 1].to_string())).unwrap_or_default();
+    let cat = String::from_utf8_lossy(&pdf[object(pdf, root)?]).to_string();
+    let close = cat.rfind(">>")?;
+    let mut out = pdf.to_vec();
+    if !out.ends_with(b"\n") {
+        out.push(b'\n');
+    }
+    let at = out.len();
+    out.extend_from_slice(format!("{root} 0 obj\n{}{entries}{}\nendobj\n", cat[..close].trim(), &cat[close..].trim()).as_bytes());
+    let xref_at = out.len();
+    out.extend_from_slice(
+        format!("xref\n{root} 1\n{at:010} 00000 n\r\ntrailer\n<</Size {size}/Root {root} 0 R{info}{id}/Prev {prev}>>\nstartxref\n{xref_at}\n%%EOF\n")
+            .as_bytes(),
+    );
+    Some(out)
+}

@@ -9,7 +9,7 @@ use crate::{EngineError, Result, Session};
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(noundo "file.exportPdf", "Export PDF…", ["File"], None,
-        "{path?, pages?: \"1-3,5\" | [1,3] (1-based positions; default all), flatten?: high|medium|low|ppi (Transparency Flattener: spreads with transparency are rasterised), spreads?: bool, bleed?: bool (document bleed), marks?: bool | {crop?, bleed?, pageInfo?, weight?, offset?}, standard?: \"none\"|\"x4\"|\"a2b\", compressImages?: bool, tagged?: bool (structure tree: stories as paragraphs, figures with alt text), title?, author?} → {path, bytes, pages, warnings} (no path: {base64, …})",
+        "{path?, pages?: \"1-3,5\" | [1,3] (1-based positions; default all), flatten?: high|medium|low|ppi (Transparency Flattener: spreads with transparency are rasterised), spreads?: bool, fullScreen?: bool, bookmarksPanel?: bool, pageLayout?: single|continuous|twoUp|twoUpCover|twoUpContinuous, view?: fitPage|fitWidth|actual, advanceSeconds?: number (interactive PDF), bleed?: bool (document bleed), marks?: bool | {crop?, bleed?, pageInfo?, weight?, offset?}, standard?: \"none\"|\"x4\"|\"a2b\", compressImages?: bool, tagged?: bool (structure tree: stories as paragraphs, figures with alt text), title?, author?} → {path, bytes, pages, warnings} (no path: {base64, …})",
         has_doc, export_pdf),
         cmd!(noundo "file.exportEpub", "Export EPUB (Reflowable)…", ["File"], None,
         "{path?, title?, author?, language?: \"en\", cover?: bool (the first page as the cover image), fixedLayout?: bool (pre-paginated: each page as an image with its text)} → {path, bytes} (no path: {base64, bytes})",
@@ -475,6 +475,13 @@ fn rasterize_layered(d: &designcraft_doc::Document) -> (Option<designcraft_doc::
     (Some(out), n)
 }
 
+/// Object number of the first page of a PDF (its page tree's first kid).
+fn first_page_ref(pdf: &[u8]) -> Option<usize> {
+    let s = String::from_utf8_lossy(pdf);
+    let i = s.find("/Kids[")? + 6;
+    s[i..].split_whitespace().next()?.parse().ok()
+}
+
 fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.doc()?;
     let opts = options(p, st.doc.page_count())?;
@@ -505,6 +512,49 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
         match designcraft_pdf::add_blend_space(&r.bytes, &blended, doc.settings.blend_space == designcraft_doc::BlendSpace::Cmyk) {
             Some(b) => r.bytes = b,
             None => r.warnings.push("the transparency blend space couldn't be set".into()),
+        }
+    }
+    // Interactive PDF view options.
+    let mut cat = String::new();
+    if p.get("fullScreen").and_then(Value::as_bool) == Some(true) {
+        cat.push_str("/PageMode/FullScreen");
+    } else if p.get("bookmarksPanel").and_then(Value::as_bool) == Some(true) {
+        cat.push_str("/PageMode/UseOutlines");
+    }
+    match str_param(p, "pageLayout") {
+        Some("single") => cat.push_str("/PageLayout/SinglePage"),
+        Some("continuous") => cat.push_str("/PageLayout/OneColumn"),
+        Some("twoUp") => cat.push_str("/PageLayout/TwoPageLeft"),
+        Some("twoUpCover") => cat.push_str("/PageLayout/TwoPageRight"),
+        Some("twoUpContinuous") => cat.push_str("/PageLayout/TwoColumnRight"),
+        Some(o) => return Err(bad("file.exportPdf", format!("unknown pageLayout `{o}`"))),
+        None => {}
+    }
+    if let Some(v) = str_param(p, "view") {
+        // The first page opens with this view (pages are objects in order, so refer by index 0).
+        let dest = match v {
+            "fitPage" => "/Fit",
+            "fitWidth" => "/FitH null",
+            "actual" => "/XYZ null null 1",
+            o => return Err(bad("file.exportPdf", format!("unknown view `{o}` (fitPage, fitWidth, actual)"))),
+        };
+        if let Some(first) = first_page_ref(&r.bytes) {
+            cat.push_str(&format!("/OpenAction[{first} 0 R{dest}]"));
+        }
+    }
+    if !cat.is_empty() {
+        match designcraft_pdf::add_catalog_entries(&r.bytes, &cat) {
+            Some(b) => r.bytes = b,
+            None => r.warnings.push("the PDF view options couldn't be set".into()),
+        }
+    }
+    // Flip pages every N seconds (presentation).
+    if let Some(secs) = p.get("advanceSeconds").and_then(Value::as_f64).filter(|s| *s > 0.0) {
+        let n = designcraft_pdf::sheet_spreads(doc, &opts).len();
+        let dur: Vec<Option<String>> = (0..n).map(|_| Some(format!("/Dur {secs:.2}"))).collect();
+        match designcraft_pdf::add_page_entries(&r.bytes, &dur) {
+            Some(b) => r.bytes = b,
+            None => r.warnings.push("page timings couldn't be set".into()),
         }
     }
     // Page transitions (each spread's first page holds them).
@@ -602,6 +652,14 @@ mod text_tests {
         // The document itself is untouched.
         assert!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(id.as_u64().unwrap())).is_some());
         assert!(s.execute("file.exportPdf", &json!({"flatten": 5})).is_err());
+        // Interactive view options land in the catalog and on the pages.
+        let r = s.execute("file.exportPdf", &json!({"fullScreen": true, "pageLayout": "single", "view": "fitPage", "advanceSeconds": 5})).unwrap();
+        let t = String::from_utf8_lossy(&super::super::file::base64_decode(r["base64"].as_str().unwrap())).to_string();
+        assert!(
+            t.contains("/PageMode/FullScreen") && t.contains("/PageLayout/SinglePage") && t.contains("/OpenAction[") && t.contains("/Dur 5.00"),
+            "view options"
+        );
+        assert!(s.execute("file.exportPdf", &json!({"pageLayout": "sideways"})).is_err());
         // Unflattened, the page blends in the document's blend space (CMYK for print).
         let r = s.execute("file.exportPdf", &json!({})).unwrap();
         let text = String::from_utf8_lossy(&super::super::file::base64_decode(r["base64"].as_str().unwrap())).to_string();

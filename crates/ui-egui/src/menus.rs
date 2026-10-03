@@ -18,6 +18,12 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportPng", "Export Page as PNG…", Some("Cmd+E"), "{}"),
     ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
     ("app.exportEpub", "Export EPUB…", None, "{path?} — reflowable EPUB 3 (with the first page as its cover)"),
+    (
+        "app.exportInteractivePdf",
+        "Export PDF (Interactive)…",
+        None,
+        "{path?, fullScreen?, advanceSeconds?} — single pages fitted, bookmarks panel open, buttons, forms, transitions",
+    ),
     ("app.exportFixedEpub", "Export EPUB (Fixed Layout)…", None, "{path?} — pre-paginated EPUB 3"),
     ("app.exportHtml", "Export HTML…", None, "{path?} — one self-contained web page"),
     ("app.exportXml", "Export XML…", None, "{path?} — the tagged content"),
@@ -152,6 +158,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:app.exportIdml",
             "ui:app.exportEpub",
             "ui:app.exportFixedEpub",
+            "ui:app.exportInteractivePdf",
             "ui:app.exportHtml",
             "ui:app.exportXml",
             "ui:app.exportText",
@@ -705,6 +712,13 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             let mut q = if p.is_object() { p.clone() } else { json!({}) };
             q["cover"] = json!(true);
             export_bytes(app, &q, "epub", "file.exportEpub")
+        }
+        "app.exportInteractivePdf" => {
+            let mut q = if p.is_object() { p.clone() } else { json!({}) };
+            for (k, v) in [("pageLayout", json!("single")), ("view", json!("fitPage")), ("bookmarksPanel", json!(true))] {
+                q.as_object_mut().map(|o| o.entry(k).or_insert(v));
+            }
+            export_pdf(app, &q)
         }
         "app.exportFixedEpub" => export_bytes(app, p, "epub", "file.exportFixedEpub"),
         "app.exportHtml" => export_bytes(app, p, "html", "file.exportHtml"),
