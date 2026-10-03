@@ -54,6 +54,35 @@ fn resolve(st: &mut Story, accept: bool) -> usize {
     n
 }
 
+/// Accept or reject the one change at `start` in story `story`.
+fn one(s: &mut Session, p: &Value, accept: bool) -> Result<Value> {
+    let id = if accept { "changes.accept" } else { "changes.reject" };
+    let sid = p.get("story").and_then(Value::as_u64).map(StoryId).ok_or_else(|| super::bad(id, "`story` required"))?;
+    let start = p.get("start").and_then(Value::as_u64).ok_or_else(|| super::bad(id, "`start` required"))? as usize;
+    s.edit(|d, sel| {
+        let st = d.story_mut(sid).ok_or_else(|| super::bad(id, "no such story"))?;
+        let (r, mark) = st
+            .runs()
+            .find(|(r, f)| matches!(f.over.change, Some(ChangeMark::Inserted | ChangeMark::Deleted)) && r.start <= start && start < r.end)
+            .map(|(r, f)| (r, f.over.change.unwrap_or_default()))
+            .ok_or_else(|| super::bad(id, "no change there"))?;
+        // Accepting a deletion or rejecting an insertion removes the text; otherwise it stays, unmarked.
+        if (mark == ChangeMark::Deleted) == accept {
+            st.delete(r.clone());
+        } else {
+            st.format_chars(r.clone(), |f| f.over.change = None);
+        }
+        if let Some(t) = &mut sel.text
+            && t.story == sid
+        {
+            let len = d.story(sid).map_or(0, |x| x.len());
+            t.anchor = t.anchor.min(len);
+            t.focus = t.focus.min(len);
+        }
+        Ok(json!({"start": r.start, "end": r.end}))
+    })
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!("changes.track", "Track Changes", ["Type", "Track Changes"], None, "{on?: bool (default: toggle)}", has_doc, |s, p| {
@@ -79,6 +108,8 @@ pub fn specs() -> Vec<CommandSpec> {
             }
             Ok(Value::Array(out))
         }),
+        cmd!("changes.accept", "Accept Change", [], None, "{story, start} — the change at that position", has_doc, |s, p| one(s, p, true)),
+        cmd!("changes.reject", "Reject Change", [], None, "{story, start} — the change at that position", has_doc, |s, p| one(s, p, false)),
         cmd!(
             "changes.acceptAll",
             "Accept All Changes",
@@ -147,6 +178,15 @@ mod tests {
         let d = s.doc().unwrap().doc.clone();
         let cs = s.cache.get(&d, sid, None);
         assert!(cs.frames[0].lines[0].glyphs.iter().any(|g| !g.visible && g.byte >= 4 && g.byte < 7));
+        // One at a time: accept the deletion of "cat", then reject the insertion of "dog".
+        s.execute("changes.accept", &json!({"story": sid.0, "start": 4})).unwrap();
+        assert_eq!(text(&s), "The dog sat");
+        s.execute("changes.reject", &json!({"story": sid.0, "start": 4})).unwrap();
+        assert_eq!(text(&s), "The  sat");
+        assert!(s.execute("changes.accept", &json!({"story": sid.0, "start": 0})).is_err());
+        s.execute("edit.undo", &json!({})).unwrap();
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(text(&s), "The catdog sat");
         s.execute("changes.rejectAll", &json!({})).unwrap();
         assert_eq!(text(&s), "The cat sat");
         s.execute("edit.undo", &json!({})).unwrap();

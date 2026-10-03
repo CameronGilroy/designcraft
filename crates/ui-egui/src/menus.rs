@@ -585,6 +585,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:window.panel|Buttons and Forms|{\"panel\": \"buttons\"}",
             "ui:window.panel|Media|{\"panel\": \"media\"}",
             "ui:window.panel|Page Transitions|{\"panel\": \"transitions\"}",
+            "ui:window.panel|Track Changes|{\"panel\": \"trackChanges\"}",
             "ui:window.panel|Liquid Layout|{\"panel\": \"liquid\"}",
             "ui:window.panel|Tags|{\"panel\": \"tags\"}",
             "ui:window.panel|Book|{\"panel\": \"book\"}",

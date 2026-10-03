@@ -83,6 +83,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - View ▸ Separations Preview (`view.separations`): one process plate as ink density, or areas over an ink limit in red (a GCR preview of the rendered view; spot plates and the flattener preview aren't there).
 - Books (`book.new/open/add/remove/list/styleSource/paginate/syncStyles/exportPdf`, Book panel): `.dcbook` files, continuous page numbering, style sync from a style source, one merged PDF.
 - Track Changes (`changes.track/list/acceptAll/rejectAll`, Type ▸ Track Changes): typing is marked added (highlighted on screen), deletions are kept but hidden from layout and exports until accepted or rejected. Per-change accept/reject and authors aren't there yet.
+- Track Changes: per-change Accept / Reject (`changes.accept`, `changes.reject`) and a Track Changes panel listing every change.
 - Move table rows and columns (`table.moveRow`, `table.moveColumn`, Table panel buttons; dragging on the canvas isn't there yet).
 - Object States (`states.create/show/rename/release/list`, Object States panel): multi-state objects show one state on screen and in PDF.
 - Buttons (`button.set/clear/list`, Buttons and Forms panel): go to page / next / previous / first / last / URL as PDF link annotations. Form fields need AcroForm support the PDF writer lacks.
