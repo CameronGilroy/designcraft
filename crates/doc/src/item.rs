@@ -467,6 +467,38 @@ pub struct ObjectLiquid {
     pub pin_right: bool,
 }
 
+/// A PDF form field.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormField {
+    pub kind: FieldKind,
+    /// Field name (unique in the exported PDF).
+    pub name: String,
+    /// Default value: the text, the chosen option, or "On"/"" for a check box.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub value: String,
+    /// Choices of a combo box or list box.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multiline: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
+    /// Font size of the field's text (0 = auto).
+    #[serde(default)]
+    pub font_size: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FieldKind {
+    TextField,
+    CheckBox,
+    ComboBox,
+    ListBox,
+    Signature,
+}
+
 /// The source and template of a live caption.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -916,6 +948,9 @@ pub struct Item {
     /// Liquid Layout (object-based pages): pins and resize permissions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquid: Option<ObjectLiquid>,
+    /// Buttons and Forms: an interactive PDF form field drawn in this frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form_field: Option<FormField>,
     /// Live caption: this text frame shows `template` filled from the source object's metadata,
     /// kept current as the source changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -980,6 +1015,7 @@ impl Item {
             button: None,
             pdf_hidden_layers: Vec::new(),
             live_caption: None,
+            form_field: None,
             media: None,
             liquid: None,
             states: Vec::new(),

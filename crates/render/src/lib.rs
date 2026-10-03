@@ -538,6 +538,28 @@ impl Renderer {
             }
             _ => {}
         }
+        // Form fields (screen only; PDF viewers draw their own): a tint, a check mark.
+        if let Some(ff) = &it.form_field
+            && !f.opts.printing_only
+        {
+            let r = it.inner_bounds();
+            ctx.set_transform(f.view * xf);
+            ctx.set_paint(peniko::Color::from_rgba8(80, 140, 255, 40));
+            ctx.fill_rect(&r);
+            ctx.set_paint(peniko::Color::from_rgba8(60, 110, 220, 200));
+            ctx.set_stroke(kurbo::Stroke::new(0.75));
+            ctx.stroke_path(&r.to_path(0.1));
+            if ff.kind == designcraft_doc::FieldKind::CheckBox && !ff.value.is_empty() && ff.value != "Off" {
+                let (w, h) = (r.width(), r.height());
+                let mut c = BezPath::new();
+                c.move_to((r.x0 + w * 0.22, r.y0 + h * 0.48));
+                c.line_to((r.x0 + w * 0.42, r.y0 + h * 0.72));
+                c.line_to((r.x0 + w * 0.78, r.y0 + h * 0.24));
+                ctx.set_paint(peniko::Color::BLACK);
+                ctx.set_stroke(kurbo::Stroke::new((w.min(h) * 0.12).max(0.8)).with_caps(kurbo::Cap::Round).with_join(kurbo::Join::Round));
+                ctx.stroke_path(&c);
+            }
+        }
         // Stroke.
         if !it.stroke.is_none() {
             let op = overprints(f, &it.stroke.swatch, it.stroke.tint, it.stroke.overprint);

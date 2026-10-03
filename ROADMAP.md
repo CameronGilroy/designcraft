@@ -86,7 +86,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Track Changes: per-change Accept / Reject (`changes.accept`, `changes.reject`) and a Track Changes panel listing every change.
 - Move table rows and columns (`table.moveRow`, `table.moveColumn`, Table panel buttons; dragging on the canvas isn't there yet).
 - Object States (`states.create/show/rename/release/list`, Object States panel): multi-state objects show one state on screen and in PDF.
-- Buttons (`button.set/clear/list`, Buttons and Forms panel): go to page / next / previous / first / last / URL as PDF link annotations. Form fields need AcroForm support the PDF writer lacks.
+- Buttons (`button.set/clear/list`, Buttons and Forms panel): go to page / next / previous / first / last / URL as PDF link annotations. Form fields too (`form.set/clear/list`: text fields, check boxes, combo and list boxes, signature fields; required, multiline, defaults) exported as AcroForm widgets through an incremental update (not in PDF/X).
 - Power Zoom (Hand tool: press and hold still for half a second, or Alt-press): zoom out to the spread, aim the red view rectangle, release to zoom back in there.
 - Graphic cells (`table.placeGraphic`, `table.textCell`, Table › Convert Cell Type, Table panel): images in table cells, fitted or filled, clipped to the cell on screen and in PDF.
 - Live Distribute (Space while dragging a selection handle; `transform.resize {distribute}`): objects keep their size and spread with the bounds.

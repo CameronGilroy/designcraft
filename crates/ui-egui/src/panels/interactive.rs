@@ -278,6 +278,76 @@ pub fn buttons(app: &mut DesignApp, ui: &mut egui::Ui) {
         app.status(format!("Buttons: {e}"));
     }
     ui.label(egui::RichText::new("Buttons act in interactive PDF export.").size(10.5).color(t.text_dim));
+    // Form field.
+    ui.separator();
+    let ff = app.session.active().and_then(|d| d.doc.item(id)).and_then(|it| it.form_field.clone());
+    use designcraft_doc::FieldKind as K;
+    let kinds = [
+        (None, "Not a form field"),
+        (Some(K::TextField), "Text Field"),
+        (Some(K::CheckBox), "Check Box"),
+        (Some(K::ComboBox), "Combo Box"),
+        (Some(K::ListBox), "List Box"),
+        (Some(K::Signature), "Signature Field"),
+    ];
+    let cur = ff.as_ref().map(|f| f.kind);
+    ui.horizontal(|ui| {
+        ui.label("Form Field");
+        egui::ComboBox::from_id_salt("form_kind").selected_text(kinds.iter().find(|k| k.0 == cur).map_or("", |k| k.1)).show_ui(ui, |ui| {
+            for (k, l) in kinds {
+                if ui.selectable_label(k == cur, l).clicked() {
+                    let _ = match k {
+                        Some(k) => app.run("form.set", json!({"kind": k})),
+                        None => app.run("form.clear", json!({})),
+                    };
+                }
+            }
+        });
+    });
+    if let Some(f) = ff {
+        let key = egui::Id::new(("form_edit", id.0));
+        let (mut name, mut value, mut opts): (String, String, String) =
+            ui.data(|d| d.get_temp(key)).unwrap_or((f.name.clone(), f.value.clone(), f.options.join(", ")));
+        let mut commit = false;
+        ui.horizontal(|ui| {
+            ui.label("Name");
+            commit |= ui.text_edit_singleline(&mut name).lost_focus();
+        });
+        if f.kind == K::CheckBox {
+            let mut on = !f.value.is_empty() && f.value != "Off";
+            if ui.checkbox(&mut on, "Checked by default").changed() {
+                let _ = app.run("form.set", json!({"kind": f.kind, "value": if on { "On" } else { "" }}));
+            }
+        } else if f.kind != K::Signature {
+            ui.horizontal(|ui| {
+                ui.label("Default");
+                commit |= ui.text_edit_singleline(&mut value).lost_focus();
+            });
+        }
+        if matches!(f.kind, K::ComboBox | K::ListBox) {
+            ui.horizontal(|ui| {
+                ui.label("Choices");
+                commit |= ui.text_edit_singleline(&mut opts).on_hover_text("Separated by commas").lost_focus();
+            });
+        }
+        let mut req = f.required;
+        if ui.checkbox(&mut req, "Required").changed() {
+            let _ = app.run("form.set", json!({"kind": f.kind, "required": req}));
+        }
+        if f.kind == K::TextField {
+            let mut ml = f.multiline;
+            if ui.checkbox(&mut ml, "Multiline").changed() {
+                let _ = app.run("form.set", json!({"kind": f.kind, "multiline": ml}));
+            }
+        }
+        if commit {
+            let options: Vec<String> = opts.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+            let _ = app.run("form.set", json!({"kind": f.kind, "name": name, "value": value, "options": options}));
+            ui.data_mut(|d| d.remove::<(String, String, String)>(key));
+        } else {
+            ui.data_mut(|d| d.insert_temp(key, (name, value, opts)));
+        }
+    }
 }
 
 /// Liquid Layout panel: the current page's rule, the selection's pins (object-based), the page's
