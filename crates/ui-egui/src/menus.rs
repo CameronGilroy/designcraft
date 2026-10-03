@@ -2033,6 +2033,49 @@ mod tests {
     }
 
     #[test]
+    fn hand_tool_hold_starts_power_zoom() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        let ctx = egui::Context::default();
+        let frame = |app: &mut crate::DesignApp, t: f64, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0))),
+                time: Some(t),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                app.logic(&ui.ctx().clone());
+                app.ui(ui);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut app, 0.0, vec![]);
+        frame(&mut app, 0.05, vec![]);
+        app.select_tool("hand");
+        let r = app.canvas_rect.unwrap();
+        let p = r.center();
+        let z0 = app.view().unwrap().zoom;
+        frame(&mut app, 0.1, vec![egui::Event::PointerMoved(p)]);
+        frame(
+            &mut app,
+            0.2,
+            vec![egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }],
+        );
+        frame(&mut app, 0.4, vec![]);
+        assert!(app.power_zoom.is_none(), "not yet");
+        frame(&mut app, 0.8, vec![]);
+        assert!(app.power_zoom.is_some(), "holding still starts Power Zoom");
+        frame(
+            &mut app,
+            0.9,
+            vec![egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }],
+        );
+        assert!(app.power_zoom.is_none());
+        assert!((app.view().unwrap().zoom - z0).abs() < 1e-9, "back at the zoom it started from");
+    }
+
+    #[test]
     fn panels_float_and_dock() {
         let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         let r = run_ui(&mut app, "window.floatPanel", &json!({"panel": "swatches", "x": 50, "y": 60})).unwrap().unwrap();

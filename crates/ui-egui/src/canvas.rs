@@ -1362,6 +1362,26 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
     {
         events.push(PointerEvent { kind: PointerKind::Drag, pos: pos(p), mods: m });
     }
+    // Power Zoom: holding the Hand tool still for half a second turns the press into one.
+    let hold_id = egui::Id::new(("canvas_hold", app.pane));
+    if down && !released && app.session.tool_id() == "hand" && !m.alt {
+        let (now, origin_pos) = ui.input(|i| (i.time, i.pointer.press_origin()));
+        let (start, fired): (f64, bool) = ui.data(|d| d.get_temp(hold_id)).unwrap_or((now, false));
+        let still = origin_pos.zip(latest).is_some_and(|(o, l)| (o - l).length() < 3.0);
+        if !fired && still && now - start >= 0.5 {
+            let p = pos(latest.unwrap_or(rect.center()));
+            events.push(PointerEvent { kind: PointerKind::Up, pos: p, mods: m });
+            events.push(PointerEvent { kind: PointerKind::Down, pos: p, mods: Mods { alt: true, ..m } });
+            ui.data_mut(|d| d.insert_temp(hold_id, (start, true)));
+        } else {
+            ui.data_mut(|d| d.insert_temp(hold_id, (start, fired)));
+            if !fired {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        }
+    } else {
+        ui.data_mut(|d| d.remove::<(f64, bool)>(hold_id));
+    }
     if down && released {
         let p = latest.unwrap_or(rect.center());
         events.push(PointerEvent { kind: PointerKind::Up, pos: pos(p), mods: m });

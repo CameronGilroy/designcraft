@@ -87,7 +87,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Move table rows and columns (`table.moveRow`, `table.moveColumn`, Table panel buttons; dragging on the canvas isn't there yet).
 - Object States (`states.create/show/rename/release/list`, Object States panel): multi-state objects show one state on screen and in PDF.
 - Buttons (`button.set/clear/list`, Buttons and Forms panel): go to page / next / previous / first / last / URL as PDF link annotations. Form fields need AcroForm support the PDF writer lacks.
-- Power Zoom (Hand tool, Alt-press): zoom out to the spread, aim the red view rectangle, release to zoom back in there. InDesign triggers it by press-and-hold instead.
+- Power Zoom (Hand tool: press and hold still for half a second, or Alt-press): zoom out to the spread, aim the red view rectangle, release to zoom back in there.
 - Graphic cells (`table.placeGraphic`, `table.textCell`, Table › Convert Cell Type, Table panel): images in table cells, fitted or filled, clipped to the cell on screen and in PDF.
 - Live Distribute (Space while dragging a selection handle; `transform.resize {distribute}`): objects keep their size and spread with the bounds.
 - Liquid Layout (`liquid.pageRule/object`, `guide.liquid`, `layout.createAlternate`, Liquid Layout panel): scale / re-center / guide-based / object-based page rules applied on page resize and Document Setup; dashed liquid guides; alternate layouts as resized page copies in a named section. Alternate layouts aren't linked to their source.
