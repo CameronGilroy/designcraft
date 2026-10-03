@@ -35,6 +35,7 @@ static BUNDLED: &[&[u8]] = &[
     include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf"),
 ];
 
+#[derive(Clone)]
 enum FontBytes {
     Static(&'static [u8]),
     Owned(Arc<Vec<u8>>),
@@ -344,6 +345,11 @@ fn make_face(bytes: FontBytes, index: u32, family: String, style: String, coords
     })
 }
 
+/// The named style part of a style with axis settings (`Bold {wght:650}` → `Bold`).
+pub fn base_style(style: &str) -> &str {
+    style.split('{').next().unwrap_or(style).trim()
+}
+
 fn norm(s: &str) -> String {
     s.chars().filter(|c| c.is_alphanumeric()).flat_map(|c| c.to_lowercase()).collect()
 }
@@ -427,8 +433,12 @@ impl FontDb {
 
     /// Style names available for `family` (Regular first, then by weight).
     pub fn styles(&self, family: &str) -> Vec<String> {
-        let mut v: Vec<(bool, f32, String)> =
-            self.read_faces().iter().filter(|f| f.family.eq_ignore_ascii_case(family)).map(|f| (f.italic, f.weight, f.style.clone())).collect();
+        let mut v: Vec<(bool, f32, String)> = self
+            .read_faces()
+            .iter()
+            .filter(|f| f.family.eq_ignore_ascii_case(family) && !f.style.contains('{'))
+            .map(|f| (f.italic, f.weight, f.style.clone()))
+            .collect();
         #[cfg(not(target_arch = "wasm32"))]
         for c in self.catalog.read().unwrap_or_else(|e| e.into_inner()).iter() {
             if c.family.eq_ignore_ascii_case(family) && !v.iter().any(|(_, _, s)| s.eq_ignore_ascii_case(&c.style)) {
@@ -548,7 +558,57 @@ impl FontDb {
         self.read_faces().iter().any(|f| f.family.eq_ignore_ascii_case(family))
     }
 
+    /// A variable font's axes: (tag, name, min, default, max), empty for static fonts.
+    pub fn axes(&self, family: &str, style: &str) -> Vec<(String, String, f32, f32, f32)> {
+        let face = self.face(family, base_style(style));
+        let Some(f) = face.skrifa() else { return vec![] };
+        f.axes()
+            .iter()
+            .map(|a| {
+                let tag = String::from_utf8_lossy(&a.tag().to_be_bytes()).to_string();
+                let name = f.localized_strings(a.name_id()).english_or_first().map(|s| s.to_string()).unwrap_or_else(|| tag.clone());
+                (tag, name, a.min_value(), a.default_value(), a.max_value())
+            })
+            .collect()
+    }
+
+    /// `Style {wght:650,wdth:90}`: the named style's font at those axis values, made on first use.
+    fn instance(&self, family: &str, style: &str) -> Option<Arc<FontFace>> {
+        let open = style.find('{')?;
+        let base = self.find(family, style[..open].trim())?;
+        if base.skrifa().is_none_or(|f| f.axes().is_empty()) {
+            return Some(base);
+        }
+        let mut coords = base.coords.clone();
+        for kv in style[open + 1..].trim_end_matches('}').split(',') {
+            let (k, v) = kv.split_once(':')?;
+            let k = k.trim().as_bytes();
+            let v: f32 = v.trim().parse().ok()?;
+            if k.len() != 4 {
+                return None;
+            }
+            let tag = [k[0], k[1], k[2], k[3]];
+            match coords.iter_mut().find(|(t, _)| *t == tag) {
+                Some(c) => c.1 = v,
+                None => coords.push((tag, v)),
+            }
+        }
+        let f = make_face(base.bytes.clone(), base.index, base.family.clone(), style.to_string(), coords)?;
+        let f = Arc::new(f);
+        self.faces.write().unwrap_or_else(|e| e.into_inner()).push(f.clone());
+        Some(f)
+    }
+
     fn find(&self, family: &str, style: &str) -> Option<Arc<FontFace>> {
+        if style.contains('{') {
+            {
+                let faces = self.read_faces();
+                if let Some(f) = faces.iter().find(|f| f.family.eq_ignore_ascii_case(family) && f.style == style) {
+                    return Some(f.clone());
+                }
+            }
+            return self.instance(family, style);
+        }
         let faces = self.read_faces();
         let cands: Vec<&Arc<FontFace>> = faces.iter().filter(|f| f.family.eq_ignore_ascii_case(family)).collect();
         if cands.is_empty() {

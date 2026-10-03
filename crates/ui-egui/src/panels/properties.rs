@@ -1150,6 +1150,7 @@ pub fn character_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     ui.label(egui::RichText::new("Character").strong());
     super::font_family_picker(app, ui, &fam, 220.0);
     super::font_style_picker(app, ui, &fam, &sty, 220.0);
+    variable_font_axes(app, ui, &fam, &sty);
     egui::Grid::new("chargrid").num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
         caption(ui, "Size");
         if let Some(v) = number(ui, "pcs", c["size"].as_f64(), " pt", 60.0, 2) {
@@ -1839,4 +1840,35 @@ pub fn attributes_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
             }
         }
     });
+}
+
+/// Variable Font sliders: one per axis; the style becomes `Named {tag:value,…}`.
+fn variable_font_axes(app: &mut DesignApp, ui: &mut egui::Ui, family: &str, style: &str) {
+    if family.is_empty() {
+        return;
+    }
+    let db = designcraft_fonts::FontDb::global();
+    let axes = db.axes(family, style);
+    if axes.is_empty() {
+        return;
+    }
+    let base = designcraft_fonts::base_style(style).to_string();
+    let face = db.face(family, style);
+    let cur = |tag: &str, default: f32| face.coords.iter().find(|(t, _)| t == tag.as_bytes()).map_or(default, |c| c.1);
+    let mut values: Vec<(String, f32)> = axes.iter().map(|a| (a.0.clone(), cur(&a.0, a.3))).collect();
+    let mut changed = false;
+    ui.label(egui::RichText::new("Variable Font").size(11.0));
+    egui::Grid::new("vf_axes").num_columns(2).spacing(vec2(6.0, 2.0)).show(ui, |ui| {
+        for (i, (_, name, min, _, max)) in axes.iter().enumerate() {
+            caption(ui, name);
+            if ui.add(egui::Slider::new(&mut values[i].1, *min..=*max).step_by(1.0)).drag_stopped() {
+                changed = true;
+            }
+            ui.end_row();
+        }
+    });
+    if changed {
+        let spec = values.iter().map(|(t, v)| format!("{t}:{}", v.round())).collect::<Vec<_>>().join(",");
+        let _ = app.run("type.char", json!({"attrs": {"fontStyle": format!("{base} {{{spec}}}")}}));
+    }
 }

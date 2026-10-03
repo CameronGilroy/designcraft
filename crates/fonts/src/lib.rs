@@ -8,7 +8,7 @@
 
 mod fontdb;
 
-pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, bundled};
+pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, base_style, bundled};
 pub use harfrust::Feature;
 use harfrust::{Direction, ShapeOptions, Tag, UnicodeBuffer};
 pub use kurbo::BezPath;
@@ -156,6 +156,15 @@ mod tests {
             ((b.area() * 100.0).round() as i64, g[0].x_advance)
         };
         assert_ne!(ink(light), ink(heavy), "instances draw differently");
+        // Free axis values: a style with settings makes that instance.
+        let axes = db.axes(&fam, &light.style);
+        let wght = axes.iter().find(|a| a.0 == "wght").expect("a weight axis");
+        let mid = (wght.2 + wght.4) / 2.0;
+        let custom = db.face(&fam, &format!("{} {{wght:{mid}}}", light.style));
+        assert!(custom.is_variable() && custom.coords.iter().any(|(t, v)| t == b"wght" && *v == mid));
+        assert!(!db.styles(&fam).iter().any(|s| s.contains('{')), "instances aren't listed");
+        let static_face = db.face(DEFAULT_FAMILY, "Regular {wght:700}");
+        assert_eq!(static_face.style, "Regular", "static fonts ignore axis settings");
     }
 
     #[test]
