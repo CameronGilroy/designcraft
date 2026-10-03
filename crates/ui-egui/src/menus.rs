@@ -77,6 +77,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("window.hidePanelsExceptTools", "Show/Hide Panels Except Tools", Some("Shift+Tab"), "{}"),
     ("window.nextDocument", "Next Document", Some("Cmd+F6"), "{}"),
     ("window.previousDocument", "Previous Document", Some("Cmd+Shift+F6"), "{}"),
+    ("view.rotateSpread", "Rotate Spread", None, "{angle: 90 (clockwise) | -90 | 180 | 0 (clear)} — turn the view in quarter turns"),
     ("view.proofColors", "Proof Colors", None, "{on?: bool} — simulate the proof target on screen"),
     (
         "view.proofSetup",
@@ -333,6 +334,12 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "ui:view.hiddenCharacters",
             "ui:view.taggedFrames",
+            ">Rotate Spread",
+            "ui:view.rotateSpread|90° CW|{\"angle\": 90}",
+            "ui:view.rotateSpread|90° CCW|{\"angle\": -90}",
+            "ui:view.rotateSpread|180°|{\"angle\": 180}",
+            "ui:view.rotateSpread|Clear Rotation|{\"angle\": 0}",
+            "<",
             ">Proof Setup",
             "ui:view.proofSetup|Working CMYK|{\"target\": \"workingCmyk\"}",
             "ui:view.proofSetup|Internet Standard RGB (sRGB)|{\"target\": \"srgb\"}",
@@ -1000,6 +1007,28 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             }
             Ok(json!(app.session.active_index()))
         }
+        "view.rotateSpread" => {
+            let angle = p.get("angle").and_then(Value::as_i64).unwrap_or(90);
+            let (Some(rect), Some(v)) = (app.canvas_rect, app.view().copied()) else { return Some(Err("no view".into())) };
+            let xf = crate::canvas::Xf::new(rect, &v);
+            let centre = xf.to_canvas(rect.center());
+            let screen = crate::canvas::view_rect(rect, v.rotation);
+            let rot = match angle {
+                0 => 0,
+                a => ((v.rotation as i64 + a.div_euclid(90)).rem_euclid(4)) as u8,
+            };
+            let new_rect = crate::canvas::view_rect(screen, rot);
+            app.canvas_rect = Some(new_rect);
+            if let Some(v) = app.view_mut() {
+                v.rotation = rot;
+                v.origin = designcraft_geom::Point::new(
+                    centre.x - new_rect.width() as f64 / 2.0 / v.zoom,
+                    centre.y - new_rect.height() as f64 / 2.0 / v.zoom,
+                );
+            }
+            app.canvas.shown = None;
+            Ok(json!(rot as u32 * 90))
+        }
         "view.proofColors" => {
             app.ui.proof_colors = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.proof_colors);
             app.canvas.shown = None;
@@ -1513,6 +1542,10 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "window.controlBar" => app.ui.control_bar,
         "window.split" => app.split,
         "view.proofColors" => app.ui.proof_colors,
+        "view.rotateSpread" => match params.get("angle").and_then(Value::as_i64) {
+            Some(0) => app.view().is_some_and(|v| v.rotation == 0),
+            _ => return None,
+        },
         "view.proofSetup" => match (params.get("target").and_then(Value::as_str), params.get("simulatePaper")) {
             (Some(t), _) => app.ui.proof_setup.target.id() == t,
             (None, Some(_)) => app.ui.proof_setup.simulate_paper,
@@ -1933,6 +1966,47 @@ mod tests {
         assert_eq!(app.session.active_index(), Some(0));
         run_ui(&mut app, "window.previousDocument", &json!({})).unwrap().unwrap();
         assert_eq!(app.session.active_index(), Some(2));
+    }
+
+    #[test]
+    fn rotate_spread_view() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        let ctx = egui::Context::default();
+        let frame = |app: &mut crate::DesignApp| {
+            let input =
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                app.logic(&ui.ctx().clone());
+                app.ui(ui);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut app);
+        frame(&mut app);
+        let r0 = app.canvas_rect.unwrap();
+        let xf0 = crate::canvas::Xf::new(r0, app.view().unwrap());
+        let centre = xf0.to_canvas(r0.center());
+        assert_eq!(run_ui(&mut app, "view.rotateSpread", &json!({"angle": 90})).unwrap().unwrap(), json!(90));
+        frame(&mut app);
+        let r1 = app.canvas_rect.unwrap();
+        // Width and height swap (the rulers hide while rotated, so it grows by their width).
+        assert!(r0.width() > r0.height() && r1.height() > r1.width(), "{r0:?} {r1:?}");
+        let xf = crate::canvas::Xf::new(r1, app.view().unwrap());
+        let c = xf.to_canvas(r1.center());
+        let tol = 30.0 / xf.zoom;
+        assert!((c.x - centre.x).abs() < tol && (c.y - centre.y).abs() < tol, "the centre stays put");
+        // Screen ↔ canvas round trip, and canvas +x points down the screen after a clockwise turn.
+        let p = designcraft_geom::Point::new(c.x + 50.0, c.y);
+        let sp = xf.to_screen(p);
+        assert!(sp.y > r1.center().y + 1.0 && (sp.x - r1.center().x).abs() < 1.0, "{sp:?}");
+        let back = xf.to_canvas(sp);
+        assert!((back.x - p.x).abs() < 1e-3 && (back.y - p.y).abs() < 1e-3);
+        run_ui(&mut app, "view.rotateSpread", &json!({"angle": -90})).unwrap().unwrap();
+        assert_eq!(app.view().unwrap().rotation, 0);
+        run_ui(&mut app, "view.rotateSpread", &json!({"angle": 180})).unwrap().unwrap();
+        frame(&mut app);
+        assert_eq!(run_ui(&mut app, "view.rotateSpread", &json!({"angle": 0})).unwrap().unwrap(), json!(0));
     }
 
     #[test]

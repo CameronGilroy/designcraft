@@ -11,12 +11,12 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 100 | 2 | 0 | 99% |
 | P1 | 97 | 94 | 3 | 0 | 98% |
-| P2 | 76 | 43 | 27 | 6 | 74% |
+| P2 | 76 | 43 | 30 | 3 | 76% |
 
 | Area | Parity |
 |---|---|
 | Application shell & workspace | 96% |
-| Documents, pages, spreads | 96% |
+| Documents, pages, spreads | 98% |
 | Layers | 95% |
 | Frames, shapes & paths | 100% |
 | Transform | 100% |
@@ -31,7 +31,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Interactivity & digital | 90% |
 | Output & production | 80% |
 | XML & automation | 83% |
-| View & navigation | 93% |
+| View & navigation | 95% |
 | Undo, history, saving | 100% |
 | Accessibility | 90% |
 
@@ -66,7 +66,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Documents, pages, spreads | Insert/move/duplicate/delete pages | P0 | D |
 | Documents, pages, spreads | Per-page size (Page tool) | P1 | D |
 | Documents, pages, spreads | Margins and Columns per page | P0 | D |
-| Documents, pages, spreads | Spread rotation (view) | P2 | M |
+| Documents, pages, spreads | Spread rotation (view) | P2 | P |
 | Documents, pages, spreads | Pasteboard | P0 | D |
 | Documents, pages, spreads | Sections & numbering | P0 | D |
 | Documents, pages, spreads | Page numbering display | P1 | D |
@@ -75,7 +75,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Documents, pages, spreads | Parent pages | P0 | D |
 | Documents, pages, spreads | Parent item overrides | P0 | D |
 | Documents, pages, spreads | Page transitions | P2 | D |
-| Documents, pages, spreads | Spread view rotation | P2 | M |
+| Documents, pages, spreads | Spread view rotation | P2 | P |
 | Documents, pages, spreads | Layout Adjustment | P2 | D |
 | Documents, pages, spreads | Adjust Layout | P2 | D |
 | Documents, pages, spreads | Liquid layout | P2 | D |
@@ -307,7 +307,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | View & navigation | Display performance | P0 | D |
 | View & navigation | Navigate pages | P0 | D |
 | View & navigation | Split window | P2 | D |
-| View & navigation | Rotate spread view | P2 | M |
+| View & navigation | Rotate spread view | P2 | P |
 | View & navigation | Find/zoom to object | P1 | D |
 | Undo, history, saving | Unlimited undo/redo | P0 | D |
 | Undo, history, saving | Revert | P0 | D |

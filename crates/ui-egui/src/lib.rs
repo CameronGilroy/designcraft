@@ -232,11 +232,13 @@ pub struct View {
     pub zoom: f64,
     pub origin: Point,
     pub fitted: bool,
+    /// View › Rotate Spread: quarter turns clockwise (0–3).
+    pub rotation: u8,
 }
 
 impl Default for View {
     fn default() -> Self {
-        View { zoom: 0.5, origin: Point::new(-100.0, -100.0), fitted: false }
+        View { zoom: 0.5, origin: Point::new(-100.0, -100.0), fitted: false, rotation: 0 }
     }
 }
 

@@ -16,19 +16,51 @@ pub const RULER: f32 = 15.0;
 /// Canvas ↔ screen transform.
 #[derive(Clone, Copy, Debug)]
 pub struct Xf {
+    /// Top left of the (unrotated) view rectangle.
     pub min: Pos2,
     pub origin: Point,
     pub zoom: f64,
+    /// Quarter turns clockwise about `pivot` (the view centre).
+    pub rot: u8,
+    pub pivot: Pos2,
+}
+
+/// Rotate `p` by `q` quarter turns clockwise about `c` (screen space, y down).
+fn quarter(p: Pos2, c: Pos2, q: u8) -> Pos2 {
+    let (dx, dy) = (p.x - c.x, p.y - c.y);
+    let (x, y) = match q % 4 {
+        0 => (dx, dy),
+        1 => (-dy, dx),
+        2 => (-dx, -dy),
+        _ => (dy, -dx),
+    };
+    pos2(c.x + x, c.y + y)
+}
+
+/// The unrotated view rectangle for a screen rectangle and a rotation (width and height swap
+/// for quarter turns).
+pub fn view_rect(screen: Rect, rot: u8) -> Rect {
+    if rot % 2 == 1 { Rect::from_center_size(screen.center(), vec2(screen.height(), screen.width())) } else { screen }
 }
 
 impl Xf {
     pub fn new(rect: Rect, v: &View) -> Self {
-        Xf { min: rect.min, origin: v.origin, zoom: v.zoom }
+        Xf { min: rect.min, origin: v.origin, zoom: v.zoom, rot: v.rotation % 4, pivot: rect.center() }
     }
     pub fn to_screen(&self, p: Point) -> Pos2 {
-        pos2(self.min.x + ((p.x - self.origin.x) * self.zoom) as f32, self.min.y + ((p.y - self.origin.y) * self.zoom) as f32)
+        let s = pos2(self.min.x + ((p.x - self.origin.x) * self.zoom) as f32, self.min.y + ((p.y - self.origin.y) * self.zoom) as f32);
+        if self.rot == 0 { s } else { quarter(s, self.pivot, self.rot) }
+    }
+    /// A screen position in the unrotated view.
+    pub fn unrotate(&self, p: Pos2) -> Pos2 {
+        if self.rot == 0 { p } else { quarter(p, self.pivot, 4 - self.rot) }
+    }
+    /// A screen-space movement in the unrotated view.
+    pub fn unrotate_delta(&self, d: egui::Vec2) -> egui::Vec2 {
+        self.unrotate(self.pivot + d) - self.pivot
     }
     pub fn to_canvas(&self, p: Pos2) -> Point {
+        let p = self.unrotate(p);
         Point::new(self.origin.x + (p.x - self.min.x) as f64 / self.zoom, self.origin.y + (p.y - self.min.y) as f64 / self.zoom)
     }
     pub fn rect(&self, r: DRect) -> Rect {
@@ -36,9 +68,12 @@ impl Xf {
     }
     /// Canvas → screen affine (for vello rendering: pixels = points × ppp).
     pub fn affine(&self, ppp: f64, area_min: Pos2) -> Affine {
-        let dx = (self.min.x - area_min.x) as f64;
-        let dy = (self.min.y - area_min.y) as f64;
-        Affine::scale(ppp) * Affine::translate((dx, dy)) * Affine::scale(self.zoom) * Affine::translate((-self.origin.x, -self.origin.y))
+        let unrotated = Affine::translate((self.min.x as f64, self.min.y as f64))
+            * Affine::scale(self.zoom)
+            * Affine::translate((-self.origin.x, -self.origin.y));
+        let (cx, cy) = (self.pivot.x as f64, self.pivot.y as f64);
+        let rot = Affine::translate((cx, cy)) * Affine::rotate(self.rot as f64 * std::f64::consts::FRAC_PI_2) * Affine::translate((-cx, -cy));
+        Affine::scale(ppp) * Affine::translate((-(area_min.x as f64), -(area_min.y as f64))) * rot * unrotated
     }
 }
 
@@ -82,7 +117,7 @@ pub fn fit(app: &mut DesignApp, rect: Rect, what: &str) {
     let zoom = ((rect.width() as f64 - 2.0 * pad) / b.width()).min((rect.height() as f64 - 2.0 * pad) / b.height()).clamp(0.05, 40.0);
     let origin = Point::new(b.center().x - rect.width() as f64 / 2.0 / zoom, b.center().y - rect.height() as f64 / 2.0 / zoom);
     if let Some(v) = app.view_mut() {
-        *v = View { zoom, origin, fitted: true };
+        *v = View { zoom, origin, fitted: true, rotation: v.rotation };
     }
 }
 
@@ -133,6 +168,7 @@ pub fn zoom_at(app: &mut DesignApp, screen: Pos2, factor: f64) {
     let Some(v) = app.view_mut() else { return };
     let xf = Xf::new(rect, v);
     let c = xf.to_canvas(screen);
+    let screen = xf.unrotate(screen);
     let nz = (v.zoom * factor).clamp(0.05, 40.0);
     v.zoom = nz;
     v.origin = Point::new(c.x - (screen.x - rect.min.x) as f64 / nz, c.y - (screen.y - rect.min.y) as f64 / nz);
@@ -196,8 +232,11 @@ fn mods(i: &egui::InputState, space: bool) -> Mods {
 pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let full = ui.available_rect_before_wrap();
-    let rulers = app.ui.rulers && app.ui.screen_mode != ScreenMode::Presentation;
-    let rect = if rulers { Rect::from_min_max(full.min + vec2(RULER, RULER), full.max) } else { full };
+    let rot = app.view().map_or(0, |v| v.rotation % 4);
+    // Rulers measure the unrotated layout, so they hide while the view is rotated.
+    let rulers = app.ui.rulers && app.ui.screen_mode != ScreenMode::Presentation && rot == 0;
+    let screen = if rulers { Rect::from_min_max(full.min + vec2(RULER, RULER), full.max) } else { full };
+    let rect = view_rect(screen, rot);
     app.canvas_rect = Some(rect);
     let resp = ui.allocate_rect(full, Sense::click_and_drag());
     if !app.view().is_some_and(|v| v.fitted) {
@@ -209,10 +248,10 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let xf = Xf::new(rect, &v);
     let doc = st.doc.clone();
     let layout = CanvasLayout::new(&doc, st.editing_parents);
-    let painter = ui.painter_at(rect);
+    let painter = ui.painter_at(screen);
     let preview = matches!(app.ui.screen_mode, ScreenMode::Preview | ScreenMode::Presentation);
     let bg = if app.ui.screen_mode == ScreenMode::Presentation { Color32::BLACK } else { t.pasteboard };
-    painter.rect_filled(rect, 0.0, bg);
+    painter.rect_filled(screen, 0.0, bg);
     // Page shadow: a hard 1.5 pt black offset on the right and bottom (InDesign 2026).
     for slot in &layout.slots {
         let r = xf.rect(slot.bounds);
@@ -223,18 +262,28 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     if let (Some(tex), Some(sh)) = (&app.canvas.texture, app.canvas.shown) {
         // Place the texture where its region is in the current view (shifted while panning,
         // scaled while a zoom re-render is pending).
-        let k = (xf.zoom / sh.zoom) as f32;
-        let tl = xf.to_screen(sh.origin);
-        let tex_rect = Rect::from_min_size(tl, vec2(sh.size.0 * k, sh.size.1 * k));
-        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+        // The texture's corners in canvas space, placed through the view (rotation included).
+        let (w, h) = (sh.size.0 as f64 / sh.zoom, sh.size.1 as f64 / sh.zoom);
+        let o = sh.origin;
+        let corners = [
+            (o, pos2(0.0, 0.0)),
+            (Point::new(o.x + w, o.y), pos2(1.0, 0.0)),
+            (Point::new(o.x + w, o.y + h), pos2(1.0, 1.0)),
+            (Point::new(o.x, o.y + h), pos2(0.0, 1.0)),
+        ];
+        let mut mesh = egui::Mesh::with_texture(tex.id());
+        for (c, uv) in corners {
+            mesh.vertices.push(egui::epaint::Vertex { pos: xf.to_screen(c), uv, color: Color32::WHITE });
+        }
+        mesh.indices.extend([0, 1, 2, 0, 2, 3]);
         if preview {
             // Preview: only page areas (trim) show content.
             for slot in &layout.slots {
                 let r = xf.rect(slot.bounds);
-                painter.with_clip_rect(r.intersect(rect)).image(tex.id(), tex_rect, uv, Color32::WHITE);
+                painter.with_clip_rect(r.intersect(screen)).add(egui::Shape::mesh(mesh.clone()));
             }
         } else {
-            painter.image(tex.id(), tex_rect, uv, Color32::WHITE);
+            painter.add(egui::Shape::mesh(mesh));
         }
     }
     let hair = 1.0 / ui.ctx().pixels_per_point();
@@ -268,12 +317,12 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     }
     if let Some(r) = sel_rect
         && !preview
-        && r.intersects(rect)
+        && r.intersects(screen)
     {
-        crate::taskbar::show(app, &ui.ctx().clone(), r, rect);
+        crate::taskbar::show(app, &ui.ctx().clone(), r, screen);
     }
     // Cursor.
-    if let Some(p) = resp.hover_pos().filter(|p| rect.contains(*p)) {
+    if let Some(p) = resp.hover_pos().filter(|p| screen.contains(*p)) {
         let space = ui.input(|i| i.key_down(egui::Key::Space)) && !app.session.wants_text();
         let c = if space { Cursor::Hand } else { app.session.cursor(xf.to_canvas(p), ui.input(|i| mods(i, false)), app.view_info()) };
         ui.ctx().set_cursor_icon(cursor_icon(c));
@@ -1262,6 +1311,7 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
             } else if scroll != egui::Vec2::ZERO
                 && let Some(v) = app.view_mut()
             {
+                let scroll = xf.unrotate_delta(scroll);
                 v.origin = Point::new(v.origin.x - scroll.x as f64 / v.zoom, v.origin.y - scroll.y as f64 / v.zoom);
             }
         }
@@ -1270,13 +1320,14 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
     // Distribute while resizing).
     let tool_drag: bool = ui.data(|d| d.get_temp(egui::Id::new(("canvas_pointer_down", app.pane)))).unwrap_or(false);
     if space && !tool_drag && resp.dragged() {
-        let d = resp.drag_delta();
+        let d = xf.unrotate_delta(resp.drag_delta());
         if let Some(v) = app.view_mut() {
             v.origin = Point::new(v.origin.x - d.x as f64 / v.zoom, v.origin.y - d.y as f64 / v.zoom);
         }
         return;
     }
-    if !space && guide_drag(app, ui, resp, rect, &xf) {
+    // Ruler guides need the rulers (hidden while the view is rotated).
+    if !space && xf.rot == 0 && guide_drag(app, ui, resp, rect, &xf) {
         return;
     }
     let m = ui.input(|i| mods(i, space));
@@ -1296,7 +1347,7 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
     });
     if pressed
         && !space
-        && let Some(o) = origin.filter(|o| rect.contains(*o) && resp.hovered())
+        && let Some(o) = origin.filter(|o| (if xf.rot == 0 { rect.contains(*o) } else { resp.rect.contains(*o) }) && resp.hovered())
     {
         events.push(PointerEvent { kind: if dbl { PointerKind::DoubleClick } else { PointerKind::Down }, pos: pos(o), mods: m });
         down = true;
