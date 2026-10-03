@@ -103,6 +103,9 @@ pub struct UiState {
     /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
     pub hidden_menu_items: Vec<String>,
     pub show_full_menus: bool,
+    /// View › Flattener Preview: objects that involve transparency highlighted in red.
+    #[serde(skip)]
+    pub flattener_preview: bool,
     /// Tab / Shift+Tab: 1 = every panel hidden, 2 = all but the Tools panel (0 = shown).
     pub hidden_panels: u8,
     /// Edit › Color Settings (re-applied at start).
@@ -186,6 +189,7 @@ impl Default for UiState {
             hidden_menu_items: Vec::new(),
             show_full_menus: false,
             story_editor_size: 14.0,
+            flattener_preview: false,
             hidden_panels: 0,
             color_settings: None,
             proof_colors: false,

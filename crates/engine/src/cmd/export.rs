@@ -237,7 +237,9 @@ fn threaded(d: &designcraft_doc::Document, it: &designcraft_doc::Item) -> bool {
 /// Soft effects other than the gradient feather (which PDF export draws itself).
 fn raster_effects(it: &designcraft_doc::Item) -> bool {
     let e = &it.effects;
-    e.drop_shadow.on
+    // Knockout groups too: PDF output here has no knockout transparency groups.
+    it.knockout
+        || e.drop_shadow.on
         || e.feather > 0.0
         || e.inner_shadow.on
         || e.outer_glow.on
@@ -408,7 +410,7 @@ fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     if fx_count > 0 {
-        r.warnings.push(format!("{fx_count} object(s) with soft effects (shadows, glows, feathers, bevels) exported as images"));
+        r.warnings.push(format!("{fx_count} object(s) with soft effects (shadows, glows, feathers, bevels) or knockout groups exported as images"));
     }
     if layer_count > 0 {
         r.warnings.push(format!("{layer_count} placed PDF(s) with hidden layers exported as images"));

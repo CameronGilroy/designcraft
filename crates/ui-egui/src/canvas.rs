@@ -306,6 +306,9 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
         if app.ui.hidden_characters {
             draw_hidden_characters(app, &painter, &xf, &doc, &layout);
         }
+        if app.ui.flattener_preview {
+            draw_flattener_preview(&painter, &xf, &doc, &layout);
+        }
         if app.ui.dynamic_spelling && !preview {
             draw_dynamic_spelling(app, ui.ctx(), &painter, &xf, &doc, &layout);
         }
@@ -1465,6 +1468,22 @@ fn draw_hidden_characters(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc
                     painter.text(p, egui::Align2::LEFT_BOTTOM, mark, font.clone(), col);
                 }
             }
+        }
+    }
+}
+
+/// View › Flattener Preview: red over every object that involves transparency (opacity, blend
+/// modes, effects, knockout) — what flattening or export rasterising affects.
+fn draw_flattener_preview(painter: &egui::Painter, xf: &Xf, doc: &Document, layout: &CanvasLayout) {
+    fn transparent(it: &Item) -> bool {
+        it.opacity < 1.0 || it.blend != Default::default() || it.effects.any() || it.knockout || it.children().iter().any(|c| transparent(c))
+    }
+    let red = Color32::from_rgba_unmultiplied(230, 30, 30, 110);
+    for slot in &layout.slots {
+        let Some(sp) = doc.spread(slot.spread) else { continue };
+        for it in sp.items.iter().filter(|it| !it.hidden && transparent(it)) {
+            let r = it.bounds().inflate(designcraft_render::effect_outset(it), designcraft_render::effect_outset(it));
+            painter.rect_filled(xf.rect(r + slot.offset), 0.0, red);
         }
     }
 }
