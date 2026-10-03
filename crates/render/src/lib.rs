@@ -105,6 +105,8 @@ pub struct RenderOptions {
     /// Preferences › Appearance of Black: show 100% K as rich (pure) black instead of the
     /// accurate dark grey.
     pub rich_black: bool,
+    /// View › Overprint Preview: overprinting inks mix with what's beneath.
+    pub overprint_preview: bool,
 }
 
 /// View › Display Performance: how placed graphics and effects are drawn on screen.
@@ -132,6 +134,7 @@ impl Default for RenderOptions {
             highlight_missing_fonts: false,
             quality: DisplayQuality::High,
             rich_black: false,
+            overprint_preview: false,
         }
     }
 }
@@ -453,10 +456,17 @@ impl Renderer {
         // Fill.
         if !it.fill.is_none() {
             ctx.set_transform(f.view * xf);
+            let op = overprints(f, &it.fill.swatch, it.fill.tint, it.fill.overprint);
+            if op {
+                ctx.push_layer(None, Some(BlendMode::new(Mix::Multiply, Compose::SrcOver)), None, None, None);
+            }
             if set_fill_paint(ctx, doc, &it.fill, bp.bounding_box()) && it.path.is_closed() {
                 ctx.fill_path(bp);
             }
             ctx.reset_paint_transform();
+            if op {
+                ctx.pop_layer();
+            }
         }
         // Content.
         match &it.content {
@@ -479,7 +489,15 @@ impl Renderer {
         }
         // Stroke.
         if !it.stroke.is_none() {
+            let op = overprints(f, &it.stroke.swatch, it.stroke.tint, it.stroke.overprint);
+            if op {
+                ctx.set_transform(f.view * xf);
+                ctx.push_layer(None, Some(BlendMode::new(Mix::Multiply, Compose::SrcOver)), None, None, None);
+            }
             self.draw_stroke(ctx, f, it, bp, xf);
+            if op {
+                ctx.pop_layer();
+            }
         }
     }
 
@@ -645,6 +663,12 @@ fn set_fill_paint(ctx: &mut RenderContext, doc: &Document, fill: &designcraft_do
         }
         None => false,
     }
+}
+
+/// Overprint Preview: does this paint overprint (its own flag, or 100% [Black], which
+/// overprints by default)? It's then multiplied over what's beneath.
+pub(crate) fn overprints(f: &Frame, swatch: &str, tint: f32, flag: bool) -> bool {
+    f.opts.overprint_preview && (flag || (swatch == designcraft_color::swatch::BLACK && tint >= 0.999))
 }
 
 pub fn blend_mode(b: DcBlend) -> BlendMode {
@@ -852,6 +876,29 @@ mod tests {
         let (dash, gap) = (img.pixel(106, 500), img.pixel(114, 500));
         assert!(dash[0] < 80 && dash[2] < 80, "dash {dash:?}");
         assert!(gap[0] < 80 && gap[2] > 150, "gap {gap:?}");
+    }
+
+    #[test]
+    fn overprint_preview_mixes_inks() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        for (sw, op) in [("C=0 M=0 Y=100 K=0", false), ("C=0 M=100 Y=0 K=0", true)] {
+            let id = designcraft_doc::ItemId(d.alloc());
+            let mut it =
+                Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(100.0, 100.0, 200.0, 200.0)));
+            it.fill = Fill { overprint: op, ..Fill::swatch(sw) };
+            d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
+        }
+        let cache = Cache::new();
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let px = |on: bool, r: &mut Renderer| {
+            r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions { overprint_preview: on, ..Default::default() }).unwrap().pixel(150, 150)
+        };
+        let off = px(false, &mut r);
+        let on = px(true, &mut r);
+        assert!(off[2] > 100, "magenta knocks out: {off:?}");
+        assert!(on[2] < 60 && on[0] > 180, "magenta over yellow → red: {on:?}");
     }
 
     #[test]

@@ -245,8 +245,22 @@ impl Renderer {
                 self.stats.glyphs += lg.glyphs;
                 for (si, bp) in &lg.runs {
                     if let Some(c) = fill_of(*si) {
+                        let st = &cs.styles[*si as usize];
+                        let op = crate::overprints(f, &st.fill, st.fill_tint, false);
+                        if op {
+                            ctx.push_layer(
+                                None,
+                                Some(vello_cpu::peniko::BlendMode::new(vello_cpu::peniko::Mix::Multiply, vello_cpu::peniko::Compose::SrcOver)),
+                                None,
+                                None,
+                                None,
+                            );
+                        }
                         ctx.set_paint(c);
                         ctx.fill_path(bp);
+                        if op {
+                            ctx.pop_layer();
+                        }
                     }
                     let st = &cs.styles[*si as usize];
                     if st.stroke != designcraft_color::swatch::NONE

@@ -50,6 +50,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.baselineGrid", "Show/Hide Baseline Grid", Some("Cmd+Alt+'"), "{}"),
     ("view.textThreads", "Show/Hide Text Threads", Some("Cmd+Alt+Y"), "{}"),
     ("view.hiddenCharacters", "Show/Hide Hidden Characters", Some("Cmd+Alt+I"), "{}"),
+    ("view.overprintPreview", "Overprint Preview", Some("Cmd+Alt+Shift+Y"), "{} — show how overprinting inks mix"),
     ("view.fastDisplay", "Fast Display", Some("Cmd+Alt+Shift+Z"), "{} — placed graphics as grey boxes, no effects"),
     ("view.typicalDisplay", "Typical Display", Some("Cmd+Alt+Z"), "{} — low-resolution image proxies"),
     ("view.highQualityDisplay", "High Quality Display", Some("Cmd+Alt+H"), "{} — full-resolution images"),
@@ -390,6 +391,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:view.actualSize",
             "ui:view.entirePasteboard",
             "-",
+            "ui:view.overprintPreview",
             "ui:view.togglePreview",
             ">Display Performance",
             "ui:view.fastDisplay",
@@ -685,6 +687,10 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(Value::Null)
         }
         "view.frameEdges" => flag(&mut app.ui.frame_edges),
+        "view.overprintPreview" => {
+            app.canvas.shown = None;
+            flag(&mut app.ui.overprint_preview)
+        }
         "view.fastDisplay" | "view.typicalDisplay" | "view.highQualityDisplay" => {
             use designcraft_render::DisplayQuality as Q;
             app.ui.display_quality = match id {
@@ -1069,6 +1075,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
     Some(match id {
         "view.rulers" => app.ui.rulers,
         "view.frameEdges" => app.ui.frame_edges,
+        "view.overprintPreview" => app.ui.overprint_preview,
         "view.fastDisplay" => app.ui.display_quality == designcraft_render::DisplayQuality::Fast,
         "view.typicalDisplay" => app.ui.display_quality == designcraft_render::DisplayQuality::Typical,
         "view.highQualityDisplay" => app.ui.display_quality == designcraft_render::DisplayQuality::High,
