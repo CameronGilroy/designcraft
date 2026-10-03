@@ -747,7 +747,7 @@ impl Exporter<'_> {
             match doc {
                 Some(doc) => {
                     s.push_transform(&tf(g.xf));
-                    s.draw_pdf_page(&doc, size, 0);
+                    s.draw_pdf_page(&doc, size, asset.page as usize);
                     s.pop();
                 }
                 None => self.warn(format!("{}: can't read the placed PDF", asset.name)),

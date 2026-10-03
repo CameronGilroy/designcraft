@@ -290,3 +290,39 @@ mod reflow_tests {
         assert_eq!(s.doc().unwrap().doc.page_count(), 1);
     }
 }
+
+#[cfg(test)]
+mod pdf_page_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn place_a_chosen_pdf_page() {
+        let dir = std::env::temp_dir().join(format!("dc-pdf-page-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("two.pdf");
+        // Page 1 white, page 2 a different size with a black square.
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 2, "facingPages": false, "width": 200, "height": 100})).unwrap();
+        s.execute("layout.pageSize", &json!({"pages": [2], "width": 300, "height": 150})).unwrap();
+        let id = s.execute("frame.create", &json!({"spread": 1, "rect": [0, 0, 300, 150]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.fill", &json!({"ids": [id], "swatch": "[Black]"})).unwrap();
+        s.execute("file.exportPdf", &json!({"path": src.to_string_lossy()})).unwrap();
+        s.execute("file.new", &json!({})).unwrap();
+        assert!(s.execute("file.place", &json!({"path": src.to_string_lossy(), "pdfPage": 3})).is_err());
+        s.execute("file.place", &json!({"path": src.to_string_lossy(), "pdfPage": 2, "x": 100, "y": 100})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let it = d.spreads[0].items.last().unwrap();
+        let b = it.bounds();
+        assert!((b.width() - 300.0).abs() < 1.0 && (b.height() - 150.0).abs() < 1.0, "page 2's size: {b:?}");
+        assert_eq!(d.assets.values().next().unwrap().page, 1);
+        let mut rr = designcraft_render::Renderer::new();
+        rr.threads = 0;
+        let img = rr.render_page(&d, &s.cache, 0, 1.0, false, &Default::default()).unwrap();
+        assert!(img.pixel(250, 170)[0] < 60, "page 2 (black) shows: {:?}", img.pixel(250, 170));
+        let pdf = designcraft_pdf::export_pdf(&d, &s.cache, &Default::default()).unwrap();
+        assert!(String::from_utf8_lossy(&pdf).contains("/Subtype /Form") || String::from_utf8_lossy(&pdf).contains("/Subtype/Form"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

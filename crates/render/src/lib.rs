@@ -589,7 +589,7 @@ impl Renderer {
         // Pick a mip level close to the on-screen size (Typical: a 72 ppi proxy).
         let on_screen = (f.view * xf * g.xf).determinant().abs().sqrt();
         let on_screen = if f.opts.quality == DisplayQuality::Typical { on_screen.min(1.0) } else { on_screen };
-        let Some(pm) = images::mip(&asset.data, g.size.0, on_screen) else { return };
+        let Some(pm) = images::mip(&asset.data, asset.page, g.size.0, on_screen) else { return };
         let rect = Rect::new(0.0, 0.0, g.size.0, g.size.1);
         ctx.set_transform(f.view * xf * g.xf);
         let sx = g.size.0 / pm.width().max(1) as f64;
@@ -696,8 +696,13 @@ pub fn blend_mode(b: DcBlend) -> BlendMode {
 
 /// Decode encoded image bytes into a premultiplied pixmap.
 pub fn decode_pixmap(bytes: &[u8]) -> Option<Pixmap> {
+    decode_pixmap_page(bytes, 0)
+}
+
+/// [`decode_pixmap`] for page `page` of a PDF (other formats have one page).
+pub fn decode_pixmap_page(bytes: &[u8], page: u32) -> Option<Pixmap> {
     if is_pdf(bytes) {
-        return render_pdf_page(bytes, 0, 3000);
+        return render_pdf_page(bytes, page as usize, 3000);
     }
     if designcraft_images::is_svg(bytes) {
         let (px, w, h) = designcraft_images::render_svg(bytes, 3000)?;
@@ -933,6 +938,7 @@ mod tests {
         d.assets.insert(
             aid,
             Arc::new(designcraft_doc::Asset {
+                page: 0,
                 id: aid,
                 name: "red.png".into(),
                 mime: "image/png".into(),

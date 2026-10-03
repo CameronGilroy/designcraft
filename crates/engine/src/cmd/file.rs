@@ -77,7 +77,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Place…",
             ["File"],
             Some("Cmd+D"),
-            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?}",
+            "{path?|base64?, name?, frame?: id (place into), spread?, x?, y?, width?, pdfPage?: n (1-based, Image Import Options)} — places an image (into the selected empty frame if any); text files (.txt, .docx, .rtf, .md) go into the insertion point, the selected frame or a new frame on `page`/`rect` — {autoflow?: adds pages with threaded frames until the text fits, removeStyles?}",
             has_doc,
             file_place
         ),
@@ -203,7 +203,23 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
     if designcraft_textimport::is_text_file(&name) {
         return super::place_text::place_text(s, p, &name, &bytes);
     }
-    let (pw, ph) = designcraft_render::image_size(&bytes).ok_or_else(|| bad("file.place", "unsupported or corrupt image"))?;
+    // Image Import Options: which page of a PDF (1-based).
+    let pdf_page = match p.get("pdfPage").and_then(Value::as_u64) {
+        Some(n) if designcraft_render::is_pdf(&bytes) => {
+            let count = designcraft_render::pdf_page_count(&bytes).unwrap_or(1);
+            if n == 0 || n as usize > count {
+                return Err(bad("file.place", format!("the PDF has {count} page(s)")));
+            }
+            n as u32 - 1
+        }
+        _ => 0,
+    };
+    let (pw, ph) = match pdf_page {
+        0 => designcraft_render::image_size(&bytes).ok_or_else(|| bad("file.place", "unsupported or corrupt image"))?,
+        n => designcraft_render::pdf_page_size(&bytes, n as usize)
+            .map(|(w, h)| (w.round().max(1.0) as u32, h.round().max(1.0) as u32))
+            .ok_or_else(|| bad("file.place", "can't read that PDF page"))?,
+    };
     // 72 ppi by default unless the file says otherwise; scale so it fits the page when huge.
     let (nw, nh) = (pw as f64, ph as f64);
     let target_frame = super::id_param(p, "frame").or_else(|| {
@@ -218,7 +234,7 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit(|d, sel| {
         let aid = AssetId(d.alloc());
         let mime = designcraft_render::image_mime(&bytes).to_string();
-        d.assets.insert(aid, Arc::new(Asset { id: aid, name, mime, link, data: Arc::new(bytes), pixels: Some((pw, ph)) }));
+        d.assets.insert(aid, Arc::new(Asset { page: pdf_page, id: aid, name, mime, link, data: Arc::new(bytes), pixels: Some((pw, ph)) }));
         let (w, h) = match want_w {
             Some(w) => (w, w * nh / nw),
             None => {
@@ -316,8 +332,10 @@ fn place_load(s: &mut Session, p: &Value) -> Result<Value> {
     let aid = s.edit(|d, _| {
         let aid = AssetId(d.alloc());
         let mime = designcraft_render::image_mime(&bytes).to_string();
-        d.assets
-            .insert(aid, Arc::new(Asset { id: aid, name: name.clone(), mime, link: link.clone(), data: Arc::new(bytes), pixels: Some((pw, ph)) }));
+        d.assets.insert(
+            aid,
+            Arc::new(Asset { page: 0, id: aid, name: name.clone(), mime, link: link.clone(), data: Arc::new(bytes), pixels: Some((pw, ph)) }),
+        );
         Ok(aid)
     })?;
     s.loaded = Some((aid, (pw as f64, ph as f64)));

@@ -249,6 +249,13 @@ pub struct Asset {
     /// Pixel size for raster images.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pixels: Option<(u32, u32)>,
+    /// The page shown from a multi-page PDF (0-based; Image Import Options).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub page: u32,
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

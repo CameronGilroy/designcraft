@@ -558,6 +558,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "polygonSettings" => "Polygon Settings",
         "preferences" => "Preferences",
         "print" => "Print",
+        "pdfImport" => "Place PDF",
         "keyboardShortcuts" => "Keyboard Shortcuts",
         "colorPicker" => "Color Picker",
         id => match id.strip_prefix("cmd:").and_then(designcraft_engine::find_command) {
@@ -697,6 +698,13 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             "colorPicker" => color_picker(ui, &mut d),
             "preferences" => preferences(ui, &mut d),
             "print" => print_dialog(ui, &mut d),
+            "pdfImport" => {
+                ui.label(egui::RichText::new(d.s("path")).size(11.0));
+                ui.horizontal(|ui| {
+                    ui.label(format!("Page (1–{}):", d.n("pages").unwrap_or(1.0)));
+                    text_field(ui, &mut d, "page", 60.0);
+                });
+            }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
             "polygonSettings" => {
                 egui::Grid::new("poly").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
@@ -858,6 +866,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             let hex = d.s("hex");
             app.run("object.color", json!({"color": hex, "target": d.s("target")}))
         }
+        "pdfImport" => app.run("file.place", json!({"path": d.s("path"), "pdfPage": d.n("page").unwrap_or(1.0).max(1.0) as u64})),
         "print" => {
             let pages = if d.s("range") == "all" { Value::Null } else { json!(d.s("pages")) };
             let printer = d.s("printer");

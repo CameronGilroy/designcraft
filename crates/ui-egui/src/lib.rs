@@ -354,6 +354,17 @@ impl DesignApp {
         let cmd = if purpose == "place" { "file.place" } else { "file.open" };
         if let Some(pick) = self.services.pick_open.as_mut() {
             return match pick(purpose) {
+                // Image Import Options: a multi-page PDF asks which page.
+                Some(path) if purpose == "place" && path.to_ascii_lowercase().ends_with(".pdf") => {
+                    let pages =
+                        self.services.read.as_mut().and_then(|r| r(&path).ok()).and_then(|b| designcraft_render::pdf_page_count(&b)).unwrap_or(1);
+                    if pages > 1 {
+                        self.ui.dialog = Some(dialogs::Dialog::new("pdfImport", json!({"path": path, "page": "1", "pages": pages})));
+                        Ok(Value::Null)
+                    } else {
+                        self.run(cmd, json!({"path": path}))
+                    }
+                }
                 Some(path) => self.run(cmd, json!({"path": path})),
                 None => Ok(Value::Null),
             };

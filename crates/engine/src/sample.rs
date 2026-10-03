@@ -65,7 +65,10 @@ fn para_style(name: &str, based: Option<&str>, para: ParaAttrs, chars: CharAttrs
 fn image(d: &mut Document, name: &str, w: u32, h: u32, hue: f32) -> AssetId {
     let id = AssetId(d.alloc());
     let data = art_png(w, h, hue);
-    d.assets.insert(id, Arc::new(Asset { id, name: name.into(), mime: "image/png".into(), link: None, data: Arc::new(data), pixels: Some((w, h)) }));
+    d.assets.insert(
+        id,
+        Arc::new(Asset { page: 0, id, name: name.into(), mime: "image/png".into(), link: None, data: Arc::new(data), pixels: Some((w, h)) }),
+    );
     id
 }
 

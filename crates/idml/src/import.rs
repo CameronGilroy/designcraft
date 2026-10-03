@@ -1851,7 +1851,7 @@ impl<'r> Importer<'r> {
             uri.as_deref().and_then(|p| p.rsplit(['/', '\\']).next()).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| "image".into());
         let id = AssetId(self.alloc());
         let link_path = uri.filter(|p| p.contains('/') || p.contains('\\'));
-        self.assets.insert(id, Arc::new(Asset { id, name, mime, link: link_path, data: Arc::new(data), pixels }));
+        self.assets.insert(id, Arc::new(Asset { page: 0, id, name, mime, link: link_path, data: Arc::new(data), pixels }));
         Content::Graphic(designcraft_doc::Graphic { asset: id, size, xf: gxf * Affine::translate((l, t)), auto_fit: Default::default() })
     }
 

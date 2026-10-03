@@ -161,6 +161,7 @@ mod tests {
         d.assets.insert(
             aid,
             Arc::new(Asset {
+                page: 0,
                 id: aid,
                 name: "x.png".into(),
                 mime: "image/png".into(),
