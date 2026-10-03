@@ -28,6 +28,23 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     let run = |app: &mut DesignApp, id: &str, p: Value| {
         let _ = app.run(id, p);
     };
+    // Move the target row / column (InDesign drags them).
+    ui.horizontal(|ui| {
+        caption(ui, "Move");
+        let (nr, nc) = (rows.len(), cols.len());
+        for (label, id, from, to, ok) in [
+            ("Row ↑", "table.moveRow", r0, r0.saturating_sub(1), r0 > 0),
+            ("Row ↓", "table.moveRow", r0, r0 + 1, r0 + 1 < nr),
+            ("Col ←", "table.moveColumn", c0, c0.saturating_sub(1), c0 > 0),
+            ("Col →", "table.moveColumn", c0, c0 + 1, c0 + 1 < nc),
+        ] {
+            if ui.add_enabled(ok, egui::Button::new(label).small()).clicked()
+                && let Err(e) = app.run(id, json!({"from": from, "to": to}))
+            {
+                app.status(format!("Table: {e}"));
+            }
+        }
+    });
     // Table and cell styles: pick to apply, + to save the current look as a new style.
     if let Some(st) = app.session.active() {
         let styles = &st.doc.styles;

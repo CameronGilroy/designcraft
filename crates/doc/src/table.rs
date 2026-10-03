@@ -691,6 +691,44 @@ impl Table {
         }
     }
 
+    /// Move row `from` to position `to` (indices before the move). Refused when merged cells span
+    /// rows (the move would cut them).
+    pub fn move_row(&mut self, from: usize, to: usize) -> Result<(), String> {
+        let (nr, nc) = (self.nrows(), self.ncols());
+        if from >= nr || to >= nr {
+            return Err("no such row".into());
+        }
+        if self.regions().iter().any(|r| r.2 > 1) {
+            return Err("unmerge cells that span rows first".into());
+        }
+        let row = self.rows.remove(from);
+        self.rows.insert(to, row);
+        let cells: Vec<Cell> = self.cells.drain(from * nc..(from + 1) * nc).collect();
+        let at = to * nc;
+        for (k, c) in cells.into_iter().enumerate() {
+            self.cells.insert(at + k, c);
+        }
+        Ok(())
+    }
+
+    /// Move column `from` to position `to`. Refused when merged cells span columns.
+    pub fn move_col(&mut self, from: usize, to: usize) -> Result<(), String> {
+        let (nr, nc) = (self.nrows(), self.ncols());
+        if from >= nc || to >= nc {
+            return Err("no such column".into());
+        }
+        if self.regions().iter().any(|r| r.3 > 1) {
+            return Err("unmerge cells that span columns first".into());
+        }
+        let col = self.columns.remove(from);
+        self.columns.insert(to, col);
+        for r in 0..nr {
+            let c = self.cells.remove(r * nc + from);
+            self.cells.insert(r * nc + to, c);
+        }
+        Ok(())
+    }
+
     /// Mark the first `header` rows as header rows and the last `footer` rows as footer rows.
     pub fn set_header_footer(&mut self, header: usize, footer: usize) {
         let n = self.nrows();

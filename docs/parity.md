@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 92 | 4 | 1 | 97% |
-| P2 | 76 | 34 | 21 | 21 | 59% |
+| P2 | 76 | 34 | 22 | 20 | 59% |
 
 | Area | Parity |
 |---|---|
@@ -26,7 +26,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Type & text frames | 94% |
 | Typography | 98% |
 | Styles | 97% |
-| Tables | 92% |
+| Tables | 94% |
 | Long documents | 96% |
 | Interactivity & digital | 75% |
 | Output & production | 80% |
@@ -259,7 +259,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Tables | Tables spanning frames | P1 | D |
 | Tables | Sort table rows | P2 | D |
 | Tables | Excel import | P2 | D |
-| Tables | Drag to move rows/columns | P2 | M |
+| Tables | Drag to move rows/columns | P2 | P |
 | Long documents | Table of contents | P1 | D |
 | Long documents | Index | P2 | D |
 | Long documents | Books | P2 | D |

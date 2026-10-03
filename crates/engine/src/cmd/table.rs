@@ -113,6 +113,18 @@ fn table_specs() -> Vec<CommandSpec> {
         cmd!("table.delete", "Delete Table", ["Table", "Delete"], None, "{}", in_table, delete_table),
         cmd!("table.merge", "Merge Cells", ["Table"], None, "{} — merge the target cell range", in_table, merge),
         cmd!(
+            "table.moveRow",
+            "Move Row",
+            [],
+            None,
+            "{from?, to} (0-based; from defaults to the target row) — like dragging a row",
+            in_table,
+            |s, p| move_rc(s, p, true)
+        ),
+        cmd!("table.moveColumn", "Move Column", [], None, "{from?, to} (0-based; from defaults to the target column)", in_table, |s, p| move_rc(
+            s, p, false
+        )),
+        cmd!(
             "table.sortRows",
             "Sort",
             ["Table"],
@@ -1090,6 +1102,17 @@ mod style_tests {
     }
 }
 
+fn move_rc(s: &mut Session, p: &Value, rows: bool) -> Result<Value> {
+    const ID: &str = "table.move";
+    let g = target(s, p, ID)?;
+    let from = p.get("from").and_then(Value::as_u64).map_or(if rows { g.range.r0 } else { g.range.c0 }, |v| v as usize);
+    let to = p.get("to").and_then(Value::as_u64).ok_or_else(|| bad(ID, "`to` required"))? as usize;
+    edit_table(s, &g, ID, |t| {
+        if rows { t.move_row(from, to) } else { t.move_col(from, to) }.map_err(|e| bad(ID, e))?;
+        Ok(json!({"from": from, "to": to}))
+    })
+}
+
 fn sort_rows(s: &mut Session, p: &Value) -> Result<Value> {
     let g = target(s, p, "table.sortRows")?;
     let col = p.get("column").and_then(Value::as_u64).map_or(g.range.c0, |c| c as usize);
@@ -1157,5 +1180,26 @@ mod sort_tests {
         s.execute("table.splitVertically", &json!({"rows": [1, 1], "cols": [0, 0]})).unwrap();
         let r = s.execute("table.splitHorizontally", &json!({"rows": [0, 0], "cols": [1, 1]})).unwrap();
         assert_eq!((r["rows"].as_u64(), r["cols"].as_u64()), (Some(5), Some(3)));
+    }
+
+    #[test]
+    fn move_rows_and_columns() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 500, 400], "content": "text", "text": ""})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+        s.execute("table.insert", &json!({"rows": 3, "cols": 2})).unwrap();
+        for (r, c, t) in [(0, 0, "a"), (1, 0, "b"), (2, 0, "c"), (0, 1, "x")] {
+            s.execute("table.setCell", &json!({"rows": [r, r], "cols": [c, c], "text": t})).unwrap();
+        }
+        let cell = |s: &Session, r: usize, c: usize| {
+            let d = &s.doc().unwrap().doc;
+            let t = d.stories.values().flat_map(|st| st.tables.values()).next().unwrap();
+            t.cell(r, c).unwrap().text.text.clone()
+        };
+        s.execute("table.moveRow", &json!({"from": 0, "to": 2})).unwrap();
+        assert_eq!([cell(&s, 0, 0), cell(&s, 1, 0), cell(&s, 2, 0)], ["b", "c", "a"]);
+        s.execute("table.moveColumn", &json!({"from": 1, "to": 0})).unwrap();
+        assert_eq!((cell(&s, 2, 0), cell(&s, 2, 1)), ("x".to_string(), "a".to_string()));
     }
 }
