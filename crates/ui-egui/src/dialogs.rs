@@ -643,6 +643,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "polygonSettings" => "Polygon Settings",
         "userDictionary" => "User Dictionary",
         "newWorkspace" => "New Workspace",
+        "menus" => "Menu Customization",
         "importOptions" => "Import Options",
         "fittingOptions" => "Frame Fitting Options",
         "qrCode" => "Generate QR Code",
@@ -871,6 +872,19 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             }
             "keyboardShortcuts" => keyboard_shortcuts(app, ui, &mut d),
             "userDictionary" => user_dictionary(app, ui, &mut d),
+            "menus" => {
+                text_field(ui, &mut d, "query", 260.0);
+                let q = d.s("query").to_lowercase();
+                egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                    for (menu, label) in crate::menus::all_menu_items().into_iter().filter(|(m, l)| q.is_empty() || m.to_lowercase().contains(&q) || l.to_lowercase().contains(&q)) {
+                        let key = crate::menus::menu_key(&menu, &label);
+                        let mut visible = !app.ui.hidden_menu_items.contains(&key);
+                        if ui.checkbox(&mut visible, format!("{menu} › {label}")).changed() {
+                            let _ = app.run("window.hideMenuItem", json!({"item": key, "hidden": !visible}));
+                        }
+                    }
+                });
+            }
             "importOptions" => {
                 ui.label(egui::RichText::new(d.s("path")).size(10.5));
                 check(ui, &mut d, "removeStyles", "Remove Styles and Formatting from Text and Tables");

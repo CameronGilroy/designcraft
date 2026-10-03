@@ -24,6 +24,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.qrCode", "Generate QR Code…", None, "{} — the QR Code dialog (object.qrCode does the work)"),
     ("app.userDictionary", "User Dictionary…", None, "{} — hyphenation exceptions (hyphenation.* commands)"),
     ("app.fittingOptions", "Frame Fitting Options…", None, "{} — the dialog for object.fittingOptions"),
+    ("app.menus", "Menus…", None, "{} — show or hide menu items"),
+    ("window.hideMenuItem", "Hide Menu Item", None, "{item: \"Menu/Label\", hidden?: bool}"),
     ("app.placeAndLink", "Place and Link", None, "{} — a linked copy of the selected frame's story, beside it"),
     ("app.placeWithOptions", "Place with Import Options…", Some("Cmd+Shift+D"), "{} — Word/RTF style mapping before placing"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
@@ -167,6 +169,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "ui:app.palette",
             "ui:app.keyboardShortcuts",
+            "ui:app.menus",
             "ui:app.preferences",
         ],
     ),
@@ -593,6 +596,20 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "app.exportHtml" => export_bytes(app, p, "html", "file.exportHtml"),
         "app.exportXml" => export_bytes(app, p, "xml", "file.exportXml"),
         "app.printBooklet" => export_bytes(app, p, "pdf", "file.printBooklet"),
+        "app.menus" => {
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("menus", json!({"query": ""})));
+            Ok(Value::Null)
+        }
+        "window.hideMenuItem" => {
+            let Some(item) = p.get("item").and_then(Value::as_str) else { return Some(Err("missing item".into())) };
+            let hide = p.get("hidden").and_then(Value::as_bool).unwrap_or(true);
+            app.ui.hidden_menu_items.retain(|x| x != item);
+            if hide {
+                app.ui.hidden_menu_items.push(item.to_string());
+            }
+            app.ui.show_full_menus = false;
+            Ok(Value::Null)
+        }
         "app.placeAndLink" => {
             let target = app.session.active().and_then(|d| {
                 let id = *d.selection.items.first()?;
@@ -1362,20 +1379,37 @@ pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
     for (menu, entries) in menu_tree() {
         ui.menu_button(menu, |ui| {
             ui.set_min_width(240.0);
-            menu_items(app, ui, &entries);
+            let hidden = menu_items(app, ui, &entries, menu);
+            if hidden > 0 && !app.ui.show_full_menus {
+                ui.separator();
+                if ui.button("Show All Menu Items").clicked() {
+                    app.ui.show_full_menus = true;
+                }
+            }
         });
     }
 }
 
-fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item]) {
+/// The key a menu item is hidden by (Edit › Menus).
+pub fn menu_key(menu: &str, label: &str) -> String {
+    format!("{menu}/{label}")
+}
+
+/// Draws a menu's items; returns how many were hidden.
+fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item], path: &str) -> usize {
+    let mut hidden = 0;
     for it in items {
         match it {
             Item::Sep => {
                 ui.separator();
             }
             Item::Sub(name, children) => {
-                ui.menu_button(name, |ui| menu_items(app, ui, children));
+                let sub = format!("{path}/{name}");
+                ui.menu_button(name, |ui| {
+                    hidden += menu_items(app, ui, children, &sub);
+                });
             }
+            Item::Cmd { label, .. } if !app.ui.show_full_menus && app.ui.hidden_menu_items.contains(&menu_key(path, label)) => hidden += 1,
             Item::Cmd { label, id, params, shortcut: _ } => {
                 let text = match checked(app, id, params) {
                     Some(true) => format!("✓ {label}"),
@@ -1393,6 +1427,25 @@ fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item]) {
             }
         }
     }
+    hidden
+}
+
+/// Every menu item as (menu path, label), for Edit › Menus.
+pub fn all_menu_items() -> Vec<(String, String)> {
+    fn walk(items: &[Item], path: &str, out: &mut Vec<(String, String)>) {
+        for it in items {
+            match it {
+                Item::Sub(name, children) => walk(children, &format!("{path}/{name}"), out),
+                Item::Cmd { label, .. } => out.push((path.to_string(), label.clone())),
+                Item::Sep => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (menu, entries) in menu_tree() {
+        walk(&entries, menu, &mut out);
+    }
+    out
 }
 
 fn parse_shortcut(sc: &str) -> Option<(egui::Modifiers, egui::Key)> {
@@ -1673,5 +1726,18 @@ mod tests {
         run_ui(&mut app, "window.deleteWorkspace", &json!({"name": "Mine"})).unwrap().unwrap();
         assert!(app.ui.custom_workspaces.is_empty());
         assert_eq!(app.ui.workspace, "Essentials");
+    }
+
+    #[test]
+    fn hide_and_show_menu_items() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        let items = all_menu_items();
+        let (menu, label) = items.iter().find(|(m, _)| m == "Edit").cloned().expect("Edit items");
+        let key = menu_key(&menu, &label);
+        run_ui(&mut app, "window.hideMenuItem", &json!({"item": key})).unwrap().unwrap();
+        assert!(app.ui.hidden_menu_items.contains(&key));
+        run_ui(&mut app, "window.hideMenuItem", &json!({"item": key, "hidden": false})).unwrap().unwrap();
+        assert!(app.ui.hidden_menu_items.is_empty());
+        assert!(items.len() > 100, "every menu's items are listed: {}", items.len());
     }
 }

@@ -99,6 +99,9 @@ pub struct UiState {
     pub hidden_characters: bool,
     /// View › Structure › Show Tagged Frames.
     pub tagged_frames: bool,
+    /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
+    pub hidden_menu_items: Vec<String>,
+    pub show_full_menus: bool,
     /// View › Display Performance.
     pub display_quality: designcraft_render::DisplayQuality,
     /// Preferences › Interface › UI scaling (1 = 100%).
@@ -159,6 +162,8 @@ impl Default for UiState {
             text_threads: false,
             hidden_characters: false,
             tagged_frames: false,
+            hidden_menu_items: Vec::new(),
+            show_full_menus: false,
             display_quality: designcraft_render::DisplayQuality::High,
             ui_scale: 1.0,
             rich_black: false,
