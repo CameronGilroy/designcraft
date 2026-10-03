@@ -123,6 +123,24 @@ fn table_specs() -> Vec<CommandSpec> {
         ),
         cmd!("table.unmerge", "Unmerge Cells", ["Table"], None, "{}", in_table, unmerge),
         cmd!(
+            "table.splitHorizontally",
+            "Split Cell Horizontally",
+            ["Table"],
+            None,
+            "{} — the target cell becomes two, one above the other",
+            in_table,
+            |s, p| split(s, p, true)
+        ),
+        cmd!(
+            "table.splitVertically",
+            "Split Cell Vertically",
+            ["Table"],
+            None,
+            "{} — the target cell becomes two, side by side",
+            in_table,
+            |s, p| split(s, p, false)
+        ),
+        cmd!(
             "table.setCell",
             "Cell Options",
             [],
@@ -495,6 +513,14 @@ fn merge(s: &mut Session, p: &Value) -> Result<Value> {
         cell: Some(CellAddr { table: g.table, row: r.r0, col: r.c0 }),
     });
     ok()
+}
+
+fn split(s: &mut Session, p: &Value, horizontal: bool) -> Result<Value> {
+    let g = target(s, p, "table.split")?;
+    edit_table(s, &g, "table.split", |t| {
+        t.split_cell(g.range.r0, g.range.c0, horizontal);
+        Ok(json!({"rows": t.nrows(), "cols": t.ncols()}))
+    })
 }
 
 fn unmerge(s: &mut Session, p: &Value) -> Result<Value> {
@@ -1128,5 +1154,8 @@ mod sort_tests {
         assert_eq!(col(&s, 0), ["Name", "Apple", "fig", "pear"], "header stays; case-insensitive");
         s.execute("table.sortRows", &json!({"column": 1, "descending": true})).unwrap();
         assert_eq!(col(&s, 1), ["Qty", "100", "10", "9"], "numbers by value");
+        s.execute("table.splitVertically", &json!({"rows": [1, 1], "cols": [0, 0]})).unwrap();
+        let r = s.execute("table.splitHorizontally", &json!({"rows": [0, 0], "cols": [1, 1]})).unwrap();
+        assert_eq!((r["rows"].as_u64(), r["cols"].as_u64()), (Some(5), Some(3)));
     }
 }

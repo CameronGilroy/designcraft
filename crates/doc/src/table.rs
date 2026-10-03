@@ -602,6 +602,95 @@ impl Table {
         self.set_regions(&regions);
     }
 
+    /// Split the cell covering (r, c) in two: `horizontal` stacks the halves (Split Cell
+    /// Horizontally), otherwise side by side. A merged cell splits its span; a single cell gets a
+    /// new row (column) that the cells beside it span, the row height (column width) shared.
+    pub fn split_cell(&mut self, r: usize, c: usize, horizontal: bool) {
+        if r >= self.nrows() || c >= self.ncols() {
+            return;
+        }
+        let (or, oc) = self.owner(r, c);
+        let (rs, cs) = self.cell(or, oc).map_or((1, 1), |x| (x.row_span as usize, x.col_span as usize));
+        let mut regions: Vec<_> = self.regions().into_iter().filter(|&(rr, cc, _, _)| (rr, cc) != (or, oc)).collect();
+        let span = if horizontal { rs } else { cs };
+        if span > 1 {
+            let a = span.div_ceil(2);
+            if horizontal {
+                regions.push((or, oc, a, cs));
+                regions.push((or + a, oc, rs - a, cs));
+            } else {
+                regions.push((or, oc, rs, a));
+                regions.push((or, oc + a, rs, cs - a));
+            }
+            self.set_regions(&regions);
+            return;
+        }
+        if horizontal {
+            let h = self.rows[or].height;
+            self.insert_rows(or + 1, 1);
+            self.rows[or].height = h / 2.0;
+            self.rows[or + 1].height = h / 2.0;
+            // insert_rows doesn't grow regions that end at the split row; everything else on it
+            // spans the new row now.
+            let mut regions: Vec<_> = self.regions();
+            let (nr, nc) = (self.nrows(), self.ncols());
+            let mut covered = vec![false; nr * nc];
+            for &(rr, cc, rrs, ccs) in &regions {
+                for y in rr..rr + rrs {
+                    for x in cc..cc + ccs {
+                        covered[y * nc + x] = true;
+                    }
+                }
+            }
+            for reg in regions.iter_mut() {
+                let (rr, cc, rrs, ccs) = *reg;
+                if rr + rrs == or + 1 && !(cc <= oc && oc < cc + ccs) {
+                    *reg = (rr, cc, rrs + 1, ccs);
+                }
+            }
+            for x in 0..nc {
+                if (oc..oc + cs).contains(&x) || covered[or * nc + x] {
+                    continue;
+                }
+                regions.push((or, x, 2, 1));
+            }
+            if cs > 1 {
+                regions.push((or + 1, oc, 1, cs));
+            }
+            self.set_regions(&regions);
+        } else {
+            let w = self.columns[oc].width;
+            self.insert_cols(oc + 1, 1, w / 2.0);
+            self.columns[oc].width = w / 2.0;
+            let mut regions: Vec<_> = self.regions();
+            let (nr, nc) = (self.nrows(), self.ncols());
+            let mut covered = vec![false; nr * nc];
+            for &(rr, cc, rrs, ccs) in &regions {
+                for y in rr..rr + rrs {
+                    for x in cc..cc + ccs {
+                        covered[y * nc + x] = true;
+                    }
+                }
+            }
+            for reg in regions.iter_mut() {
+                let (rr, cc, rrs, ccs) = *reg;
+                if cc + ccs == oc + 1 && !(rr <= or && or < rr + rrs) {
+                    *reg = (rr, cc, rrs, ccs + 1);
+                }
+            }
+            for y in 0..nr {
+                if (or..or + rs).contains(&y) || covered[y * nc + oc] {
+                    continue;
+                }
+                regions.push((y, oc, 1, 2));
+            }
+            if rs > 1 {
+                regions.push((or, oc + 1, rs, 1));
+            }
+            self.set_regions(&regions);
+        }
+    }
+
     /// Mark the first `header` rows as header rows and the last `footer` rows as footer rows.
     pub fn set_header_footer(&mut self, header: usize, footer: usize) {
         let n = self.nrows();
@@ -969,5 +1058,32 @@ mod tests {
         let old = r#"{"id":1,"text":"a","paras":[{"style":"[Basic Paragraph]"}],"chars":[{"len":1,"style":"[None]"}],"frames":[]}"#;
         let st: Story = serde_json::from_str(old).unwrap();
         assert!(st.tables.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+
+    #[test]
+    fn split_single_and_merged_cells() {
+        let mut t = Table::new(1, 2, 2, 0, 0, 100.0);
+        t.split_cell(0, 0, true);
+        assert_eq!((t.nrows(), t.ncols()), (3, 2));
+        // The cell beside the split one spans both new rows.
+        assert_eq!(t.cell(0, 1).unwrap().row_span, 2);
+        assert_eq!(t.owner(1, 1), (0, 1));
+        assert_eq!(t.owner(1, 0), (1, 0), "the new half is its own cell");
+        t.split_cell(2, 1, false);
+        assert_eq!(t.ncols(), 3);
+        assert_eq!(t.cell(0, 0).unwrap().col_span, 1);
+        assert_eq!(t.owner(2, 2), (2, 2));
+        assert_eq!(t.owner(0, 2), (0, 1), "the merged cell above widens");
+        // A merged cell splits its own span instead of adding rows.
+        let mut m = Table::new(1, 4, 1, 0, 0, 100.0);
+        m.merge(CellRange { r0: 0, c0: 0, r1: 3, c1: 0 }).unwrap();
+        m.split_cell(0, 0, true);
+        assert_eq!(m.nrows(), 4);
+        assert_eq!((m.cell(0, 0).unwrap().row_span, m.cell(2, 0).unwrap().row_span), (2, 2));
     }
 }

@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 68 | 27 | 2 | 84% |
+| P1 | 97 | 71 | 24 | 2 | 86% |
 | P2 | 76 | 12 | 13 | 51 | 24% |
 
 | Area | Parity |
@@ -18,7 +18,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Application shell & workspace | 80% |
 | Documents, pages, spreads | 84% |
 | Layers | 95% |
-| Frames, shapes & paths | 88% |
+| Frames, shapes & paths | 90% |
 | Transform | 100% |
 | Fill, stroke, colour | 86% |
 | Effects & transparency | 62% |
@@ -26,7 +26,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Type & text frames | 88% |
 | Typography | 87% |
 | Styles | 92% |
-| Tables | 85% |
+| Tables | 88% |
 | Long documents | 79% |
 | Interactivity & digital | 35% |
 | Output & production | 70% |
@@ -102,7 +102,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Frames, shapes & paths | Pencil, Smooth, Erase | P1 | D |
 | Frames, shapes & paths | Scissors | P1 | D |
 | Frames, shapes & paths | Content type | P0 | D |
-| Frames, shapes & paths | Convert Shape | P1 | P |
+| Frames, shapes & paths | Convert Shape | P1 | D |
 | Frames, shapes & paths | Corner Options | P0 | D |
 | Frames, shapes & paths | Pathfinder | P1 | D |
 | Frames, shapes & paths | Compound paths | P1 | D |
@@ -122,7 +122,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Frames, shapes & paths | Group/Ungroup | P0 | D |
 | Frames, shapes & paths | Lock / Unlock All on Spread | P0 | D |
 | Frames, shapes & paths | Hide / Show All on Spread | P1 | D |
-| Frames, shapes & paths | Select submenu | P1 | P |
+| Frames, shapes & paths | Select submenu | P1 | D |
 | Frames, shapes & paths | Select All / Deselect All | P0 | D |
 | Frames, shapes & paths | Duplicate | P0 | D |
 | Frames, shapes & paths | Paste Into / Paste in Place | P0 | D |
@@ -248,7 +248,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Tables | Create / Insert Table | P1 | D |
 | Tables | Convert Text to Table / Table to Text | P1 | D |
 | Tables | Rows/columns insert/delete/resize/distribute | P1 | D |
-| Tables | Merge/Unmerge/Split cells | P1 | P |
+| Tables | Merge/Unmerge/Split cells | P1 | D |
 | Tables | Header/footer rows | P1 | D |
 | Tables | Table options | P1 | D |
 | Tables | Cell options | P1 | D |

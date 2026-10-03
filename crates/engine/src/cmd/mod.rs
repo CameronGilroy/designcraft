@@ -27,6 +27,7 @@ mod place_text;
 pub mod preflight;
 mod prefs;
 mod print;
+mod select;
 pub mod spelling;
 mod style;
 pub mod table;
@@ -136,6 +137,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(captions::specs());
         v.extend(lists::specs());
         v.extend(path_type::specs());
+        v.extend(select::specs());
         v.extend(package::specs());
         v.extend(print::specs());
         v.extend(text::specs());

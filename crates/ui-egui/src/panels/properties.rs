@@ -754,11 +754,21 @@ fn arrange_menu(app: &mut DesignApp, resp: &egui::Response) {
 
 fn convert_shape_menu(app: &mut DesignApp, resp: &egui::Response) {
     egui::Popup::menu(resp).show(|ui| {
-        for (label, shape) in
-            [("Rectangle", "none"), ("Rounded Rectangle", "rounded"), ("Beveled Rectangle", "bevel"), ("Inverse Rounded Rectangle", "inverseRounded")]
-        {
+        for (label, to) in [
+            ("Rectangle", "rectangle"),
+            ("Rounded Rectangle", "roundedRectangle"),
+            ("Beveled Rectangle", "beveledRectangle"),
+            ("Inverse Rounded Rectangle", "inverseRoundedRectangle"),
+            ("Ellipse", "ellipse"),
+            ("Triangle", "triangle"),
+            ("Polygon", "polygon"),
+            ("Line", "line"),
+            ("Orthogonal Line", "orthogonalLine"),
+        ] {
             if ui.button(label).clicked() {
-                let _ = app.run("object.cornerOptions", json!({"shape": shape, "size": 12.0}));
+                if let Err(e) = app.run("object.convertShape", json!({"to": to})) {
+                    app.status(format!("Convert Shape: {e}"));
+                }
                 ui.close();
             }
         }
