@@ -28,7 +28,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Preferences",
             [],
             None,
-            "{showHiddenCharacters?, typographersQuotes?, polygonSides?, starInset?, scaleStrokes?, dimensionsIncludeStroke?, transformationsAreTotals?, absolutePageNumbers?} → all application preferences",
+            "{showHiddenCharacters?, typographersQuotes?, polygonSides?, starInset?, scaleStrokes?, dimensionsIncludeStroke?, transformationsAreTotals?, absolutePageNumbers?, highlightHj?, highlightKeeps?, highlightCustomTracking?, highlightSubstitutedFonts?} → all application preferences",
             super::always,
             |s, p| {
                 let cur = serde_json::to_value(&s.prefs).map_err(|e| bad("prefs.set", e.to_string()))?;
@@ -162,5 +162,68 @@ mod advanced_type_idml_tests {
         let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&s.doc().unwrap().doc)).unwrap();
         assert_eq!(back.settings.advanced_type.subscript_position, 12.5);
         assert_eq!(back.settings.advanced_type.superscript_size, 58.3);
+    }
+}
+
+#[cfg(test)]
+mod highlight_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn hj_violations_and_custom_tracking_are_highlighted_on_screen() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        // A narrow justified column of long words: loose lines.
+        let r = s
+            .execute("frame.create", &json!({"rect": [72, 72, 172, 400], "content": "text", "text": "Incomprehensibilities notwithstanding characteristically uncharacteristically a b"}))
+            .unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 3})).unwrap();
+        s.execute("type.para", &json!({"align": "fullyJustified"})).unwrap();
+        s.execute("type.char", &json!({"tracking": 50})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        let d = s.doc().unwrap().doc.clone();
+        let cs = s.cache.get(&d, sid, None);
+        assert!(cs.frames[0].lines.iter().any(|l| l.hj > 0), "some line breaks the word-spacing limits");
+        assert!(cs.styles.iter().any(|st| st.custom_tracking));
+        let render = |hj: bool, tr: bool| {
+            let mut r = designcraft_render::Renderer::new();
+            r.threads = 0;
+            let o = designcraft_render::RenderOptions { highlight_hj: hj, highlight_custom_tracking: tr, ..Default::default() };
+            r.render_page(&d, &s.cache, 0, 1.0, false, &o).unwrap()
+        };
+        let plain = render(false, false);
+        let lit = render(true, true);
+        let count = |img: &designcraft_render::Rendered, pred: &dyn Fn([u8; 4]) -> bool| {
+            (72..172).flat_map(|x| (72..400).map(move |y| (x, y))).filter(|&(x, y)| pred(img.pixel(x, y))).count()
+        };
+        let yellow = |p: [u8; 4]| p[0] > 240 && p[1] > 200 && p[2] < 190;
+        let green = |p: [u8; 4]| p[1] > 220 && p[0] < 200 && p[2] < 200;
+        assert_eq!(count(&plain, &yellow), 0);
+        assert!(count(&lit, &yellow) > 50, "H&J shading");
+        assert!(count(&lit, &green) > 10, "custom tracking shading");
+    }
+}
+
+#[cfg(test)]
+mod keep_highlight_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn unkeepable_paragraph_is_flagged() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let text = "word ".repeat(120);
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 160], "content": "text", "text": text, "caret": false})).unwrap();
+        s.execute("object.textFrameOptions", &json!({"ids": [r["id"]], "columns": 2})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        let flagged = |s: &Session| s.cache.get(&s.doc().unwrap().doc, sid, None).frames[0].lines.iter().any(|l| l.keep_violation);
+        assert!(!flagged(&s), "no keep options, no violation");
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+        s.execute("type.para", &json!({"keepLinesTogether": true, "keepAllLines": true})).unwrap();
+        assert!(flagged(&s), "too long to keep together in one column");
     }
 }

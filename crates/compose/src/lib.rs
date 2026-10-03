@@ -54,6 +54,8 @@ pub struct RunStyle {
     pub size: f64,
     /// The run's font isn't installed (shown in a substitute; highlighted on screen).
     pub missing_font: bool,
+    /// Tracking or manual kerning (Highlight Custom Tracking/Kerning).
+    pub custom_tracking: bool,
 }
 
 /// An underline or strikethrough bar: its top edge `offset` below the baseline (negative =
@@ -115,6 +117,11 @@ pub struct Line {
     pub end_x: f64,
     /// Word-space ratio actually used vs desired (H&J violation highlighting), 1.0 = desired.
     pub spacing: f64,
+    /// H&J violation: 0 = within the paragraph's minimum/maximum word spacing, 1–3 = how far out
+    /// (Preferences › Composition › Highlight H&J Violations shades).
+    pub hj: u8,
+    /// The paragraph's Keep Options couldn't be honoured here (Highlight Keep Violations).
+    pub keep_violation: bool,
 }
 
 /// A paragraph rule or shading rectangle in frame inner space.
@@ -681,6 +688,8 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                     last_in_para: last,
                     end_x,
                     spacing: ratio,
+                    hj: hj_severity(ratio, pp.word_space_min, pp.word_space_max),
+                    keep_violation: false,
                 });
                 for k in line_notes {
                     notes.place(doc, k, cur.fi, cur.col, col_w, f, opts);
@@ -828,7 +837,53 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         }
     }
     out.styles = styles_tab;
+    mark_keep_violations(doc, story, &mut out);
     out
+}
+
+/// Flag the lines of paragraphs whose Keep Options the layout couldn't honour: lines kept
+/// together that split, too few lines at the bottom (orphans) or top (widows) of a column, or a
+/// keep-with-next paragraph separated from the next one.
+fn mark_keep_violations(doc: &Document, story: &Story, out: &mut ComposedStory) {
+    // Per paragraph, the columns its lines sit in: ((frame, column), line count) in order.
+    let mut cols: HashMap<usize, Vec<((usize, u32), usize)>> = HashMap::new();
+    for (fi, ft) in out.frames.iter().enumerate() {
+        for l in &ft.lines {
+            let v = cols.entry(l.para).or_default();
+            match v.last_mut() {
+                Some((c, n)) if *c == (fi, l.column) => *n += 1,
+                _ => v.push(((fi, l.column), 1)),
+            }
+        }
+    }
+    let mut bad: Vec<usize> = Vec::new();
+    for (&pi, v) in &cols {
+        let Some(pf) = story.paras.get(pi) else { continue };
+        let (pp, _) = doc.styles.resolve_para(pf);
+        if pp.keep_lines_together && v.len() > 1 {
+            let (first, last) = (v[0].1, v[v.len() - 1].1);
+            if pp.keep_all_lines || first < pp.keep_first.max(1) as usize || last < pp.keep_last.max(1) as usize {
+                bad.push(pi);
+                continue;
+            }
+        }
+        if pp.keep_with_next > 0
+            && let (Some(end), Some(next)) = (v.last(), cols.get(&(pi + 1)))
+            && next.first().is_some_and(|(c, n)| *c != end.0 || (*n < pp.keep_with_next as usize && next.len() > 1))
+        {
+            bad.push(pi);
+        }
+    }
+    if bad.is_empty() {
+        return;
+    }
+    for ft in &mut out.frames {
+        for l in &mut ft.lines {
+            if bad.contains(&l.para) {
+                l.keep_violation = true;
+            }
+        }
+    }
 }
 
 /// Breaker parameters from the paragraph's settings.
@@ -1141,6 +1196,25 @@ fn estimate_slots(f: &FrameSpec, col: Rect, first: f64, lead: f64, size: f64, gl
         b += lead;
     }
     v
+}
+
+/// How far a line's word spacing falls outside `[min, max]` (ratios of the space width): 0 inside,
+/// then 1–3 for up to 10%, 25% and beyond.
+pub fn hj_severity(ratio: f64, min: f64, max: f64) -> u8 {
+    let r = if ratio > max + 1e-6 {
+        ratio / max.max(1e-6)
+    } else if ratio < min - 1e-6 {
+        min / ratio.max(1e-6)
+    } else {
+        return 0;
+    };
+    if r < 1.1 {
+        1
+    } else if r < 1.25 {
+        2
+    } else {
+        3
+    }
 }
 
 /// Position glyphs `s..e` within `[x0, x1]`; returns (glyphs, end x, word-space ratio).

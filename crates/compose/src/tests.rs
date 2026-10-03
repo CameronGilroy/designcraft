@@ -787,3 +787,13 @@ fn footnote_line_at_column_top_still_sets() {
     assert!(!cs.frames[0].lines.is_empty());
     assert_eq!(cs.frames[0].notes.len(), 1);
 }
+
+#[test]
+fn hj_severity_shades() {
+    use crate::hj_severity;
+    assert_eq!(hj_severity(1.0, 0.8, 1.33), 0);
+    assert_eq!(hj_severity(1.4, 0.8, 1.33), 1);
+    assert_eq!(hj_severity(1.6, 0.8, 1.33), 2);
+    assert_eq!(hj_severity(2.5, 0.8, 1.33), 3);
+    assert_eq!(hj_severity(0.6, 0.8, 1.33), 3);
+}

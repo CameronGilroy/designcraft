@@ -138,6 +138,12 @@ pub struct Prefs {
     /// Preferences › General › Page Numbering View: Absolute (1, 2, 3… from the first page) instead
     /// of section numbering (the page names, e.g. "iv", "A-3").
     pub absolute_page_numbers: bool,
+    /// Preferences › Composition › Highlight: H&J violations, custom tracking/kerning, substituted
+    /// fonts (screen only).
+    pub highlight_hj: bool,
+    pub highlight_keeps: bool,
+    pub highlight_custom_tracking: bool,
+    pub highlight_substituted_fonts: bool,
     /// Preferences › Type › Smart Text Reflow: pages follow the primary text frame's story
     /// (added while it oversets, empty ones at the end removed).
     pub smart_text_reflow: bool,
@@ -154,6 +160,10 @@ impl Default for Prefs {
             dimensions_include_stroke: true,
             transformations_are_totals: true,
             absolute_page_numbers: false,
+            highlight_hj: false,
+            highlight_keeps: false,
+            highlight_custom_tracking: false,
+            highlight_substituted_fonts: true,
             smart_text_reflow: true,
         }
     }

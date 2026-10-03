@@ -125,6 +125,7 @@ impl StyleTable<'_> {
                 .missing
                 .entry(p.font_family.clone())
                 .or_insert_with(|| !p.font_family.is_empty() && !designcraft_fonts::FontDb::global().has_family(&p.font_family)),
+            custom_tracking: p.tracking.abs() > 1e-9 || matches!(p.kerning, designcraft_doc::Kerning::Manual(_)),
         };
         if let Some(i) = self.styles.iter().rposition(|s| *s == rs) {
             return i as u32;

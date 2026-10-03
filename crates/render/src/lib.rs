@@ -100,6 +100,11 @@ pub struct RenderOptions {
     pub page_shadow: bool,
     /// Pink highlight behind text set in fonts that aren't installed (screen view).
     pub highlight_missing_fonts: bool,
+    /// Preferences › Composition: yellow behind lines whose word spacing breaks the paragraph's
+    /// limits (darker = worse), green behind text with custom tracking or kerning (screen view).
+    pub highlight_hj: bool,
+    pub highlight_keeps: bool,
+    pub highlight_custom_tracking: bool,
     /// View › Display Performance.
     pub quality: DisplayQuality,
     /// Preferences › Appearance of Black: show 100% K as rich (pure) black instead of the
@@ -132,6 +137,9 @@ impl Default for RenderOptions {
             greek_below_px: 0.0,
             page_shadow: false,
             highlight_missing_fonts: false,
+            highlight_hj: false,
+            highlight_keeps: false,
+            highlight_custom_tracking: false,
             quality: DisplayQuality::High,
             rich_black: false,
             overprint_preview: false,

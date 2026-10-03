@@ -205,6 +205,30 @@ impl Renderer {
                 }
             }
         }
+        if f.opts.highlight_keeps && ft.lines.iter().any(|l| l.keep_violation) {
+            ctx.set_transform(m);
+            ctx.set_paint(peniko::Color::from_rgb8(255, 236, 120));
+            for l in ft.lines.iter().filter(|l| l.keep_violation) {
+                ctx.fill_rect(&kurbo::Rect::new(l.x0, l.baseline - l.ascent, l.x1, l.baseline + l.descent));
+            }
+        }
+        if f.opts.highlight_hj && ft.lines.iter().any(|l| l.hj > 0) {
+            ctx.set_transform(m);
+            for l in ft.lines.iter().filter(|l| l.hj > 0) {
+                let shade = [0u8, 0xF6, 0xEA, 0xD8][l.hj.min(3) as usize];
+                ctx.set_paint(peniko::Color::from_rgb8(255, shade, [0u8, 0xB0, 0x70, 0x30][l.hj.min(3) as usize]));
+                ctx.fill_rect(&kurbo::Rect::new(l.x0, l.baseline - l.ascent, l.end_x.max(l.x0 + 1.0), l.baseline + l.descent));
+            }
+        }
+        if f.opts.highlight_custom_tracking && cs.styles.iter().any(|s| s.custom_tracking) {
+            ctx.set_transform(m);
+            ctx.set_paint(peniko::Color::from_rgb8(176, 236, 176));
+            for l in &ft.lines {
+                for g in l.glyphs.iter().filter(|g| g.adv > 0.0 && cs.styles.get(g.style as usize).is_some_and(|s| s.custom_tracking)) {
+                    ctx.fill_rect(&kurbo::Rect::new(g.x, l.baseline - l.ascent, g.x + g.adv, l.baseline + l.descent));
+                }
+            }
+        }
         let scale = m.determinant().abs().sqrt();
         let greek_px = f.opts.greek_below_px;
         let mut greek = BezPath::new();

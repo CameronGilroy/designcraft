@@ -404,6 +404,8 @@ fn emit(
         last_in_para: last,
         end_x: right,
         spacing: 1.0,
+        hj: 0,
+        keep_violation: false,
     });
     ft.tables.push(TableFrag {
         table: table.id,

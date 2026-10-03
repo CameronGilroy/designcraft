@@ -340,6 +340,7 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
             ("interface", "Interface"),
             ("type", "Type"),
             ("advancedType", "Advanced Type"),
+            ("composition", "Composition"),
             ("units", "Units & Increments"),
             ("grids", "Grids"),
             ("guides", "Guides & Pasteboard"),
@@ -347,7 +348,7 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
             ("black", "Appearance of Black"),
         ]
     } else {
-        &[("general", "General"), ("interface", "Interface"), ("type", "Type"), ("display", "Display Performance")]
+        &[("general", "General"), ("interface", "Interface"), ("type", "Type"), ("composition", "Composition"), ("display", "Display Performance")]
     };
     let cur = d.s("section");
     ui.horizontal_top(|ui| {
@@ -372,6 +373,13 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new("Smart Text Reflow").font(semibold(12.0)));
                     check(ui, d, "smartTextReflow", "Add and remove pages as the primary text frame's story grows and shrinks");
+                }
+                "composition" => {
+                    ui.label(egui::RichText::new("Highlight").font(semibold(12.0)));
+                    check(ui, d, "highlightKeeps", "Keep Violations");
+                    check(ui, d, "highlightHj", "H&J Violations");
+                    check(ui, d, "highlightCustomTracking", "Custom Tracking/Kerning");
+                    check(ui, d, "highlightSubstitutedFonts", "Substituted Fonts");
                 }
                 "advancedType" => {
                     ui.label(egui::RichText::new("Character Settings").font(semibold(12.0)));
@@ -916,8 +924,10 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "preferences" => {
             app.run(
                 "prefs.set",
-                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
+                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "highlightHj": d.b("highlightHj"), "highlightKeeps": d.b("highlightKeeps"), "highlightCustomTracking": d.b("highlightCustomTracking"), "highlightSubstitutedFonts": d.b("highlightSubstitutedFonts"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
             )?;
+            // Highlight options change the screen view only.
+            app.canvas.shown = None;
             let view = match d.s("displayQuality").as_str() {
                 "fast" => "view.fastDisplay",
                 "typical" => "view.typicalDisplay",
