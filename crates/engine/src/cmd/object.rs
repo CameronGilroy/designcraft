@@ -438,6 +438,15 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "object.clippingPath",
+            "Clipping Path…",
+            ["Object", "Clipping Path"],
+            None,
+            "{type?: alpha|edges (default alpha), threshold?: 0–255 (alpha: opaque above; edges: darker than 255 − threshold counts; default 25), tolerance?: px (2), ids?} — traces the placed graphic and makes the outline the frame (Convert Clipping Path to Frame)",
+            has_selection,
+            clipping_path
+        ),
+        cmd!(
             "object.primaryTextFrame",
             "Primary Text Frame",
             ["Object"],
@@ -1249,6 +1258,80 @@ fn text_frame_options(s: &mut Session, p: &Value) -> Result<Value> {
     })
 }
 
+/// Clipping Path: trace the graphic (its alpha channel, or edges against a white background) and
+/// give the frame that outline.
+fn clipping_path(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "object.clippingPath";
+    let ids = targets(s, p)?;
+    let edges = match str_param(p, "type").unwrap_or("alpha") {
+        "alpha" => false,
+        "edges" => true,
+        t => return Err(bad(ID, format!("unknown type `{t}` (alpha, edges)"))),
+    };
+    let threshold = p.get("threshold").and_then(Value::as_f64).unwrap_or(25.0).clamp(0.0, 255.0);
+    let tol = p.get("tolerance").and_then(Value::as_f64).unwrap_or(2.0).max(0.1);
+    // Trace each graphic (outside the edit: decoding is the slow part).
+    let mut paths: Vec<(ItemId, designcraft_geom::PathData)> = Vec::new();
+    {
+        let d = &s.doc()?.doc;
+        for id in &ids {
+            let Some(it) = d.item(*id) else { continue };
+            let Some(g) = it.graphic() else { continue };
+            let Some(asset) = d.assets.get(&g.asset) else { continue };
+            let Some(px) = designcraft_render::decode_pixmap_page(&asset.data, asset.page) else { continue };
+            let (pw, ph) = (px.width() as usize, px.height() as usize);
+            // A grid of at most 400 cells on the long side.
+            let step = (pw.max(ph) as f64 / 400.0).max(1.0);
+            let (w, h) = (((pw as f64) / step).ceil() as usize, ((ph as f64) / step).ceil() as usize);
+            let mask: Vec<bool> = (0..w * h)
+                .map(|i| {
+                    let (x, y) = (((i % w) as f64 * step) as u16, ((i / w) as f64 * step) as u16);
+                    let c = px.sample(x.min(pw as u16 - 1), y.min(ph as u16 - 1));
+                    if edges {
+                        // Un-premultiply over white: anything darker than the threshold is inside.
+                        let a = c.a as f64 / 255.0;
+                        let lum = (0.299 * c.r as f64 + 0.587 * c.g as f64 + 0.114 * c.b as f64) + 255.0 * (1.0 - a);
+                        lum < 255.0 - threshold
+                    } else {
+                        c.a as f64 > threshold
+                    }
+                })
+                .collect();
+            // The tolerance is in image pixels; the grid cells are `step` pixels.
+            let rings = designcraft_geom::trace::trace(&mask, w, h, tol / step, 4.0);
+            if rings.is_empty() {
+                return Err(bad(ID, "nothing to trace (the image is empty at this threshold)"));
+            }
+            let (sx, sy) = (g.size.0 / w as f64, g.size.1 / h as f64);
+            let subpaths = rings
+                .into_iter()
+                .map(|r| {
+                    let pts: Vec<Point> = r.into_iter().map(|q| g.xf * Point::new(q.x * sx, q.y * sy)).collect();
+                    designcraft_geom::path::SubPath::polyline(&pts, true)
+                })
+                .collect();
+            paths.push((*id, designcraft_geom::PathData::new(subpaths)));
+        }
+    }
+    if paths.is_empty() {
+        return Err(bad(ID, "select a frame with a placed graphic"));
+    }
+    s.edit(|d, _| {
+        let n = paths.len();
+        for (id, path) in paths {
+            if let Some(it) = d.item_mut(id) {
+                it.path = path;
+                it.shape = Shape::Path;
+                it.corners = Default::default();
+                if let Content::Graphic(g) = &mut it.content {
+                    g.auto_fit = designcraft_doc::Fitting::None;
+                }
+            }
+        }
+        Ok(json!({"changed": n}))
+    })
+}
+
 fn fitting_mode(s: &str) -> Option<designcraft_doc::Fitting> {
     use designcraft_doc::Fitting as F;
     Some(match s {
@@ -1865,5 +1948,36 @@ mod primary_frame_tests {
         assert_eq!(s.doc().unwrap().doc.settings.primary_story, None, "toggles off");
         let g = s.execute("frame.create", &json!({"rect": [0, 0, 10, 10]})).unwrap()["id"].clone();
         assert!(s.execute("object.primaryTextFrame", &json!({"ids": [g]})).is_err());
+    }
+}
+
+#[cfg(test)]
+mod clipping_tests {
+    use super::*;
+
+    #[test]
+    fn clipping_path_from_alpha_traces_the_shape() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        // 40×40 image: an opaque disc on transparency.
+        let mut px = vec![0u8; 40 * 40 * 4];
+        for y in 0..40 {
+            for x in 0..40 {
+                let (dx, dy) = (x as f64 + 0.5 - 20.0, y as f64 + 0.5 - 20.0);
+                if (dx * dx + dy * dy).sqrt() < 15.0 {
+                    px[(y * 40 + x) * 4..(y * 40 + x) * 4 + 4].copy_from_slice(&[200, 0, 0, 255]);
+                }
+            }
+        }
+        let png = designcraft_render::Rendered { width: 40, height: 40, pixels: px }.to_png();
+        let f = s.execute("frame.create", &json!({"rect": [100, 100, 140, 140]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("file.place", &json!({"base64": super::super::file::base64_encode(&png), "name": "disc.png", "frame": f})).unwrap();
+        s.execute("object.clippingPath", &json!({"ids": [f], "tolerance": 0.5})).unwrap();
+        let it = s.doc().unwrap().doc.item(ItemId(f)).unwrap().clone();
+        let b = it.bounds();
+        // The disc spans 5..35 of the 40 px image placed at 100..140.
+        assert!((b.x0 - 105.0).abs() < 1.5 && (b.x1 - 135.0).abs() < 1.5, "{b:?}");
+        assert_eq!(it.shape, Shape::Path);
+        assert!(s.execute("object.clippingPath", &json!({"ids": [f], "threshold": 255})).is_err());
     }
 }
