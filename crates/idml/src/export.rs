@@ -659,7 +659,7 @@ impl<'a> Ex<'a> {
                 .attr("DocumentSlugUniformSize", bool_s(s.slug.iter().all(|b| *b == s.slug[0])))
                 .attr("PreserveLayoutWhenShuffling", "true")
                 .attr("AllowPageShuffle", "true")
-                .attr("OverprintBlack", "true")
+                .attr("OverprintBlack", bool_s(s.overprint_black))
                 .attr("PageBinding", "LeftToRight")
                 .attr("ColumnDirection", "Horizontal")
                 .attr(

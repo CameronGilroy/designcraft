@@ -671,6 +671,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             if app.session.active().is_some() {
                 let doc = app.session.execute("document.preferences", &json!({})).unwrap_or_default();
                 f["horizontalUnits"] = doc["horizontalUnits"].clone();
+                f["overprintBlack"] = doc["overprintBlack"].clone();
                 for k in ["superscriptSize", "superscriptPosition", "subscriptSize", "subscriptPosition"] {
                     f[format!("adv.{k}")] = json!(format!("{}", doc["advancedType"][k].as_f64().unwrap_or(0.0)));
                 }
@@ -920,7 +921,7 @@ fn export_png(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
             page,
             scale,
             false,
-            &designcraft_render::RenderOptions { printing_only: true, ..Default::default() },
+            &designcraft_render::RenderOptions { printing_only: true, rich_black: app.session.prefs.rich_black_output, ..Default::default() },
         )
         .ok_or("no such page")?;
     let png = img.to_png();

@@ -417,6 +417,25 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                                 }
                             });
                     });
+                    ui.horizontal(|ui| {
+                        ui.label("Printing / Exporting:");
+                        let rich = d.b("richBlackOutput");
+                        egui::ComboBox::from_id_salt("pref_black_out")
+                            .selected_text(if rich { "Output All Blacks as Rich Black" } else { "Output All Blacks Accurately" })
+                            .width(240.0)
+                            .show_ui(ui, |ui| {
+                                for (v, l) in [(false, "Output All Blacks Accurately"), (true, "Output All Blacks as Rich Black")] {
+                                    if ui.selectable_label(v == rich, l).clicked() {
+                                        d.fields.insert("richBlackOutput".into(), json!(v));
+                                    }
+                                }
+                            });
+                    });
+                    if d.fields.contains_key("overprintBlack") {
+                        ui.add_space(6.0);
+                        ui.label(egui::RichText::new("[Black] Overprint").font(semibold(12.0)));
+                        check(ui, d, "overprintBlack", "Overprint [Black] Swatch at 100%");
+                    }
                 }
                 "interface" => {
                     ui.label(egui::RichText::new("UI Scaling").font(semibold(12.0)));
@@ -963,7 +982,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "preferences" => {
             app.run(
                 "prefs.set",
-                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "highlightHj": d.b("highlightHj"), "highlightKeeps": d.b("highlightKeeps"), "highlightCustomTracking": d.b("highlightCustomTracking"), "highlightSubstitutedFonts": d.b("highlightSubstitutedFonts"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
+                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "highlightHj": d.b("highlightHj"), "highlightKeeps": d.b("highlightKeeps"), "highlightCustomTracking": d.b("highlightCustomTracking"), "highlightSubstitutedFonts": d.b("highlightSubstitutedFonts"), "richBlackOutput": d.b("richBlackOutput"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow")}),
             )?;
             // Highlight options change the screen view only.
             app.canvas.shown = None;
@@ -1020,6 +1039,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
                 }
             }
             doc["advancedType"] = adv;
+            doc["overprintBlack"] = json!(d.b("overprintBlack"));
             app.run("document.preferences", doc)
         }
         "qrCode" => {

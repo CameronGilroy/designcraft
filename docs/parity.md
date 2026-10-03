@@ -10,7 +10,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
-| P1 | 97 | 75 | 21 | 1 | 88% |
+| P1 | 97 | 76 | 20 | 1 | 89% |
 | P2 | 76 | 23 | 13 | 40 | 39% |
 
 | Area | Parity |
@@ -20,7 +20,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Layers | 95% |
 | Frames, shapes & paths | 93% |
 | Transform | 100% |
-| Fill, stroke, colour | 90% |
+| Fill, stroke, colour | 93% |
 | Effects & transparency | 71% |
 | Placing & links | 82% |
 | Type & text frames | 92% |
@@ -157,7 +157,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Fill, stroke, colour | Overprint Preview | P1 | D |
 | Fill, stroke, colour | Separations Preview | P2 | M |
 | Fill, stroke, colour | Eyedropper | P1 | D |
-| Fill, stroke, colour | Appearance of Black prefs | P1 | P |
+| Fill, stroke, colour | Appearance of Black prefs | P1 | D |
 | Effects & transparency | Opacity & blend modes | P0 | D |
 | Effects & transparency | Isolate Blending / Knockout Group | P2 | P |
 | Effects & transparency | Drop Shadow | P1 | D |

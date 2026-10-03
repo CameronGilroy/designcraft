@@ -708,7 +708,7 @@ fn set_fill_paint(ctx: &mut RenderContext, doc: &Document, fill: &designcraft_do
 /// Overprint Preview: does this paint overprint (its own flag, or 100% [Black], which
 /// overprints by default)? It's then multiplied over what's beneath.
 pub(crate) fn overprints(f: &Frame, swatch: &str, tint: f32, flag: bool) -> bool {
-    f.opts.overprint_preview && (flag || (swatch == designcraft_color::swatch::BLACK && tint >= 0.999))
+    f.opts.overprint_preview && (flag || (f.doc.settings.overprint_black && swatch == designcraft_color::swatch::BLACK && tint >= 0.999))
 }
 
 pub fn blend_mode(b: DcBlend) -> BlendMode {
@@ -975,6 +975,30 @@ mod tests {
         for c in 0..3 {
             assert!((ko[c] as i32 - magenta_only[c] as i32).abs() <= 3, "the overlap shows magenta alone: {ko:?} vs {magenta_only:?}");
         }
+    }
+
+    #[test]
+    fn black_overprints_only_with_the_preference() {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        for (sw, r) in
+            [("C=100 M=0 Y=0 K=0", Rect::new(100.0, 100.0, 200.0, 200.0)), (designcraft_color::swatch::BLACK, Rect::new(150.0, 100.0, 250.0, 200.0))]
+        {
+            let id = designcraft_doc::ItemId(d.alloc());
+            let mut it = Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(r));
+            it.fill = Fill::swatch(sw);
+            d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
+        }
+        let cache = Cache::new();
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let o = RenderOptions { overprint_preview: true, ..Default::default() };
+        let on = r.render_page(&d, &cache, 0, 1.0, false, &o).unwrap().pixel(175, 150);
+        let alone = r.render_page(&d, &cache, 0, 1.0, false, &o).unwrap().pixel(225, 150);
+        d.settings.overprint_black = false;
+        let off = r.render_page(&d, &cache, 0, 1.0, false, &o).unwrap().pixel(175, 150);
+        assert_eq!(off, alone, "knocks out: black alone");
+        assert_ne!(on, alone, "overprints: the cyan shows through");
     }
 
     #[test]

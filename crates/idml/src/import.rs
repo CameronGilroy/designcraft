@@ -394,6 +394,9 @@ impl<'r> Importer<'r> {
 
     fn doc_prefs(&mut self, e: &El) {
         let s = &mut self.settings;
+        if let Some(v) = e.get("OverprintBlack") {
+            s.overprint_black = v != "false";
+        }
         if let Some(v) = e.num("PageWidth") {
             s.page_width = v;
         }

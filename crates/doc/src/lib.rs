@@ -253,6 +253,8 @@ pub struct DocSettings {
     pub advanced_type: AdvancedType,
     /// Edit › Transparency Blend Space.
     pub blend_space: BlendSpace,
+    /// Preferences › Appearance of Black: [Black] at 100% overprints (Overprint Preview, output).
+    pub overprint_black: bool,
 }
 
 impl Default for DocSettings {
@@ -281,6 +283,7 @@ impl Default for DocSettings {
             global_light: 120.0,
             advanced_type: AdvancedType::default(),
             blend_space: BlendSpace::Cmyk,
+            overprint_black: true,
         }
     }
 }

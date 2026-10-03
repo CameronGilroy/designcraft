@@ -144,6 +144,9 @@ pub struct Prefs {
     pub highlight_keeps: bool,
     pub highlight_custom_tracking: bool,
     pub highlight_substituted_fonts: bool,
+    /// Preferences › Appearance of Black › Printing / Exporting: 100% K as rich (pure) black in
+    /// RGB output (PNG) instead of the accurate dark grey.
+    pub rich_black_output: bool,
     /// Preferences › Type › Smart Text Reflow: pages follow the primary text frame's story
     /// (added while it oversets, empty ones at the end removed).
     pub smart_text_reflow: bool,
@@ -164,6 +167,7 @@ impl Default for Prefs {
             highlight_keeps: false,
             highlight_custom_tracking: false,
             highlight_substituted_fonts: true,
+            rich_black_output: false,
             smart_text_reflow: true,
         }
     }
