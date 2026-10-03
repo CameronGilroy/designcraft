@@ -14,6 +14,9 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "file.exportEpub", "Export EPUB (Reflowable)…", ["File"], None,
         "{path?, title?, author?, language?: \"en\"} → {path, bytes} (no path: {base64, bytes})",
         has_doc, export_epub),
+        cmd!(noundo "file.printBooklet", "Print Booklet…", ["File"], None,
+        "{path?, type?: saddleStitch|twoUpConsecutive, spaceBetween? (pt)} — printer spreads as PDF (pages imposed in booklet order) → {path, bytes, sheets} (no path: {base64, …})",
+        has_doc, print_booklet),
         cmd!(noundo "file.exportHtml", "Export HTML…", ["File"], None,
         "{path?, title?, language?} — one self-contained page (styles inline, images embedded), stories and graphics in reading order → {path, bytes} (no path: {text, bytes})",
         has_doc, export_html),
@@ -21,6 +24,26 @@ pub fn specs() -> Vec<CommandSpec> {
         "{path?, format?: \"txt\"|\"rtf\" (default from the path, else txt), story?, frame?} — the story being edited or of the selected frame → {path, bytes} (no path: {text, bytes})",
         has_story_target, export_text),
     ]
+}
+
+fn print_booklet(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "file.printBooklet";
+    let kind = match str_param(p, "type").unwrap_or("saddleStitch") {
+        "saddleStitch" => designcraft_pdf::BookletKind::SaddleStitch,
+        "twoUpConsecutive" | "twoUp" => designcraft_pdf::BookletKind::TwoUpConsecutive,
+        t => return Err(bad(ID, format!("unknown type `{t}` (saddleStitch, twoUpConsecutive)"))),
+    };
+    let opts = designcraft_pdf::BookletOptions { kind, space_between: p.get("spaceBetween").and_then(Value::as_f64).unwrap_or(0.0), title: None };
+    let st = s.doc()?;
+    let r = designcraft_pdf::export_booklet(&st.doc, &s.cache, &opts).map_err(|e| EngineError::Other(e.to_string()))?;
+    match str_param(p, "path") {
+        Some(path) => {
+            #[cfg(not(target_arch = "wasm32"))]
+            std::fs::write(path, &r.bytes).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+            Ok(json!({"path": path, "bytes": r.bytes.len(), "sheets": r.pages, "warnings": r.warnings}))
+        }
+        None => Ok(json!({"base64": super::file::base64_encode(&r.bytes), "bytes": r.bytes.len(), "sheets": r.pages, "warnings": r.warnings})),
+    }
 }
 
 fn export_html(s: &mut Session, p: &Value) -> Result<Value> {
@@ -228,5 +251,39 @@ mod variable_font_tests {
         assert!(out["bytes"].as_u64().unwrap() > 1000);
         let fonts = s.execute("font.list", &json!({})).unwrap();
         assert!(fonts.to_string().contains("Black"), "{fonts}");
+    }
+}
+
+#[cfg(test)]
+mod booklet_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn booklet_imposes_pages_in_pairs() {
+        use designcraft_pdf::{BookletKind, booklet_pairs};
+        assert_eq!(booklet_pairs(8, BookletKind::SaddleStitch), [(Some(7), Some(0)), (Some(1), Some(6)), (Some(5), Some(2)), (Some(3), Some(4))]);
+        assert_eq!(booklet_pairs(6, BookletKind::SaddleStitch)[0], (None, Some(0)), "padded with blanks");
+        assert_eq!(booklet_pairs(3, BookletKind::TwoUpConsecutive), [(Some(0), Some(1)), (Some(2), None)]);
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 4})).unwrap();
+        let r = s.execute("file.printBooklet", &json!({"spaceBetween": 18})).unwrap();
+        assert_eq!(r["sheets"], 2);
+        let pdf = String::from_utf8_lossy(&super::super::file::base64_decode(r["base64"].as_str().unwrap())).into_owned();
+        let mb = pdf.find("/MediaBox").map(|i| pdf[i..i + 40].to_string()).unwrap_or_default();
+        assert!(mb.contains("1242"), "two 612 pt pages and an 18 pt gap: {mb}");
+        assert!(s.execute("file.printBooklet", &json!({"type": "perfectBound"})).is_err());
+        // Page 1's black box lands on the right half of the first sheet (page 4 is on the left).
+        let id = s.execute("frame.create", &json!({"rect": [100, 100, 300, 300]})).unwrap()["id"].clone();
+        s.execute("object.fill", &json!({"swatch": "[Black]", "ids": [id]})).unwrap();
+        let r = s.execute("file.printBooklet", &json!({})).unwrap();
+        let bytes = super::super::file::base64_decode(r["base64"].as_str().unwrap());
+        let px = designcraft_render::decode_pixmap_page(&bytes, 0).expect("rasterised");
+        let (w, h) = (px.width() as f64, px.height() as f64);
+        let at = |x: f64, y: f64| px.sample((x / 1224.0 * w) as u16, (y / 792.0 * h) as u16);
+        let (ink, blank) = (at(612.0 + 200.0, 200.0), at(200.0, 200.0));
+        assert!(ink.a > 200 && ink.r < 60, "right half has page 1: {ink:?}");
+        assert!(blank.a < 30 || blank.r > 200, "left half (page 4) is empty: {blank:?}");
     }
 }

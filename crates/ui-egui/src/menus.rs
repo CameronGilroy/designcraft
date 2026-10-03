@@ -19,6 +19,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportIdml", "Export IDML…", None, "{path?} — InDesign Markup (IDML) package"),
     ("app.exportEpub", "Export EPUB…", None, "{path?} — reflowable EPUB 3"),
     ("app.exportHtml", "Export HTML…", None, "{path?} — one self-contained web page"),
+    ("app.printBooklet", "Print Booklet…", None, "{path?} — saddle-stitched printer spreads as PDF"),
     ("app.qrCode", "Generate QR Code…", None, "{} — the QR Code dialog (object.qrCode does the work)"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
@@ -104,6 +105,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "ui:app.exportPdf",
             "ui:app.packageDialog",
+            "ui:app.printBooklet",
             "ui:app.exportPng",
             "ui:app.exportIdml",
             "ui:app.exportEpub",
@@ -539,6 +541,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "app.exportIdml" => export_idml(app, p),
         "app.exportEpub" => export_bytes(app, p, "epub", "file.exportEpub"),
         "app.exportHtml" => export_bytes(app, p, "html", "file.exportHtml"),
+        "app.printBooklet" => export_bytes(app, p, "pdf", "file.printBooklet"),
         "app.qrCode" => {
             app.ui.dialog = Some(crate::dialogs::Dialog::new("qrCode", json!({})));
             Ok(Value::Null)
