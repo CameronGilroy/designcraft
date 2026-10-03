@@ -64,6 +64,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.textThreads", "Show/Hide Text Threads", Some("Cmd+Alt+Y"), "{}"),
     ("view.hiddenCharacters", "Show/Hide Hidden Characters", Some("Cmd+Alt+I"), "{}"),
     ("view.taggedFrames", "Show/Hide Tagged Frames", None, "{} — XML-tagged frames outlined in their tag colour"),
+    ("view.separations", "Separations Preview", None, "{plate?: cyan|magenta|yellow|black|null, inkLimit?: percent|null}"),
     ("view.overprintPreview", "Overprint Preview", Some("Cmd+Alt+Shift+Y"), "{} — show how overprinting inks mix"),
     ("view.fastDisplay", "Fast Display", Some("Cmd+Alt+Shift+Z"), "{} — placed graphics as grey boxes, no effects"),
     ("view.typicalDisplay", "Typical Display", Some("Cmd+Alt+Z"), "{} — low-resolution image proxies"),
@@ -294,6 +295,14 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             "ui:view.hiddenCharacters",
             "ui:view.taggedFrames",
+            ">Separations Preview",
+            "ui:view.separations|Off|{\"plate\": null, \"inkLimit\": null}",
+            "ui:view.separations|Cyan|{\"plate\": \"cyan\"}",
+            "ui:view.separations|Magenta|{\"plate\": \"magenta\"}",
+            "ui:view.separations|Yellow|{\"plate\": \"yellow\"}",
+            "ui:view.separations|Black|{\"plate\": \"black\"}",
+            "ui:view.separations|Ink Limit 300%|{\"inkLimit\": 300}",
+            "<",
             "-",
             ">Hyperlinks & Cross-References",
             "cmd:hyperlink.create",
@@ -872,6 +881,16 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         "view.textThreads" => flag(&mut app.ui.text_threads),
         "view.hiddenCharacters" => flag(&mut app.ui.hidden_characters),
         "view.taggedFrames" => flag(&mut app.ui.tagged_frames),
+        "view.separations" => {
+            if let Some(v) = p.get("plate") {
+                app.ui.separation = v.as_str().and_then(|s| ["cyan", "magenta", "yellow", "black"].iter().position(|x| *x == s)).map(|i| i as u8);
+            }
+            if let Some(v) = p.get("inkLimit") {
+                app.ui.ink_limit = v.as_f64().map(|l| (l / 100.0) as f32);
+            }
+            app.canvas.shown = None;
+            Ok(Value::Null)
+        }
         "view.goToPage" => {
             match p.get("page") {
                 Some(Value::Number(n)) => crate::canvas::go_to_page(app, (n.as_u64().unwrap_or(1) as usize).saturating_sub(1)),

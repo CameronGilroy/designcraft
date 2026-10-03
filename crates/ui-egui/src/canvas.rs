@@ -465,7 +465,10 @@ fn render_worker_spawn(ctx: &egui::Context) -> Option<crate::render_worker::Work
     crate::render_worker::Worker::spawn(ctx.clone())
 }
 
-fn upload(app: &mut DesignApp, ctx: &egui::Context, img: designcraft_render::Rendered) {
+fn upload(app: &mut DesignApp, ctx: &egui::Context, mut img: designcraft_render::Rendered) {
+    if app.ui.separation.is_some() || app.ui.ink_limit.is_some() {
+        designcraft_render::separation_view(&mut img, app.ui.separation, app.ui.ink_limit);
+    }
     let ci = egui::ColorImage::from_rgba_premultiplied([img.width as usize, img.height as usize], &img.pixels);
     match &mut app.canvas.texture {
         Some(tex) => tex.set(ci, egui::TextureOptions::LINEAR),

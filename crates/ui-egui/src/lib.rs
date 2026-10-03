@@ -102,6 +102,11 @@ pub struct UiState {
     /// Edit › Menus: hidden menu items (`menu/label`), and Show Full Menus.
     pub hidden_menu_items: Vec<String>,
     pub show_full_menus: bool,
+    /// View › Separations Preview: a process plate (0–3) and/or an ink limit (total, 0–4).
+    #[serde(skip)]
+    pub separation: Option<u8>,
+    #[serde(skip)]
+    pub ink_limit: Option<f32>,
     /// View › Display Performance.
     pub display_quality: designcraft_render::DisplayQuality,
     /// Preferences › Interface › UI scaling (1 = 100%).
@@ -164,6 +169,8 @@ impl Default for UiState {
             tagged_frames: false,
             hidden_menu_items: Vec::new(),
             show_full_menus: false,
+            separation: None,
+            ink_limit: None,
             display_quality: designcraft_render::DisplayQuality::High,
             ui_scale: 1.0,
             rich_black: false,

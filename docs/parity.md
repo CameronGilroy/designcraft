@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 99 | 3 | 0 | 99% |
 | P1 | 97 | 92 | 4 | 1 | 97% |
-| P2 | 76 | 33 | 18 | 25 | 55% |
+| P2 | 76 | 33 | 20 | 23 | 57% |
 
 | Area | Parity |
 |---|---|
@@ -20,7 +20,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Layers | 95% |
 | Frames, shapes & paths | 99% |
 | Transform | 100% |
-| Fill, stroke, colour | 95% |
+| Fill, stroke, colour | 96% |
 | Effects & transparency | 71% |
 | Placing & links | 90% |
 | Type & text frames | 94% |
@@ -29,7 +29,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Tables | 92% |
 | Long documents | 88% |
 | Interactivity & digital | 75% |
-| Output & production | 78% |
+| Output & production | 80% |
 | XML & automation | 83% |
 | View & navigation | 88% |
 | Undo, history, saving | 100% |
@@ -155,7 +155,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Fill, stroke, colour | Stroke styles | P1 | D |
 | Fill, stroke, colour | Color management | P1 | P |
 | Fill, stroke, colour | Overprint Preview | P1 | D |
-| Fill, stroke, colour | Separations Preview | P2 | M |
+| Fill, stroke, colour | Separations Preview | P2 | P |
 | Fill, stroke, colour | Eyedropper | P1 | D |
 | Fill, stroke, colour | Appearance of Black prefs | P1 | D |
 | Effects & transparency | Opacity & blend modes | P0 | D |
@@ -287,7 +287,7 @@ Open P0 items: Preferences, Vector/page formats (PDF/AI/SVG/EPS place), Export t
 | Output & production | Export EPUB/HTML | P2 | P |
 | Output & production | Export RTF/TXT/Tagged text | P2 | P |
 | Output & production | Export XML | P2 | P |
-| Output & production | Separations / Flattener / Ink limit preview | P2 | M |
+| Output & production | Separations / Flattener / Ink limit preview | P2 | P |
 | XML & automation | Tags panel, Structure | P2 | P |
 | XML & automation | Import/Export XML | P2 | P |
 | XML & automation | Data Merge | P2 | D |
