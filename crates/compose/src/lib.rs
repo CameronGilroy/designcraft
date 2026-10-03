@@ -485,6 +485,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         }
         let sub_objects = sub.objects.clone();
         let mut table = StyleTable { styles: &mut styles_tab, missing: &mut missing_fonts };
+        let env = shape::TypeEnv { auto_leading: pp.auto_leading, adv: doc.settings.advanced_type };
         let mut sp = shape::shape_para(
             db,
             &doc.styles,
@@ -492,12 +493,68 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
             pi,
             prange.clone(),
             &base_chars,
-            shape::TypeEnv { auto_leading: pp.auto_leading, adv: doc.settings.advanced_type },
+            env,
             &sub,
             &mut table,
             &pp.nested_styles,
             &pp.grep_styles,
+            &[],
         );
+        if !pp.nested_line_styles.is_empty() && cur.fi < frames.len() {
+            // Nested line styles: find where the first lines end in this column, restyle them, and
+            // look again (the style changes the widths) until the lines settle.
+            let cols_here = &cols[cur.fi];
+            let col = cols_here[cur.col.min(cols_here.len() - 1)];
+            let spacing = spacing_for(&pp, base_chars.size);
+            let mut lines: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+            for _ in 0..3 {
+                let width = |j: usize| (col.width() - pp.left_indent - pp.right_indent - if j == 0 { pp.first_line_indent } else { 0.0 }).max(1.0);
+                // The same spacing, hyphenation and breaker as the layout below.
+                let mut gl = sp.glyphs.clone();
+                apply_desired_spacing(&mut gl, &pp);
+                let hy = hyphenation_points(&story.text, &gl, &pp);
+                let breaks = if pp.composer == Composer::SingleLine || gl.iter().any(|g| g.ch == '\t') || gl.len() > 4000 {
+                    breaker::greedy(&gl, &hy, &spacing, &width)
+                } else if pp.balance_ragged && !spacing.justify {
+                    breaker::balanced(&gl, &hy, &spacing, &width)
+                } else {
+                    breaker::knuth_plass(&gl, &hy, &spacing, &width)
+                };
+                // Byte where line `k` starts (the paragraph end past the last line).
+                let byte_at =
+                    |k: usize| if k == 0 { prange.start } else { breaks.get(k - 1).and_then(|b| gl.get(b.next)).map_or(prange.end, |g| g.byte) };
+                let mut want = Vec::new();
+                let mut line = 0usize;
+                for nl in &pp.nested_line_styles {
+                    if line >= breaks.len() || nl.lines == 0 {
+                        break;
+                    }
+                    let end = line + nl.lines as usize;
+                    if !nl.style.is_empty() && nl.style != designcraft_doc::NO_CHAR_STYLE {
+                        want.push((byte_at(line)..byte_at(end).max(byte_at(line)), nl.style.clone()));
+                    }
+                    line = end;
+                }
+                if want == lines {
+                    break;
+                }
+                lines = want;
+                sp = shape::shape_para(
+                    db,
+                    &doc.styles,
+                    story,
+                    pi,
+                    prange.clone(),
+                    &base_chars,
+                    env,
+                    &sub,
+                    &mut table,
+                    &pp.nested_styles,
+                    &pp.grep_styles,
+                    &lines,
+                );
+            }
+        }
         match pp.list_type {
             designcraft_doc::ListType::Numbers if !pp.list_name.is_empty() => {
                 // A named list: carries on past other paragraphs (and from earlier stories).
@@ -1551,6 +1608,7 @@ fn prepend_label(
         shape::TypeEnv { auto_leading: pp.auto_leading, adv: Default::default() },
         &SubstCtx::default(),
         table,
+        &[],
         &[],
         &[],
     );

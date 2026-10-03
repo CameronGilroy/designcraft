@@ -1059,6 +1059,18 @@ impl<'a> Ex<'a> {
             }
             props.push(l);
         }
+        if let Some(list) = &a.nested_line_styles {
+            let mut l = El::new("AllNestedLineStyles").attr("type", "list");
+            for ns in list {
+                l = l.child(
+                    El::new("ListItem")
+                        .attr("type", "record")
+                        .child(p("AppliedCharacterStyle", "object", names::style_self("CharacterStyle", CHAR_BUILTINS, &ns.style)))
+                        .child(p("LineCount", "long", ns.lines.to_string())),
+                );
+            }
+            props.push(l);
+        }
         if let Some(list) = &a.grep_styles {
             let mut l = El::new("AllGREPStyles").attr("type", "list");
             for g in list {

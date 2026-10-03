@@ -1246,6 +1246,45 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
                 if changed {
                     d.fields.insert("p.nestedStyles".into(), Value::Array(list));
                 }
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new("Nested Line Styles").font(semibold(12.0)));
+                let mut lines: Vec<Value> = cur(d, "p.nestedLineStyles", &pv["nestedLineStyles"]).as_array().cloned().unwrap_or_default();
+                let mut changed = false;
+                let mut remove = None;
+                for (i, l) in lines.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        let style = l["style"].as_str().unwrap_or("").to_string();
+                        egui::ComboBox::from_id_salt(("nls_style", i)).selected_text(&style).width(130.0).show_ui(ui, |ui| {
+                            for c in &cnames {
+                                if ui.selectable_label(*c == style, c).clicked() {
+                                    l["style"] = json!(c);
+                                    changed = true;
+                                }
+                            }
+                        });
+                        ui.label("for");
+                        let mut n = l["lines"].as_u64().unwrap_or(1) as u32;
+                        if ui.add(egui::DragValue::new(&mut n).range(1..=999)).changed() {
+                            l["lines"] = json!(n);
+                            changed = true;
+                        }
+                        ui.label(if n == 1 { "line" } else { "lines" });
+                        if ui.small_button("×").on_hover_text("Delete").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                }
+                if let Some(i) = remove {
+                    lines.remove(i);
+                    changed = true;
+                }
+                if ui.button("New Line Style").clicked() {
+                    lines.push(json!({"style": cnames.get(1).cloned().unwrap_or_default(), "lines": 1}));
+                    changed = true;
+                }
+                if changed {
+                    d.fields.insert("p.nestedLineStyles".into(), Value::Array(lines));
+                }
             }
             "grep" => {
                 ui.label(egui::RichText::new("GREP Styles").font(semibold(12.0)));

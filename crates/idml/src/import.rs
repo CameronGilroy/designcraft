@@ -1093,6 +1093,19 @@ impl<'r> Importer<'r> {
                 .collect();
             a.nested_styles = Some(v);
         }
+        if let Some(l) = e.prop_el("AllNestedLineStyles") {
+            let v: Vec<designcraft_doc::NestedLineStyle> = l
+                .find_all("ListItem")
+                .map(|it| {
+                    let t = |k: &str| it.find(k).map(|x| x.text_content()).unwrap_or_default();
+                    designcraft_doc::NestedLineStyle {
+                        style: self.char_style_ref(t("AppliedCharacterStyle").trim()),
+                        lines: t("LineCount").trim().parse().unwrap_or(1),
+                    }
+                })
+                .collect();
+            a.nested_line_styles = Some(v);
+        }
         if let Some(l) = e.prop_el("AllGREPStyles") {
             let v: Vec<designcraft_doc::GrepStyle> = l
                 .find_all("ListItem")

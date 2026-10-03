@@ -943,3 +943,37 @@ mod drag_text_tests {
         assert_eq!(t.anchor, t.focus);
     }
 }
+
+#[cfg(test)]
+mod nested_line_style_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn first_line_takes_the_nested_line_style() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("style.character.create", &json!({"name": "Lead", "chars": {"size": 18}})).unwrap();
+        let text = "The opening line of this paragraph reads larger, and the lines after it return to the body size again.";
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 300, 400], "content": "text", "text": text})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+        s.execute("type.para", &json!({"nestedLineStyles": [{"style": "Lead", "lines": 1}]})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        let cs = s.cache.get(&s.doc().unwrap().doc, sid, None);
+        let lines = &cs.frames[0].lines;
+        assert!(lines.len() >= 3);
+        let size_of = |l: usize| cs.styles[lines[l].glyphs.iter().find(|g| g.visible).unwrap().style as usize].size;
+        assert_eq!(size_of(0), 18.0, "the first line");
+        assert!(
+            lines[0].glyphs.iter().filter(|g| g.visible && g.adv > 0.0).all(|g| cs.styles[g.style as usize].size == 18.0),
+            "the whole first line"
+        );
+        assert_eq!(size_of(1), 12.0, "the next lines");
+        let back = designcraft_idml::import_idml(&designcraft_idml::export_idml(&s.doc().unwrap().doc)).unwrap();
+        let st = back.stories.values().find(|st| st.text.starts_with("The opening")).unwrap();
+        let nl = st.paras[0].para.nested_line_styles.clone().unwrap_or_default();
+        assert_eq!((nl.len(), nl.first().map(|n| n.lines)), (1, Some(1)), "IDML AllNestedLineStyles");
+        assert_eq!(nl[0].style, "Lead");
+    }
+}

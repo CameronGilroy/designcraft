@@ -225,6 +225,20 @@ pub enum NestedUntil {
 
 /// A character style applied from the start of the paragraph through (or up to) the `count`-th
 /// delimiter; nested styles follow each other.
+/// A nested line style: `style` for the next `lines` lines.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NestedLineStyle {
+    pub style: String,
+    pub lines: u32,
+}
+
+impl Default for NestedLineStyle {
+    fn default() -> Self {
+        NestedLineStyle { style: String::new(), lines: 1 }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NestedStyle {
@@ -469,6 +483,8 @@ attr_set! {
         nested_styles: Vec<NestedStyle> = Vec::new(),
         /// GREP styles: a character style for every match of a pattern (applied after nested).
         grep_styles: Vec<GrepStyle> = Vec::new(),
+        /// Nested line styles: a character style for the paragraph's first lines, in order.
+        nested_line_styles: Vec<NestedLineStyle> = Vec::new(),
         grid_align: GridAlign = GridAlign::None,
         composer: Composer = Composer::Paragraph,
         // Hyphenation
