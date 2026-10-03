@@ -587,6 +587,24 @@ impl<'a> Ex<'a> {
             }
             root.push(el);
         }
+        for st in &d.stroke_styles {
+            let id = format!("CustomStrokeStyle/{}", st.name);
+            let pcts = |v: &[f64]| v.iter().map(|x| num(x * 100.0)).collect::<Vec<_>>().join(" ");
+            let el = match &st.kind {
+                designcraft_doc::StrokeType::Stripes { bands } => {
+                    let flat: Vec<f64> = bands.iter().flat_map(|(a, w)| [*a, a + w]).collect();
+                    Some(El::new("StripedStrokeStyle").attr("StripeArray", pcts(&flat)))
+                }
+                designcraft_doc::StrokeType::Dashed { pattern } => {
+                    Some(El::new("DashedStrokeStyle").attr("DashArray", pattern.iter().map(|x| num(*x)).collect::<Vec<_>>().join(" ")))
+                }
+                designcraft_doc::StrokeType::Dotted => Some(El::new("DottedStrokeStyle").attr("DotArray", "0 200")),
+                _ => None,
+            };
+            if let Some(el) = el {
+                root.push(el.attr("Self", id).attr("Name", &st.name));
+            }
+        }
         for s in STROKE_STYLES {
             root.push(El::new("StrokeStyle").attr("Self", format!("StrokeStyle/$ID/{s}")).attr("Name", format!("$ID/{s}")));
         }

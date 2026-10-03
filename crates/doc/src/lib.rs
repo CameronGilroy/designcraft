@@ -153,6 +153,20 @@ pub struct Condition {
 }
 
 impl Document {
+    /// A stroke type with named styles resolved (unknown names draw solid).
+    pub fn stroke_kind(&self, t: &StrokeType) -> StrokeType {
+        match t {
+            StrokeType::Style { name } => self
+                .stroke_styles
+                .iter()
+                .find(|s| s.name == *name)
+                .map(|s| s.kind.clone())
+                .filter(|k| !matches!(k, StrokeType::Style { .. }))
+                .unwrap_or(StrokeType::Solid),
+            t => t.clone(),
+        }
+    }
+
     /// Hyphenation exceptions by lowercase word: the break positions (char indices; empty = never
     /// hyphenate).
     pub fn hyphenation_exception_map(&self) -> std::collections::HashMap<String, Vec<usize>> {
@@ -394,6 +408,9 @@ pub struct Document {
     /// the top level.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub color_groups: Vec<ColorGroup>,
+    /// Custom stroke styles (Object › Stroke Styles).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stroke_styles: Vec<StrokeStyleDef>,
     /// Ink Manager: spot inks printed as process, and spot inks aliased to others.
     #[serde(default, skip_serializing_if = "InkManager::is_default")]
     pub inks: InkManager,

@@ -34,6 +34,7 @@ mod print;
 mod qr;
 mod select;
 pub mod spelling;
+mod strokes;
 mod style;
 pub mod table;
 pub mod text;
@@ -145,6 +146,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(conditions::specs());
         v.extend(library::specs());
         v.extend(lists::specs());
+        v.extend(strokes::specs());
         v.extend(path_type::specs());
         v.extend(qr::specs());
         v.extend(select::specs());

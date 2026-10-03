@@ -1426,11 +1426,38 @@ pub fn stroke_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
         });
         ui.end_row();
         caption(ui, "Type:");
-        egui::ComboBox::from_id_salt("stype").selected_text(st.kind.label()).width(140.0).show_ui(ui, |ui| {
-            for ty in [json!({"kind": "solid"}), json!({"kind": "dashed", "pattern": [12.0, 4.0]}), json!({"kind": "dotted"})] {
+        let custom: Vec<String> = app.session.active().map(|d| d.doc.stroke_styles.iter().map(|x| x.name.clone()).collect()).unwrap_or_default();
+        let shown = match &st.kind {
+            StrokeType::Style { name } => name.clone(),
+            k => k.label().to_string(),
+        };
+        egui::ComboBox::from_id_salt("stype").selected_text(&shown).width(140.0).show_ui(ui, |ui| {
+            let built_in = [
+                "solid",
+                "dashed",
+                "dotted",
+                "thickThin",
+                "thinThick",
+                "thinThin",
+                "thickThick",
+                "thinThickThin",
+                "thickThinThick",
+                "wavy",
+                "hashed",
+            ];
+            for k in built_in {
+                let ty = if k == "dashed" { json!({"kind": k, "pattern": [12.0, 4.0]}) } else { json!({"kind": k}) };
                 let label = serde_json::from_value::<StrokeType>(ty.clone()).map(|k| k.label()).unwrap_or("");
-                if ui.selectable_label(st.kind.label() == label, label).clicked() {
+                if ui.selectable_label(shown == label, label).clicked() {
                     let _ = app.run("object.stroke", json!({"type": ty}));
+                }
+            }
+            if !custom.is_empty() {
+                ui.separator();
+            }
+            for n in &custom {
+                if ui.selectable_label(shown == *n, n).clicked() {
+                    let _ = app.run("object.stroke", json!({"type": {"kind": "style", "name": n}}));
                 }
             }
         });

@@ -255,8 +255,11 @@ pub fn join_in(s: &str) -> Join {
 }
 
 /// Stroke style Self ids for our stroke types (built-in InDesign stroke styles).
-pub fn stroke_type_out(t: &StrokeType) -> &'static str {
-    match t {
+pub fn stroke_type_out(t: &StrokeType) -> String {
+    let s = match t {
+        // Named custom styles are written as StripedStrokeStyle / DashedStrokeStyle elements.
+        StrokeType::Style { name } => return format!("CustomStrokeStyle/{name}"),
+        StrokeType::Stripes { .. } => "StrokeStyle/$ID/Solid",
         StrokeType::Solid => "StrokeStyle/$ID/Solid",
         StrokeType::Dashed { .. } => "StrokeStyle/$ID/Dashed",
         StrokeType::Dotted => "StrokeStyle/$ID/Canned Dotted",
@@ -268,9 +271,15 @@ pub fn stroke_type_out(t: &StrokeType) -> &'static str {
         StrokeType::ThickThinThick => "StrokeStyle/$ID/ThickThinThick",
         StrokeType::Wavy => "StrokeStyle/$ID/Wavy",
         StrokeType::Hashed => "StrokeStyle/$ID/Straight Hash",
-    }
+    };
+    s.to_string()
 }
 pub fn stroke_type_in(s: &str) -> StrokeType {
+    for prefix in ["StripedStrokeStyle/", "DashedStrokeStyle/", "DottedStrokeStyle/", "CustomStrokeStyle/"] {
+        if let Some(name) = s.strip_prefix(prefix) {
+            return StrokeType::Style { name: name.to_string() };
+        }
+    }
     let n = s.rsplit('/').next().unwrap_or(s).replace([' ', '-'], "").to_ascii_lowercase();
     match n.as_str() {
         "dashed" | "dashed(3and2)" | "dashed(4and4)" | "canneddashed3x2" | "canneddashed4x4" => StrokeType::Dashed { pattern: vec![] },

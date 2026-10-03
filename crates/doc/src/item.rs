@@ -88,6 +88,14 @@ pub enum StrokeType {
     ThickThinThick,
     Wavy,
     Hashed,
+    /// A custom striped stroke: bands (start, width) as fractions of the weight from the left edge.
+    Stripes {
+        bands: Vec<(f64, f64)>,
+    },
+    /// A named stroke style of the document (Stroke Styles), by name.
+    Style {
+        name: String,
+    },
 }
 
 impl StrokeType {
@@ -104,8 +112,43 @@ impl StrokeType {
             StrokeType::ThickThinThick => "Thick - Thin - Thick",
             StrokeType::Wavy => "Wavy",
             StrokeType::Hashed => "Straight Hash",
+            StrokeType::Stripes { .. } => "Stripes",
+            StrokeType::Style { .. } => "Custom",
         }
     }
+
+    /// The bands of a striped type (start, width as fractions of the weight).
+    pub fn bands(&self) -> Option<Vec<(f64, f64)>> {
+        Some(match self {
+            StrokeType::ThickThin => vec![(0.0, 0.5), (0.75, 0.25)],
+            StrokeType::ThinThick => vec![(0.0, 0.25), (0.5, 0.5)],
+            StrokeType::ThinThin => vec![(0.0, 1.0 / 3.0), (2.0 / 3.0, 1.0 / 3.0)],
+            StrokeType::ThickThick => vec![(0.0, 0.4), (0.6, 0.4)],
+            StrokeType::ThinThickThin => vec![(0.0, 0.2), (0.35, 0.3), (0.8, 0.2)],
+            StrokeType::ThickThinThick => vec![(0.0, 0.35), (0.45, 0.1), (0.65, 0.35)],
+            StrokeType::Stripes { bands } => bands.clone(),
+            _ => return None,
+        })
+    }
+
+    /// The filled area for types drawn as fills (stripes, wavy, hash); `None` for solid, dashed
+    /// and dotted strokes (and unresolved named styles).
+    pub fn outline(&self, bp: &designcraft_geom::BezPath, weight: f64, tol: f64) -> Option<designcraft_geom::BezPath> {
+        use designcraft_geom::stroke_style as ss;
+        match self {
+            StrokeType::Wavy => Some(ss::wavy(bp, weight, tol)),
+            StrokeType::Hashed => Some(ss::hashed(bp, weight, tol)),
+            t => t.bands().map(|b| ss::stripes(bp, weight, &b, tol)),
+        }
+    }
+}
+
+/// A named custom stroke style (Stroke Styles dialog): dashes, dots or stripes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StrokeStyleDef {
+    pub name: String,
+    pub kind: StrokeType,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

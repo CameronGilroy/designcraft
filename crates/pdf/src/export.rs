@@ -878,7 +878,26 @@ impl Exporter<'_> {
             designcraft_doc::Cap::Round => krilla::paint::LineCap::Round,
             designcraft_doc::Cap::Projecting => krilla::paint::LineCap::Square,
         };
-        let dash = match &st.kind {
+        let kind = self.doc.stroke_kind(&st.kind);
+        // Stripes, wavy and hash strokes: a filled outline (gap colour under it).
+        if let Some(o) = kind.outline(bp, st.weight, 0.05)
+            && let Some(op) = to_path(&o)
+        {
+            s.set_stroke(None);
+            if let Some(g) = self.swatch_color(&st.gap_swatch, st.gap_tint)
+                && st.gap_swatch != designcraft_color::swatch::NONE
+            {
+                s.set_stroke(Some(Stroke { paint: g.into(), width: st.weight as f32, opacity: NormalizedF32::ONE, ..Default::default() }));
+                s.set_fill(None);
+                s.draw_path(path);
+                s.set_stroke(None);
+            }
+            s.set_fill(Some(Fill { paint: c.into(), opacity: NormalizedF32::ONE, rule: FillRule::NonZero }));
+            s.draw_path(&op);
+            s.set_fill(None);
+            return;
+        }
+        let dash = match &kind {
             StrokeType::Dashed { pattern } if pattern.iter().any(|v| *v > 0.0) => {
                 let mut pat: Vec<f32> = pattern.iter().map(|v| v.max(0.0) as f32).collect();
                 if pat.len() % 2 == 1 {
@@ -890,11 +909,7 @@ impl Exporter<'_> {
                 cap = krilla::paint::LineCap::Round;
                 Some(StrokeDash { array: vec![0.0, (st.weight * 2.0) as f32], offset: 0.0 })
             }
-            StrokeType::Solid | StrokeType::Dashed { .. } => None,
-            _ => {
-                self.warn("striped stroke types are exported as solid strokes");
-                None
-            }
+            _ => None,
         };
         let arrows = designcraft_doc::arrow::apply(bp, st, closed);
         let trimmed = arrows.as_ref().and_then(|a| to_path(&a.0));

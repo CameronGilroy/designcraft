@@ -101,6 +101,7 @@ struct Importer<'r> {
     conditions: Vec<designcraft_doc::Condition>,
     condition_names: HashMap<String, String>,
     inks: designcraft_doc::InkManager,
+    stroke_styles: Vec<designcraft_doc::StrokeStyleDef>,
     styles: Styles,
     para_names: HashMap<String, String>,
     char_names: HashMap<String, String>,
@@ -183,6 +184,7 @@ impl<'r> Importer<'r> {
             conditions: Vec::new(),
             condition_names: HashMap::new(),
             inks: Default::default(),
+            stroke_styles: Vec::new(),
             styles,
             para_names: HashMap::new(),
             char_names: HashMap::new(),
@@ -517,6 +519,20 @@ impl<'r> Importer<'r> {
                 id.to_string(),
                 Swatch { name, value: SwatchValue::Tint { base, tint: (t / 100.0) as f32 }, locked: false, named: true, hidden: false },
             ));
+        }
+        // Custom stroke styles.
+        for e in top.iter().filter(|e| matches!(e.local(), "StripedStrokeStyle" | "DashedStrokeStyle" | "DottedStrokeStyle")) {
+            let (Some(id), Some(name)) = (e.get("Self"), e.get("Name")) else { continue };
+            let nums = |k: &str| e.get(k).unwrap_or("").split_whitespace().filter_map(|x| x.parse::<f64>().ok()).collect::<Vec<_>>();
+            let kind = match e.local() {
+                "StripedStrokeStyle" => designcraft_doc::StrokeType::Stripes {
+                    bands: nums("StripeArray").chunks_exact(2).map(|c| (c[0] / 100.0, (c[1] - c[0]) / 100.0)).collect(),
+                },
+                "DashedStrokeStyle" => designcraft_doc::StrokeType::Dashed { pattern: nums("DashArray") },
+                _ => designcraft_doc::StrokeType::Dotted,
+            };
+            let _ = id;
+            self.stroke_styles.push(designcraft_doc::StrokeStyleDef { name: name.to_string(), kind });
         }
         // Ink Manager.
         for e in top.iter().filter(|e| e.local() == "Ink") {
@@ -2073,6 +2089,7 @@ impl<'r> Importer<'r> {
             color_groups: std::mem::take(&mut self.color_groups),
             conditions: std::mem::take(&mut self.conditions),
             inks: std::mem::take(&mut self.inks),
+            stroke_styles: std::mem::take(&mut self.stroke_styles),
             endnote_options: Default::default(),
             endnote_story: None,
             sections: std::mem::take(&mut self.sections),

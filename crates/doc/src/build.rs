@@ -130,6 +130,7 @@ impl Document {
             color_groups: vec![],
             conditions: vec![],
             inks: Default::default(),
+            stroke_styles: vec![],
             endnote_options: Default::default(),
             endnote_story: None,
             sections: vec![Section {

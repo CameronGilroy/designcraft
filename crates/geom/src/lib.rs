@@ -17,6 +17,7 @@ pub mod pathfinder;
 pub mod qr;
 pub mod shapes;
 pub mod snap;
+pub mod stroke_style;
 pub mod units;
 pub mod warp;
 

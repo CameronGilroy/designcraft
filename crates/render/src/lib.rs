@@ -547,7 +547,8 @@ impl Renderer {
                 designcraft_doc::Join::Bevel => kurbo::Join::Bevel,
             })
             .with_miter_limit(st.miter_limit);
-        match &st.kind {
+        let kind = f.doc.stroke_kind(&st.kind);
+        match &kind {
             StrokeType::Dashed { pattern } if !pattern.is_empty() => stroke = stroke.with_dashes(0.0, pattern.iter().copied()),
             StrokeType::Dotted => stroke = stroke.with_dashes(0.0, [0.0, st.weight * 2.0]).with_caps(kurbo::Cap::Round),
             _ => {}
@@ -559,7 +560,7 @@ impl Renderer {
         let arrows = designcraft_doc::arrow::apply(bp, st, closed);
         let bp = arrows.as_ref().map_or(bp, |a| &a.0);
         // Gap colour under dashes and dots: the whole path, undashed.
-        let gap = if matches!(st.kind, StrokeType::Solid) { None } else { f.doc.resolve_color(&st.gap_swatch, st.gap_tint) };
+        let gap = if matches!(kind, StrokeType::Solid) { None } else { f.doc.resolve_color(&st.gap_swatch, st.gap_tint) };
         if let Some(g) = gap
             && !matches!(st.align, StrokeAlign::Inside | StrokeAlign::Outside if closed)
         {
@@ -581,6 +582,20 @@ impl Renderer {
                 ctx.pop_layer();
             }
             ctx.set_paint(color_of(&c, 1.0));
+        }
+        // Stripes, wavy and hash strokes are fills (along the path's centre line).
+        if let Some(o) = kind.outline(bp, st.weight, 0.05 * f.px) {
+            ctx.fill_path(&o);
+            for h in arrows.iter().flat_map(|a| &a.1) {
+                match h.outline {
+                    Some(w) => {
+                        ctx.set_stroke(kurbo::Stroke::new(w).with_join(kurbo::Join::Miter));
+                        ctx.stroke_path(&h.path);
+                    }
+                    None => ctx.fill_path(&h.path),
+                }
+            }
+            return;
         }
         match st.align {
             StrokeAlign::Inside if closed => {
