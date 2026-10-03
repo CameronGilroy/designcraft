@@ -6,6 +6,75 @@ use serde_json::{Value, json};
 use super::{CommandSpec, bad, cmd, has_doc, ok, str_param};
 use crate::Result;
 
+/// Each page's margin box, by spread and page id.
+fn margin_boxes(d: &designcraft_doc::Document) -> Vec<(designcraft_doc::SpreadRef, designcraft_doc::PageId, designcraft_geom::Rect)> {
+    d.spread_refs()
+        .filter_map(|r| d.spread(r).map(|sp| (r, sp)))
+        .flat_map(|(r, sp)| sp.pages.iter().map(move |pg| (r, pg.id, pg.margin_rect())))
+        .collect()
+}
+
+/// Layout Adjustment: objects on each page move and resize from its old margin box to its new
+/// one (content keeps its size; frames that auto-fit refit).
+fn adjust_layout(d: &mut designcraft_doc::Document, before: &[(designcraft_doc::SpreadRef, designcraft_doc::PageId, designcraft_geom::Rect)]) {
+    use designcraft_geom::Affine;
+    let after = margin_boxes(d);
+    for (r, pid, old) in before {
+        let Some((_, _, new)) = after.iter().find(|(r2, p2, _)| r2 == r && p2 == pid) else { continue };
+        if old == new || old.width() < 1e-6 || old.height() < 1e-6 {
+            continue;
+        }
+        let m = Affine::translate((new.x0, new.y0))
+            * Affine::scale_non_uniform(new.width() / old.width(), new.height() / old.height())
+            * Affine::translate((-old.x0, -old.y0));
+        let Some(sp) = d.spread(*r) else { continue };
+        // The page's objects (by centre, measured against the old boxes).
+        let ids: Vec<designcraft_doc::ItemId> = sp
+            .items
+            .iter()
+            .filter(|it| {
+                let c = it.bounds().center();
+                // Pages share a spread side by side: the margin box's page is the one under the centre's x.
+                before
+                    .iter()
+                    .filter(|(r2, _, _)| r2 == r)
+                    .min_by(|a, b| dist(a.2, c.x).total_cmp(&dist(b.2, c.x)))
+                    .is_some_and(|(_, p2, _)| p2 == pid)
+            })
+            .map(|it| it.id)
+            .collect();
+        for id in ids {
+            let Some(it) = d.item_mut(id) else { continue };
+            if matches!(it.content, designcraft_doc::Content::Group { .. }) {
+                it.xf = m * it.xf;
+            } else {
+                let inner = it.xf.inverse() * m * it.xf;
+                it.path.transform(inner);
+                let ib = it.inner_bounds();
+                if let designcraft_doc::Content::Graphic(g) = &mut it.content {
+                    // Content keeps its size but moves with the frame; auto-fit refits.
+                    let o = inner * designcraft_geom::Point::ZERO;
+                    g.xf = Affine::translate(o.to_vec2()) * g.xf;
+                    if let Some(xf) = g.fitted(ib, g.auto_fit) {
+                        g.xf = xf;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Horizontal distance from `x` to a margin box (0 inside).
+fn dist(r: designcraft_geom::Rect, x: f64) -> f64 {
+    if x < r.x0 {
+        r.x0 - x
+    } else if x > r.x1 {
+        x - r.x1
+    } else {
+        0.0
+    }
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(
@@ -104,13 +173,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "Margins and Columns…",
             ["Layout"],
             None,
-            "{pages?: [index] (default all), margins?: number|{top,bottom,inside,outside}, columns?, gutter?}",
+            "{pages?: [index] (default all), margins?: number|{top,bottom,inside,outside}, columns?, gutter?, adjustLayout?: bool (objects follow the margins)}",
             has_doc,
             |s, p| {
                 let pages: Option<Vec<usize>> =
                     p.get("pages").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(|v| v as usize).collect());
                 let p = p.clone();
+                let adjust = p.get("adjustLayout").and_then(Value::as_bool).unwrap_or(false);
                 s.edit(|d, _| {
+                    let before = adjust.then(|| margin_boxes(d));
                     let all: Vec<usize> = pages.clone().unwrap_or_else(|| (0..d.page_count()).collect());
                     for abs in all {
                         let Some((si, pi)) = d.page_loc(abs) else { continue };
@@ -131,6 +202,9 @@ pub fn specs() -> Vec<CommandSpec> {
                             pg.columns.gutter = g.max(0.0);
                         }
                     }
+                    if let Some(b) = before {
+                        adjust_layout(d, &b);
+                    }
                     ok()
                 })
             }
@@ -140,7 +214,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Document Setup…",
             ["File"],
             Some("Cmd+Alt+P"),
-            "{width?, height?, pages?: count, startPage?: n, facingPages?, intent?: print|web|mobile, bleed?, slug?: n | [top, bottom, inside, outside]} → the document setup",
+            "{width?, height?, pages?: count, startPage?: n, facingPages?, intent?: print|web|mobile, bleed?, slug?: n | [top, bottom, inside, outside], adjustLayout?: bool (objects follow the new page size)} → the document setup",
             has_doc,
             |s, p| {
                 let p = p.clone();
@@ -159,7 +233,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 let (bleed, slug) = (edges("bleed"), edges("slug"));
                 let intent: Option<designcraft_doc::Intent> = p.get("intent").and_then(|v| serde_json::from_value(v.clone()).ok());
                 let pages = p.get("pages").and_then(Value::as_u64).map(|n| n.clamp(1, 9999) as usize);
+                let adjust = p.get("adjustLayout").and_then(Value::as_bool).unwrap_or(false);
                 s.edit(|d, _| {
+                    let before = adjust.then(|| margin_boxes(d));
                     if let Some(f) = p.get("facingPages").and_then(Value::as_bool) {
                         d.settings.facing_pages = f;
                     }
@@ -215,6 +291,9 @@ pub fn specs() -> Vec<CommandSpec> {
                         }
                     }
                     d.repaginate();
+                    if let Some(b) = before {
+                        adjust_layout(d, &b);
+                    }
                     Ok(document_setup(d))
                 })
             }
@@ -703,5 +782,30 @@ mod page_numbering_view_tests {
         assert_eq!((0..4).map(|i| s.page_label(i)).collect::<Vec<_>>(), ["1", "2", "3", "4"]);
         assert_eq!(s.resolve_page("1"), Some(0));
         assert_eq!(s.resolve_page("9"), None);
+    }
+}
+
+#[cfg(test)]
+mod adjust_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn adjust_layout_follows_the_new_page_size_and_margins() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 1, "facingPages": false})).unwrap();
+        // Letter, 36 pt margins: a frame filling the left half of the margin box.
+        let id = s.execute("frame.create", &json!({"rect": [36, 36, 306, 756]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("layout.documentSetup", &json!({"width": 1224, "adjustLayout": true})).unwrap();
+        let b = s.doc().unwrap().doc.item(designcraft_doc::ItemId(id)).unwrap().bounds();
+        assert!((b.x0 - 36.0).abs() < 1e-6 && (b.x1 - 612.0).abs() < 1e-6, "half of the wider margin box: {b:?}");
+        s.execute("layout.marginsAndColumns", &json!({"margins": 72, "adjustLayout": true})).unwrap();
+        let b = s.doc().unwrap().doc.item(designcraft_doc::ItemId(id)).unwrap().bounds();
+        assert!((b.x0 - 72.0).abs() < 1e-6 && (b.y0 - 72.0).abs() < 1e-6 && (b.y1 - 720.0).abs() < 1e-6, "{b:?}");
+        // Without the option objects stay put.
+        s.execute("layout.marginsAndColumns", &json!({"margins": 36})).unwrap();
+        let b2 = s.doc().unwrap().doc.item(designcraft_doc::ItemId(id)).unwrap().bounds();
+        assert_eq!(b, b2);
     }
 }

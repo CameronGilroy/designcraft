@@ -361,6 +361,7 @@ fn document_setup(ui: &mut egui::Ui, d: &mut Dialog) {
             ui.end_row();
         }
     });
+    check(ui, d, "adjustLayout", "Adjust Layout (objects follow the new page size)");
 }
 
 /// Preferences: a section list and the section's options. Application options always; units and
@@ -1158,7 +1159,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             app.run(
                 "layout.documentSetup",
                 json!({"intent": d.s("intent"), "pages": d.n("pages").unwrap_or(1.0).max(1.0) as u64, "startPage": d.n("startPage").unwrap_or(1.0).max(1.0) as u64,
-                    "facingPages": d.b("facingPages"), "width": d.m("width"), "height": d.m("height"), "bleed": edges("bleed"), "slug": edges("slug")}),
+                    "facingPages": d.b("facingPages"), "width": d.m("width"), "height": d.m("height"), "bleed": edges("bleed"), "slug": edges("slug"), "adjustLayout": d.b("adjustLayout")}),
             )
         }
         "paragraphStyleOptions" => {
