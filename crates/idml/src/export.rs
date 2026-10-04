@@ -1040,6 +1040,13 @@ impl<'a> Ex<'a> {
         if let Some(v) = a.digits {
             el.set("DigitsType", names::digits_out(v));
         }
+        if let Some(r) = a.ruby.as_ref().filter(|r| !r.is_empty()) {
+            el.set("RubyFlag", "true");
+            el.set("RubyString", r.as_str());
+        }
+        if let Some(k) = a.kenten {
+            el.set("KentenKind", if k { "KentenSesameDot" } else { "None" });
+        }
         if let Some(v) = a.tate_chu_yoko {
             el.set("Tatechuyoko", bool_s(v));
         }

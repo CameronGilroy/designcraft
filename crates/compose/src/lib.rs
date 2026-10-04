@@ -14,6 +14,7 @@ mod cache;
 pub mod hyphen;
 mod notes;
 mod overlay;
+mod ruby;
 pub mod shape;
 pub mod table;
 pub mod vars;
@@ -62,6 +63,9 @@ pub struct RunStyle {
     pub inserted: bool,
     /// XML element the text is tagged with (tag markers on screen).
     pub xml_tag: Option<String>,
+    /// Ruby over the run, and kenten (emphasis dots).
+    pub ruby: Option<String>,
+    pub kenten: bool,
 }
 
 /// An underline or strikethrough bar: its top edge `offset` below the baseline (negative =
@@ -788,8 +792,9 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 let lx0 = x0 + ind_l;
                 let lx1 = x1 - pp.right_indent;
                 let last = k + 1 == breaks.len();
-                let (placed, end_x, ratio) =
+                let (mut placed, end_x, ratio) =
                     layout_line(&glyphs, s, e, b.hyphen, lx0, lx1, col.x0, &pp, &spacing, last, b.forced && !last, f.left_page);
+                ruby::annotate(&styles_tab, &mut placed);
                 let range_end = if last { prange.end } else { glyphs.get(g0 + b.next).map(|g| g.byte).unwrap_or(prange.end) };
                 let range_start = glyphs.get(s).map(|g| g.byte).unwrap_or(prange.start).min(range_end);
                 let range_start = if line_no == 0 { prange.start } else { range_start };

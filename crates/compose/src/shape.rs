@@ -141,6 +141,8 @@ impl StyleTable<'_> {
             condition: p.conditions.first().cloned(),
             inserted: p.change == designcraft_doc::ChangeMark::Inserted,
             xml_tag: (!p.xml_tag.is_empty()).then(|| p.xml_tag.clone()),
+            ruby: (!p.ruby.is_empty()).then(|| p.ruby.clone()),
+            kenten: p.kenten,
         };
         if let Some(i) = self.styles.iter().rposition(|s| *s == rs) {
             return i as u32;

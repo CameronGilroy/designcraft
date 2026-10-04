@@ -56,6 +56,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
     ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
     ("app.footnoteOptionsDialog", "Document Footnote Options…", None, "{} — numbering, formatting and layout of footnotes"),
+    ("app.rubyDialog", "Ruby…", None, "{} — the reading set over the selected text"),
     ("app.findFontDialog", "Find/Replace Font…", None, "{} — fonts used (missing ones flagged) and replacing them"),
     ("app.insertXrefDialog", "Insert Cross-Reference…", None, "{} — New Cross-Reference dialog (paragraph or text anchor, format)"),
     ("app.deleteAllGuides", "Delete All Guides on Spread", None, "{} — the spread in view"),
@@ -394,6 +395,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:object.textFrameOptions|Vertical|{\"vertical\": true}",
             "<",
             "cmd:type.tateChuYoko",
+            "ui:app.rubyDialog",
+            "cmd:type.kenten",
             ">Track Changes",
             "cmd:changes.track",
             "cmd:changes.acceptAll",
@@ -864,6 +867,16 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 return Some(Err("place the insertion point in a text frame to create a table".into()));
             }
             app.ui.dialog = Some(crate::dialogs::Dialog::new("insertTable", p.clone()));
+            Ok(Value::Null)
+        }
+        "app.rubyDialog" => {
+            let Some(st) = app.session.active() else { return Some(Err("no document open".into())) };
+            let cur = st.selection.text.and_then(|t| {
+                let story = st.doc.text_story(t.story, t.cell)?;
+                let at = if t.range().is_empty() { t.range().start } else { t.range().start + 1 };
+                story.char_format_at(at).over.ruby.clone()
+            });
+            app.ui.dialog = Some(crate::dialogs::Dialog::new("ruby", json!({"text": cur.unwrap_or_default()})));
             Ok(Value::Null)
         }
         "app.footnoteOptionsDialog" => {

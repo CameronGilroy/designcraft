@@ -531,6 +531,11 @@ attr_set! {
         no_break: bool = false,
         /// Tate-chu-yoko: in vertical text, the run is set horizontally within one em of the line.
         tate_chu_yoko: bool = false,
+        /// Ruby: the reading set small above the text (to its right in vertical text), one group
+        /// over each run that has it.
+        ruby: String = String::new(),
+        /// Kenten: an emphasis dot above each character.
+        kenten: bool = false,
         /// Digits (World-Ready): how 0–9 are drawn.
         digits: Digits = Digits::Default,
         language: String = "English: USA".into(),

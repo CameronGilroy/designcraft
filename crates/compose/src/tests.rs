@@ -914,6 +914,34 @@ fn digits_option_draws_figures_in_another_script() {
 }
 
 #[test]
+fn ruby_and_kenten_sit_over_their_text() {
+    let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
+    let lid = d.default_layer();
+    let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 400.0, 200.0), lid, "漢字です", ParaFormat::default()).unwrap();
+    let base_n = compose_story(&d, sid, &ComposeOptions::default()).frames[0].lines[0].glyphs.len();
+    let kanji = 0.."漢字".len();
+    d.story_mut(sid).unwrap().format_chars(kanji.clone(), |f| f.over.ruby = Some("かんじ".into()));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let l = &cs.frames[0].lines[0];
+    let ruby: Vec<_> = l.glyphs[base_n..].iter().collect();
+    assert_eq!(ruby.len(), 3, "one glyph per kana");
+    let size = cs.styles[l.glyphs[0].style as usize].size;
+    let (x0, x1) = (l.glyphs[0].x, l.glyphs[1].x + l.glyphs[1].adv);
+    // Above the base, half size, within the base's width (shorter: spread 1-2-1).
+    assert!(ruby.iter().all(|g| g.y < -size * 0.8 && g.len == 0 && (g.sx - l.glyphs[0].sx * 0.5).abs() < 1e-9));
+    assert!(ruby[0].x > x0 && ruby[2].x + ruby[2].adv < x1 + 1e-6, "{x0} {x1} {:?}", ruby.iter().map(|g| g.x).collect::<Vec<_>>());
+    // Caret positions ignore them.
+    assert_eq!(caret(&cs, "漢字".len()).unwrap().1, l.glyphs[2].x);
+    // Kenten: a dot over each character.
+    d.story_mut(sid).unwrap().format_chars(kanji.end..kanji.end + "で".len(), |f| f.over.kenten = Some(true));
+    let l = compose_story(&d, sid, &ComposeOptions::default()).frames[0].lines[0].clone();
+    assert_eq!(l.glyphs.len(), base_n + 4);
+    let dot = l.glyphs.last().unwrap();
+    let de = &l.glyphs[2];
+    assert!((dot.x + dot.adv / 2.0 - (de.x + de.adv / 2.0)).abs() < 1.0 && dot.y < 0.0);
+}
+
+#[test]
 fn tate_chu_yoko_sets_digits_across_one_em() {
     let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
     let lid = d.default_layer();

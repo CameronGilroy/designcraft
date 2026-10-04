@@ -724,6 +724,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "newDocument" => "New Document",
         "frameSize" => "Rectangle",
         "goToPage" => "Go to Page",
+        "ruby" => "Ruby",
         "insertTable" => "Create Table",
         "textFrameOptions" => "Text Frame Options",
         "documentSetup" => "Document Setup",
@@ -1200,6 +1201,13 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     text_field(ui, &mut d, "page", 80.0);
                 });
             }
+            "ruby" => {
+                ui.horizontal(|ui| {
+                    ui.label("Ruby:");
+                    text_field(ui, &mut d, "text", 200.0);
+                });
+                ui.label(egui::RichText::new("Set over the selected text; empty removes it.").size(11.0));
+            }
             "insertTable" => {
                 ui.label(egui::RichText::new("Table Dimensions").font(semibold(12.0)));
                 egui::Grid::new("ins_table").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
@@ -1293,6 +1301,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
                 json!({"spread": d.fields.get("spread").cloned().unwrap_or(json!(0)), "shape": d.s("shape"), "content": d.s("content"), "rect": [x, y, x + w, y + h]}),
             )
         }
+        "ruby" => app.run("type.ruby", json!({"text": d.s("text")})),
         "goToPage" => {
             // A page name ("iv", "A-3"), a number, or "+n" for an absolute position.
             let typed = match d.fields.get("page") {

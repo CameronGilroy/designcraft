@@ -157,6 +157,34 @@ pub fn specs() -> Vec<CommandSpec> {
                 format_chars(s, &json!({"tate_chu_yoko": on}))
             }
         ),
+        cmd!(
+            "type.ruby",
+            "Ruby",
+            [],
+            None,
+            "{text} — the reading set over the selected text (one group); empty removes it",
+            has_text_or_frames,
+            |s, p| { format_chars(s, &json!({"ruby": str_param(p, "text").unwrap_or("")})) }
+        ),
+        cmd!(
+            "type.kenten",
+            "Kenten",
+            [],
+            None,
+            "{on?: bool} — emphasis dots over the selected characters (toggles by default)",
+            has_text_or_frames,
+            |s, p| {
+                let on = match p.get("on").and_then(Value::as_bool) {
+                    Some(v) => v,
+                    None => !format_targets(s).first().is_some_and(|t| {
+                        s.doc().ok().and_then(|d| d.doc.text_story(t.story, t.cell)).is_some_and(|st| {
+                            st.char_format_at(if t.range.is_empty() { t.range.start } else { t.range.start + 1 }).over.kenten == Some(true)
+                        })
+                    }),
+                };
+                format_chars(s, &json!({"kenten": on}))
+            }
+        ),
         cmd!("type.sizeUp", "Increase Point Size", [], Some("Cmd+Shift+."), "{}", has_text_or_frames, |s, _| step_size(s, 2.0)),
         cmd!("type.sizeDown", "Decrease Point Size", [], Some("Cmd+Shift+,"), "{}", has_text_or_frames, |s, _| step_size(s, -2.0)),
         cmd!(
@@ -1208,6 +1236,24 @@ mod tcy_tests {
         assert_eq!(get(&s), Some(false));
         s.execute("type.tateChuYoko", &json!({"on": true})).unwrap();
         assert_eq!(get(&s), Some(true));
+    }
+
+    #[test]
+    fn ruby_and_kenten_on_the_selection() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": "漢字です"})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": "漢字".len()})).unwrap();
+        s.execute("type.ruby", &json!({"text": "かんじ"})).unwrap();
+        s.execute("type.kenten", &json!({})).unwrap();
+        let f = |s: &Session| s.doc().unwrap().doc.stories[&designcraft_doc::StoryId(sid)].char_format_at(1).over.clone();
+        assert_eq!(f(&s).ruby.as_deref(), Some("かんじ"));
+        assert_eq!(f(&s).kenten, Some(true));
+        s.execute("type.kenten", &json!({})).unwrap();
+        s.execute("type.ruby", &json!({"text": ""})).unwrap();
+        assert_eq!(f(&s).kenten, Some(false));
+        assert_eq!(f(&s).ruby.as_deref(), Some(""));
     }
 }
 
