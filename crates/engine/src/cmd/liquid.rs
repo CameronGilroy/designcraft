@@ -230,7 +230,19 @@ fn create_alternate(s: &mut crate::Session, p: &Value) -> Result<Value> {
                     g
                 })
                 .collect();
-            super::object::duplicate_from(d, &src, &ids, SpreadRef::Doc(ti), designcraft_geom::Vec2::new(to.x0 - pb.x0, 0.0))?;
+            let new = super::object::duplicate_from(d, &src, &ids, SpreadRef::Doc(ti), designcraft_geom::Vec2::new(to.x0 - pb.x0, 0.0))?;
+            // The copies' stories stay linked to the originals (Links panel: update when they change).
+            for (old, new) in ids.iter().zip(&new) {
+                let (Some(os), Some(ns)) =
+                    (src.item(*old).and_then(|i| i.text_frame()).map(|t| t.story), d.item(*new).and_then(|i| i.text_frame()).map(|t| t.story))
+                else {
+                    continue;
+                };
+                let rev = src.story(os).map_or(0, |s| s.rev);
+                if let Some(st) = d.story_mut(ns) {
+                    st.link = Some((os, rev));
+                }
+            }
         }
         let pages: Vec<usize> = (n + 1..=2 * n).collect();
         super::layout::resize_pages(d, &pages, Some(w), Some(h));
@@ -307,5 +319,11 @@ mod tests {
         assert!((bounds(&s, a).width() - 200.0).abs() < 1e-6 && (bounds(&s, b).width() - 100.0).abs() < 1e-6);
         s.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(s.doc().unwrap().doc.page_count(), 1);
+        // Text in an alternate layout stays linked to the original story.
+        s.execute("edit.redo", &json!({})).unwrap();
+        let t = s.execute("frame.create", &json!({"rect": [100, 300, 300, 400], "content": "text", "text": "Original", "caret": false})).unwrap();
+        s.execute("layout.createAlternate", &json!({"name": "Tall", "width": 600, "height": 1200})).unwrap();
+        let links = s.execute("story.links", &json!({})).unwrap();
+        assert!(links.as_array().unwrap().iter().any(|l| l["parent"] == t["story"]), "{links}");
     }
 }

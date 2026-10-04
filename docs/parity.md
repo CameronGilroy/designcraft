@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 100 | 2 | 0 | 99% |
 | P1 | 97 | 96 | 1 | 0 | 99% |
-| P2 | 76 | 65 | 11 | 0 | 93% |
+| P2 | 76 | 66 | 10 | 0 | 93% |
 
 | Area | Parity |
 |---|---|
@@ -79,7 +79,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Documents, pages, spreads | Layout Adjustment | P2 | D |
 | Documents, pages, spreads | Adjust Layout | P2 | D |
 | Documents, pages, spreads | Liquid layout | P2 | D |
-| Documents, pages, spreads | Alternate layouts | P2 | P |
+| Documents, pages, spreads | Alternate layouts | P2 | D |
 | Documents, pages, spreads | Document grid & baseline grid | P0 | D |
 | Documents, pages, spreads | Ruler guides | P0 | D |
 | Documents, pages, spreads | Guides on layers | P1 | D |
