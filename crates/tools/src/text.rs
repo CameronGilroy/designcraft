@@ -14,6 +14,17 @@ pub struct TypeTool {
     start: Option<Point>,
     selecting: Option<u64>,
     drawing: bool,
+    /// A press on a table whose whole rows or columns are selected: (frame, press point in
+    /// spread space) — a drag moves them, a click places the caret.
+    cell_drag: Option<(u64, Point)>,
+}
+
+/// Are whole rows or whole columns of a table selected?
+fn whole_rows_or_cols(cx: &ToolContext) -> bool {
+    let Some(ts) = cx.selection.cells else { return false };
+    let Some(t) = cx.doc.story(ts.story).and_then(|s| s.tables.get(&ts.table)) else { return false };
+    let r = ts.range;
+    (r.c0 == 0 && r.c1 + 1 == t.ncols()) || (r.r0 == 0 && r.r1 + 1 == t.nrows())
 }
 
 impl TypeTool {
@@ -33,11 +44,17 @@ impl Tool for TypeTool {
                 self.start = Some(ev.pos);
                 self.drawing = false;
                 self.selecting = None;
+                self.cell_drag = None;
                 if let Some((_, id)) = cx.hit(ev.pos)
                     && let Some(it) = cx.doc.item(id)
                     && !matches!(it.content, designcraft_doc::Content::Graphic(_) | designcraft_doc::Content::Group { .. })
                 {
                     let sp = cx.layout.spread_at(ev.pos).map(|(_, p)| p).unwrap_or(ev.pos);
+                    // Whole rows/columns selected: wait to see whether this is a drag.
+                    if ev.kind == PointerKind::Down && !ev.mods.shift && whole_rows_or_cols(cx) {
+                        self.cell_drag = Some((id.0, sp));
+                        return vec![];
+                    }
                     self.selecting = Some(id.0);
                     let cmd = if ev.kind == PointerKind::DoubleClick {
                         "text.selectWord"
@@ -52,6 +69,9 @@ impl Tool for TypeTool {
             }
             PointerKind::Drag => {
                 let Some(a) = self.start else { return vec![] };
+                if self.cell_drag.is_some() {
+                    return vec![];
+                }
                 if let Some(fid) = self.selecting {
                     let sp = cx.layout.spread_at(ev.pos).map(|(_, p)| p).unwrap_or(ev.pos);
                     return vec![Action::Exec("text.extendTo".into(), json!({"frame": fid, "point": [sp.x, sp.y]}))];
@@ -75,6 +95,15 @@ impl Tool for TypeTool {
             }
             PointerKind::Up => {
                 let start = self.start.take();
+                if let Some((fid, from)) = self.cell_drag.take() {
+                    let sp = cx.layout.spread_at(ev.pos).map(|(_, p)| p).unwrap_or(ev.pos);
+                    let moved = start.is_some_and(|a| (ev.pos - a).hypot() >= cx.tol(3.0));
+                    return if moved {
+                        vec![Action::Exec("table.dropCells".into(), json!({"frame": fid, "from": [from.x, from.y], "to": [sp.x, sp.y]}))]
+                    } else {
+                        vec![Action::Exec("text.placeCaret".into(), json!({"frame": fid, "point": [from.x, from.y]}))]
+                    };
+                }
                 if std::mem::take(&mut self.drawing) {
                     self.selecting = None;
                     return vec![Action::Commit];

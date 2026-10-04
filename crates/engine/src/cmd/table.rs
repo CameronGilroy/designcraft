@@ -113,6 +113,15 @@ fn table_specs() -> Vec<CommandSpec> {
         cmd!("table.delete", "Delete Table", ["Table", "Delete"], None, "{}", in_table, delete_table),
         cmd!("table.merge", "Merge Cells", ["Table"], None, "{} — merge the target cell range", in_table, merge),
         cmd!(
+            "table.dropCells",
+            "Drag Rows or Columns",
+            [],
+            None,
+            "{frame, from: [x, y], to: [x, y]} — selected whole rows (or columns) dragged from `from` move to the row (column) at `to`; otherwise a text drag",
+            has_doc,
+            drop_cells
+        ),
+        cmd!(
             "table.placeGraphic",
             "Convert Cell to Graphic Cell",
             ["Table", "Convert Cell Type"],
@@ -1132,6 +1141,76 @@ mod style_tests {
     }
 }
 
+/// The table cell under spread point `pt` in text frame `frame`: (story, table, row, col).
+fn cell_at(s: &Session, frame: designcraft_doc::ItemId, pt: designcraft_geom::Point) -> Option<(StoryId, u64, usize, usize)> {
+    let st = s.active()?;
+    let loc = st.doc.find(frame)?;
+    let it = st.doc.item_at(&loc)?;
+    let sid = it.text_frame()?.story;
+    let inner = (st.doc.parent_xf(&loc) * it.text_xf()).inverse() * pt;
+    let cs = s.cache.get(&st.doc, sid, None);
+    let fi = cs.frames.iter().position(|f| f.frame == frame)?;
+    let (table, row, col, _) = designcraft_compose::hit_cell(&cs, fi, inner)?;
+    Some((sid, table, row, col))
+}
+
+fn drop_cells(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "table.dropCells";
+    let frame = super::id_param(p, "frame").ok_or_else(|| bad(ID, "`frame` required"))?;
+    let pt = |k: &str| -> Result<designcraft_geom::Point> {
+        let a = p.get(k).and_then(Value::as_array).ok_or_else(|| bad(ID, format!("`{k}` required")))?;
+        Ok(designcraft_geom::Point::new(a.first().and_then(Value::as_f64).unwrap_or(0.0), a.get(1).and_then(Value::as_f64).unwrap_or(0.0)))
+    };
+    let (from, to) = (pt("from")?, pt("to")?);
+    let sel = s.doc()?.selection.cells;
+    let hit_from = cell_at(s, frame, from);
+    let hit_to = cell_at(s, frame, to);
+    if let (Some(ts), Some((sid, tid, fr, fc)), Some((_, tid2, tr, tc))) = (sel, hit_from, hit_to)
+        && ts.story == sid
+        && ts.table == tid
+        && tid2 == tid
+        && ts.range.contains(fr, fc)
+    {
+        let (nr, nc) = {
+            let t = s.doc()?.doc.story(sid).and_then(|st| st.tables.get(&tid)).ok_or_else(|| bad(ID, "no table"))?;
+            (t.nrows(), t.ncols())
+        };
+        let r = ts.range;
+        let rows = r.c0 == 0 && r.c1 + 1 == nc;
+        let cols = r.r0 == 0 && r.r1 + 1 == nr;
+        if rows || cols {
+            let (lo, hi, target) = if rows { (r.r0, r.r1, tr) } else { (r.c0, r.c1, tc) };
+            if target >= lo && target <= hi {
+                return Ok(json!({"moved": 0}));
+            }
+            let n = hi - lo + 1;
+            let r2 = s.edit(|d, selm| {
+                let t = d.story_mut(sid).and_then(|st| st.table_mut(tid)).ok_or_else(|| bad(ID, "no table"))?;
+                let mv = |t: &mut designcraft_doc::Table, a: usize, b: usize| if rows { t.move_row(a, b) } else { t.move_col(a, b) };
+                let new_lo = if target > hi {
+                    for _ in 0..n {
+                        mv(t, lo, target).map_err(|e| bad(ID, e))?;
+                    }
+                    target + 1 - n
+                } else {
+                    for k in 0..n {
+                        mv(t, lo + k, target + k).map_err(|e| bad(ID, e))?;
+                    }
+                    target
+                };
+                let range =
+                    if rows { CellRange::new(new_lo, r.c0, new_lo + n - 1, r.c1) } else { CellRange::new(r.r0, new_lo, r.r1, new_lo + n - 1) };
+                selm.cells = Some(TableSel { range, ..ts });
+                Ok(json!({"moved": n, "to": new_lo}))
+            })?;
+            return Ok(r2);
+        }
+    }
+    // Not a row/column drag: select text from the press to the release.
+    s.execute("text.placeCaret", &json!({"frame": frame.0, "point": [from.x, from.y]}))?;
+    s.execute("text.extendTo", &json!({"frame": frame.0, "point": [to.x, to.y]}))
+}
+
 fn place_graphic(s: &mut Session, p: &Value) -> Result<Value> {
     const ID: &str = "table.placeGraphic";
     let g = target(s, p, ID)?;
@@ -1306,6 +1385,23 @@ mod sort_tests {
             let t = d.stories.values().flat_map(|st| st.tables.values()).next().unwrap();
             t.cell(r, c).unwrap().text.text.clone()
         };
+        // Dragging a selected row onto the last row moves it there.
+        let d = s.doc().unwrap().doc.clone();
+        let (sid, tid) = d.stories.values().find_map(|st| st.tables.keys().next().map(|k| (st.id, *k))).unwrap();
+        let fid = d.stories[&sid].frames[0];
+        let cs = s.cache.get(&d, sid, None);
+        let cells = &cs.frames[0].tables[0].cells;
+        let centre = |r: usize| {
+            let c = cells.iter().find(|c| c.row == r && c.col == 0).unwrap().rect.center();
+            d.item(fid).unwrap().text_xf() * c
+        };
+        let (from, to) = (centre(0), centre(2));
+        s.execute("table.select", &json!({"story": sid.0, "table": tid, "rows": [0, 0], "what": "row"})).unwrap();
+        let r2 = s.execute("table.dropCells", &json!({"frame": fid.0, "from": [from.x, from.y], "to": [to.x, to.y]})).unwrap();
+        assert_eq!(r2["moved"], 1);
+        assert_eq!([cell(&s, 0, 0), cell(&s, 1, 0), cell(&s, 2, 0)], ["b", "c", "a"]);
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!([cell(&s, 0, 0), cell(&s, 1, 0), cell(&s, 2, 0)], ["a", "b", "c"]);
         s.execute("table.moveRow", &json!({"from": 0, "to": 2})).unwrap();
         assert_eq!([cell(&s, 0, 0), cell(&s, 1, 0), cell(&s, 2, 0)], ["b", "c", "a"]);
         s.execute("table.moveColumn", &json!({"from": 1, "to": 0})).unwrap();
