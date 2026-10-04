@@ -1484,8 +1484,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "qrCode" => {
             let mut p = Value::Object(d.fields.clone());
             // Nothing selected: a 2-inch code at the top left of the page in view.
-            if app.session.active().is_some_and(|s| s.selection.items.is_empty()) {
-                let st = app.session.active().expect("doc");
+            if let Some(st) = app.session.active().filter(|s| s.selection.items.is_empty()) {
                 let abs = crate::canvas::current_page(app).unwrap_or(0);
                 let (si, pi) = st.doc.page_loc(abs).unwrap_or((0, 0));
                 let x = st.doc.spreads.get(si).and_then(|sp| sp.pages.get(pi)).map_or(0.0, |pg| pg.x);
