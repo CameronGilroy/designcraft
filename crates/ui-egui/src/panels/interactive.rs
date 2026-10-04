@@ -170,6 +170,55 @@ pub fn tags(app: &mut DesignApp, ui: &mut egui::Ui) {
             let _ = app.run("selection.set", json!({"ids": [el["id"]]}));
         }
     }
+    // DTD: load, validate (problems listed until the next validation), delete.
+    let vid = egui::Id::new("dtd_problems");
+    let mut problems: Option<Vec<String>> = ui.data(|d| d.get_temp(vid));
+    ui.horizontal(|ui| {
+        if ui.button("Load DTD…").clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dtd"))
+        {
+            match app.run("xml.loadDtd", json!({"path": path})) {
+                Ok(_) => problems = None,
+                Err(e) => app.status(format!("Load DTD: {e}")),
+            }
+        }
+        let has_dtd = info["dtd"].as_bool().unwrap_or(false);
+        if ui.add_enabled(has_dtd, egui::Button::new("Validate")).clicked()
+            && let Ok(v) = app.session.execute("xml.validate", &json!({}))
+        {
+            problems = Some(
+                v["problems"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|p| format!("{}: {}", p["path"].as_str().unwrap_or(""), p["message"].as_str().unwrap_or("")))
+                    .collect(),
+            );
+        }
+        if has_dtd && ui.small_button("Delete DTD").clicked() {
+            let _ = app.run("xml.deleteDtd", json!({}));
+            problems = None;
+        }
+    });
+    match &problems {
+        Some(list) if list.is_empty() => {
+            ui.label(egui::RichText::new("The structure is valid.").size(11.0).color(t.text_dim));
+        }
+        Some(list) => {
+            for p in list {
+                ui.label(egui::RichText::new(format!("⚠ {p}")).size(11.0));
+            }
+        }
+        None => {}
+    }
+    ui.data_mut(|d| match problems {
+        Some(p) => {
+            d.insert_temp(vid, p);
+        }
+        None => {
+            d.remove::<Vec<String>>(vid);
+        }
+    });
     ui.separator();
     ui.horizontal(|ui| {
         if ui.button("Export XML…").clicked() {

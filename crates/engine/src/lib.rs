@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod cmd;
+pub mod dtd;
 pub mod links;
 pub mod math;
 pub mod recovery;

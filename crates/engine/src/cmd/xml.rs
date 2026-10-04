@@ -177,9 +177,9 @@ fn parse(xml: &str) -> std::result::Result<Vec<Element>, String> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "xml.tags", "Tags", [], None, "{} → {root, tags: [{name, color}], styleMap: [[style, tag]]}", has_doc, |s, _| {
+        cmd!(query "xml.tags", "Tags", [], None, "{} → {root, tags: [{name, color}], styleMap: [[style, tag]], dtd: bool}", has_doc, |s, _| {
             let d = &s.doc()?.doc;
-            Ok(json!({"root": root_name(d), "tags": d.xml.tags, "styleMap": d.xml.style_map}))
+            Ok(json!({"root": root_name(d), "tags": d.xml.tags, "styleMap": d.xml.style_map, "dtd": !d.xml.dtd.is_empty()}))
         }),
         cmd!("xml.newTag", "New Tag", ["Window", "Utilities", "Tags"], None, "{name, color?: [r, g, b]}", has_doc, |s, p| {
             let name = str_param(p, "name").unwrap_or("").trim().to_string();
@@ -312,6 +312,62 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         }),
         cmd!(
+            "xml.loadDtd",
+            "Load DTD…",
+            ["Window", "Utilities", "Tags"],
+            None,
+            "{path | text} — keep the DTD for validation and add a tag for each declared element; the root takes the first element's name unless already named → {elements}",
+            has_doc,
+            |s, p| {
+                let text = text_or_path(p, "xml.loadDtd")?;
+                let dtd = crate::dtd::parse(&text).map_err(|e| bad("xml.loadDtd", e))?;
+                let names: Vec<String> = dtd.element_names().map(str::to_string).collect();
+                s.edit(|d, _| {
+                    for n in &names {
+                        if valid_name(n) && !d.xml.tags.iter().any(|t| t.name == *n) {
+                            let color = COLORS[d.xml.tags.len() % COLORS.len()];
+                            d.xml.tags.push(XmlTag { name: n.clone(), color });
+                        }
+                    }
+                    if d.xml.root.is_empty()
+                        && let Some(first) = names.first()
+                    {
+                        d.xml.root = first.clone();
+                    }
+                    d.xml.dtd = text.clone();
+                    Ok(json!({"elements": names.len()}))
+                })
+            }
+        ),
+        cmd!(
+            "xml.deleteDtd",
+            "Delete DTD",
+            [],
+            None,
+            "{}",
+            |s: &Session| { if s.doc().is_ok_and(|d| !d.doc.xml.dtd.is_empty()) { Ok(()) } else { Err("no DTD loaded".into()) } },
+            |s, _| s.edit(|d, _| {
+                d.xml.dtd.clear();
+                ok()
+            })
+        ),
+        cmd!(
+            query "xml.validate",
+            "Validate from Root Element",
+            [],
+            None,
+            "{} — check the structure (as exported) against the loaded DTD → {valid, problems: [{path, message}]}",
+            |s: &Session| {
+                if s.doc().is_ok_and(|d| !d.doc.xml.dtd.is_empty()) { Ok(()) } else { Err("load a DTD first".into()) }
+            },
+            |s, _| {
+                let d = &s.doc()?.doc;
+                let dtd = crate::dtd::parse(&d.xml.dtd).map_err(|e| bad("xml.validate", e))?;
+                let problems = crate::dtd::validate(&dtd, &export_xml(d));
+                Ok(json!({"valid": problems.is_empty(), "problems": problems}))
+            }
+        ),
+        cmd!(
             "file.importXml",
             "Import XML…",
             ["File"],
@@ -323,9 +379,9 @@ pub fn specs() -> Vec<CommandSpec> {
     ]
 }
 
-fn import_xml(s: &mut Session, p: &Value) -> Result<Value> {
-    const ID: &str = "file.importXml";
-    let text = match (str_param(p, "text"), str_param(p, "path")) {
+/// The `text` parameter, or the file at `path`.
+fn text_or_path(p: &Value, id: &str) -> Result<String> {
+    Ok(match (str_param(p, "text"), str_param(p, "path")) {
         (Some(t), _) => t.to_string(),
         (None, Some(path)) => {
             #[cfg(not(target_arch = "wasm32"))]
@@ -337,8 +393,13 @@ fn import_xml(s: &mut Session, p: &Value) -> Result<Value> {
             };
             t
         }
-        _ => return Err(bad(ID, "`path` or `text` required")),
-    };
+        _ => return Err(bad(id, "`path` or `text` required")),
+    })
+}
+
+fn import_xml(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "file.importXml";
+    let text = text_or_path(p, ID)?;
     let elements = parse(&text).map_err(|e| bad(ID, format!("not well-formed XML: {e}")))?;
     let d = &s.doc()?.doc;
     // Frames by tag, in reading order; each element takes the next free one.
@@ -389,6 +450,30 @@ mod tests {
     use serde_json::json;
 
     use crate::Session;
+
+    #[test]
+    fn dtd_loads_tags_and_validates_the_structure() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        assert!(s.execute("xml.validate", &json!({})).is_err(), "no DTD yet");
+        let dtd = "<!ELEMENT article (headline, story+)><!ELEMENT headline (#PCDATA)><!ELEMENT story (#PCDATA | term)*><!ELEMENT term (#PCDATA)>";
+        let r = s.execute("xml.loadDtd", &json!({"text": dtd})).unwrap();
+        assert_eq!(r["elements"], 4);
+        let tags = s.execute("xml.tags", &json!({})).unwrap();
+        assert_eq!(tags["root"], "article");
+        assert_eq!(tags["tags"].as_array().unwrap().len(), 4);
+        let a = s.execute("frame.create", &json!({"rect": [72, 72, 400, 150], "content": "text", "text": "Body", "caret": false})).unwrap();
+        s.execute("xml.tag", &json!({"tag": "story", "ids": [a["id"]]})).unwrap();
+        let v = s.execute("xml.validate", &json!({})).unwrap();
+        assert_eq!(v["valid"], false);
+        assert!(v["problems"][0]["message"].as_str().unwrap().contains("the DTD asks for (headline, story+)"), "{v}");
+        let h = s.execute("frame.create", &json!({"rect": [72, 20, 400, 60], "content": "text", "text": "Head", "caret": false})).unwrap();
+        s.execute("xml.tag", &json!({"tag": "headline", "ids": [h["id"]]})).unwrap();
+        assert_eq!(s.execute("xml.validate", &json!({})).unwrap()["valid"], true);
+        assert!(s.execute("xml.loadDtd", &json!({"text": "<!ELEMENT a (b,|c)>"})).is_err());
+        s.execute("xml.deleteDtd", &json!({})).unwrap();
+        assert!(s.execute("xml.validate", &json!({})).is_err());
+    }
 
     #[test]
     fn tag_export_and_import_xml() {
