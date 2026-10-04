@@ -8,6 +8,16 @@ DesignCraft is a clean-room, open-source, Rust-native page-layout application ta
 
 `plan/` is gitignored (local only).
 
+## Never crash
+People trust DesignCraft with their layouts; a crash loses their work. **This outranks feature work**: never ship a feature through a panic path, and fix a crash before building on top of it. Standard: [`craftrules/standards/never-crash.md`](https://github.com/storytold/craftrules/blob/main/standards/never-crash.md).
+- **No panics in non-test code:** no `unwrap()`, `expect()`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`; no `unsafe` (`unsafe_code = "forbid"`). The one exception is a provably infallible literal (a constant regex, `write!` to a `String`): `#[allow(clippy::expect_used)]` + `.expect("why it cannot fail")`.
+- **Errors are `Result<T, E>`** through the crate's error type and `?` (`ok_or(..)?`, `let … else`, `if let`, `map_err` for context). An unfinished feature returns an "unsupported" error. Don't `unwrap_or_default()` where a silent default would corrupt a document; return an error.
+- **Input-derived numbers are hostile** (files, commands, MCP/control params, settings): `get()` instead of `[i]`/`[a..b]`, slice strings at char boundaries, checked/saturating arithmetic for lengths and offsets, no division by zero or NaN casts, cap input-sized allocations.
+- **Bound recursion** (seen-sets or depth limits for nested or cyclic documents). **Locks:** `lock().unwrap_or_else(PoisonError::into_inner)` or an error; thread joins are `Result`s.
+- **Last-resort guard:** escaped panics during command execution and file import/export become an error, never a lost document. It's a safety net, not a licence.
+- **Prove it:** every crash fix lands with a small synthetic regression test that panicked before the fix.
+- Clean crates carry `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]`; new crates start with it. Tests may `unwrap` (`clippy.toml`).
+
 ## Non-negotiables
 - **Clean-room.** InDesign is installed on the dev machine and may be *observed* black-box: run it, use its UI with synthetic documents, take screenshots (by window id) stored only under `plan/indesign/screenshots/` (never committed). Never read, disassemble or copy anything inside the InDesign bundle (names/listings only), never copy Adobe icons, artwork, presets or wording beyond feature names, never commit files produced by InDesign. Never copy GPL/AGPL/LGPL code (Scribus, LibreOffice, Ghostscript…).
 - **Assets:** no Adobe iconography or images — ever. Every asset is original / OSI / CC0 / redistributable CC (except the ArtCraft trademarks in `docs/brand/`, under `docs/brand/LICENSE-brand.txt`) and has a row in `ASSETS.md` (`cargo xtask assets` enforces it). Prefer art generated in code.
