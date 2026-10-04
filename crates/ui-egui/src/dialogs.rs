@@ -1891,6 +1891,12 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
                         d.fields.insert("p.composer".into(), json!("singleLine"));
                     }
                     ui.end_row();
+                    ui.label("Insert Kashidas:");
+                    let mut k = cur(d, "p.kashidas", &pv["kashidas"]).as_bool().unwrap_or(true);
+                    if ui.checkbox(&mut k, "In justified Arabic text").changed() {
+                        d.fields.insert("p.kashidas".into(), json!(k));
+                    }
+                    ui.end_row();
                 });
             }
             "color" => {
