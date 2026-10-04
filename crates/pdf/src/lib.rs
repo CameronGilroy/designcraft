@@ -115,6 +115,8 @@ pub struct PdfOptions {
     /// Tagged PDF: stories become paragraphs in reading order, graphics figures with their alt
     /// text, parent-page items and printer's marks artifacts.
     pub tagged: bool,
+    /// Interactive PDF: placed video and sound are embedded and play in Screen annotations.
+    pub media: bool,
 }
 
 impl Default for PdfOptions {
@@ -131,6 +133,7 @@ impl Default for PdfOptions {
             author: None,
             created: None,
             tagged: false,
+            media: false,
         }
     }
 }

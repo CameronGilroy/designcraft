@@ -170,8 +170,24 @@ mod tests {
         let img = rr.render_page(&d, &s.cache, 0, 1.0, false, &Default::default()).unwrap();
         let p = img.pixel(110, 110);
         assert!(p[0] > 200 && p[1] < 60, "poster: {p:?}");
-        // PDF export draws it; EPUB carries the video.
-        assert!(s.execute("file.exportPdf", &json!({})).is_ok());
+        // PDF export draws it; interactive PDF embeds the video and plays it in a screen annotation.
+        let pdf = |s: &mut Session, media: bool| {
+            let r = s.execute("file.exportPdf", &json!({"media": media})).unwrap();
+            super::super::file::base64_decode(r["base64"].as_str().unwrap())
+        };
+        let plain = String::from_utf8_lossy(&pdf(&mut s, false)).to_string();
+        assert!(!plain.contains("/Subtype/Screen"));
+        let rich = pdf(&mut s, true);
+        let t = String::from_utf8_lossy(&rich);
+        assert!(
+            t.contains("/Subtype/Screen") && t.contains("/S/Rendition") && t.contains("/CT(video/mp4)") && t.contains("/RC 0"),
+            "screen + rendition"
+        );
+        assert!(t.contains("/Type/EmbeddedFile/Subtype/video#2Fmp4") && t.contains("ftypmp42"), "the file is embedded");
+        assert!(!t.contains("/AcroForm"), "no form without fields");
+        // Still a readable PDF.
+        assert_eq!(hayro_syntax::Pdf::new(rich.clone()).expect("valid PDF").pages().len(), 1);
+        // EPUB carries the video.
         let e = s.execute("file.exportEpub", &json!({})).unwrap();
         let bytes = super::super::file::base64_decode(e["base64"].as_str().unwrap());
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();

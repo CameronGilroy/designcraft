@@ -202,15 +202,16 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
     }
     let mut bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
     let mut warnings = ex.warnings;
-    // Form fields (Buttons and Forms), not in PDF/X.
+    // Form fields (Buttons and Forms) and, for interactive PDF, video and sound; not in PDF/X.
     let fields = crate::forms::collect(doc, &sheets);
-    if !fields.is_empty() {
+    let media = if opts.media { crate::forms::collect_media(doc, &sheets) } else { Vec::new() };
+    if !fields.is_empty() || !media.is_empty() {
         if opts.standard == Standard::PdfX4 {
-            warnings.push("PDF/X-4: form fields were left out".into());
+            warnings.push("PDF/X-4: form fields and media were left out".into());
         } else {
-            match crate::forms::add_fields(&bytes, &fields) {
+            match crate::forms::add_fields(&bytes, &fields, &media) {
                 Some(b) => bytes = b,
-                None => warnings.push("form fields couldn't be added to this PDF".into()),
+                None => warnings.push("form fields and media couldn't be added to this PDF".into()),
             }
         }
     }

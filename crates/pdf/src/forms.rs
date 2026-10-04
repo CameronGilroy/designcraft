@@ -1,10 +1,11 @@
 //! Interactive PDF forms (Buttons and Forms: text fields, check boxes, combo and list boxes,
-//! signature fields). krilla doesn't write AcroForm fields, so they're added as an incremental
-//! update: widget annotations on their pages, the page `/Annots` and the catalog `/AcroForm`.
+//! signature fields) and media (placed video and sound). krilla writes neither, so they're added
+//! as an incremental update: widget and screen annotations on their pages, the page `/Annots`, the
+//! catalog `/AcroForm`, and the media files embedded for rendition actions.
 
 use std::fmt::Write as _;
 
-use designcraft_doc::{Document, FieldKind, FormField, Item, SpreadRef};
+use designcraft_doc::{Document, FieldKind, FormField, Item, MediaOptions, SpreadRef};
 use designcraft_geom::Affine;
 
 use crate::export::Sheet;
@@ -13,15 +14,17 @@ use crate::transitions::{int_after, object, rfind};
 /// A field placed on an output page: (page index, PDF rectangle, field).
 pub(crate) type Placed = (usize, [f64; 4], FormField);
 
-/// The form fields of every exported page, in PDF coordinates (origin bottom left).
-pub(crate) fn collect(doc: &Document, sheets: &[Sheet]) -> Vec<Placed> {
-    let mut out = Vec::new();
+/// A placed video or sound on an output page: (page index, PDF rectangle, file name, MIME type,
+/// bytes, options).
+pub(crate) type PlacedMedia = (usize, [f64; 4], String, String, std::sync::Arc<Vec<u8>>, MediaOptions);
+
+/// Every shown item of the exported pages with its PDF rectangle (origin bottom left).
+fn visit(doc: &Document, sheets: &[Sheet], mut f: impl FnMut(usize, [f64; 4], &Item)) {
     for (pi, sh) in sheets.iter().enumerate() {
         let Some(sp) = doc.spread(SpreadRef::Doc(sh.spread)) else { continue };
         let mut stack: Vec<(Affine, &std::sync::Arc<Item>)> = sp.items.iter().map(|it| (Affine::IDENTITY, it)).collect();
         while let Some((xf, it)) = stack.pop() {
             stack.extend(it.shown_children().map(|c| (xf * it.xf, c)));
-            let Some(f) = &it.form_field else { continue };
             if it.hidden {
                 continue;
             }
@@ -30,9 +33,32 @@ pub(crate) fn collect(doc: &Document, sheets: &[Sheet]) -> Vec<Placed> {
                 continue;
             }
             let h = sh.media.height();
-            out.push((pi, [r.x0 - sh.media.x0, h - (r.y1 - sh.media.y0), r.x1 - sh.media.x0, h - (r.y0 - sh.media.y0)], f.clone()));
+            f(pi, [r.x0 - sh.media.x0, h - (r.y1 - sh.media.y0), r.x1 - sh.media.x0, h - (r.y0 - sh.media.y0)], it);
         }
     }
+}
+
+/// The form fields of every exported page.
+pub(crate) fn collect(doc: &Document, sheets: &[Sheet]) -> Vec<Placed> {
+    let mut out = Vec::new();
+    visit(doc, sheets, |pi, r, it| {
+        if let Some(f) = &it.form_field {
+            out.push((pi, r, f.clone()));
+        }
+    });
+    out
+}
+
+/// The video and sound of every exported page (those whose file is in the document).
+pub(crate) fn collect_media(doc: &Document, sheets: &[Sheet]) -> Vec<PlacedMedia> {
+    let mut out = Vec::new();
+    visit(doc, sheets, |pi, r, it| {
+        if let (Some(m), designcraft_doc::Content::Graphic(g)) = (&it.media, &it.content)
+            && let Some(a) = doc.assets.get(&g.asset).filter(|a| !a.data.is_empty())
+        {
+            out.push((pi, r, a.name.clone(), a.mime.clone(), a.data.clone(), m.clone()));
+        }
+    });
     out
 }
 
@@ -57,10 +83,10 @@ fn pdf_string(s: &str) -> String {
     o
 }
 
-/// Add `fields` to `pdf` (page indices in output order). `None` when the file's structure isn't
-/// the simple kind this understands.
-pub(crate) fn add_fields(pdf: &[u8], fields: &[Placed]) -> Option<Vec<u8>> {
-    if fields.is_empty() {
+/// Add `fields` and `media` to `pdf` (page indices in output order). `None` when the file's
+/// structure isn't the simple kind this understands.
+pub(crate) fn add_fields(pdf: &[u8], fields: &[Placed], media: &[PlacedMedia]) -> Option<Vec<u8>> {
+    if fields.is_empty() && media.is_empty() {
         return Some(pdf.to_vec());
     }
     let t_at = rfind(pdf, b"trailer")?;
@@ -90,10 +116,53 @@ pub(crate) fn add_fields(pdf: &[u8], fields: &[Placed]) -> Option<Vec<u8>> {
         out.extend_from_slice(body);
         out.extend_from_slice(b"\nendobj\n");
     };
-    let font = next;
-    next += 1;
-    put(&mut out, font, b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>");
     let mut per_page: Vec<Vec<usize>> = vec![Vec::new(); kids.len()];
+    // Media: the file embedded, a rendition of it, and a screen annotation that plays it (on
+    // click, and on page open when asked).
+    for (page, r, name, mime, data, m) in media {
+        let Some(&page_ref) = kids.get(*page) else { continue };
+        let (file, spec, rendition, screen) = (next, next + 1, next + 2, next + 3);
+        next += 4;
+        let mut body = format!("<</Type/EmbeddedFile/Subtype/{}/Length {}>>\nstream\n", mime.replace('/', "#2F"), data.len()).into_bytes();
+        body.extend_from_slice(data);
+        body.extend_from_slice(b"\nendstream");
+        put(&mut out, file, &body);
+        put(&mut out, spec, format!("<</Type/Filespec/F{}/UF{}/EF<</F {file} 0 R>>>>", pdf_string(name), pdf_string(name)).as_bytes());
+        // Play parameters: player controls, and a repeat count of 0 (forever) when looping.
+        let params = format!("<</BE<</C {}/RC {}>>>>", m.controls, if m.looping { 0 } else { 1 });
+        put(
+            &mut out,
+            rendition,
+            format!(
+                "<</Type/Rendition/S/MR/N{}/C<</Type/MediaClip/S/MCD/N{}/CT{}/D {spec} 0 R/P<</TF(TEMPACCESS)>>>>/P{params}>>",
+                pdf_string(name),
+                pdf_string(name),
+                pdf_string(mime)
+            )
+            .as_bytes(),
+        );
+        let play = format!("<</S/Rendition/OP 0/AN {screen} 0 R/R {rendition} 0 R>>");
+        let on_open = if m.play_on_page_load { format!("/AA<</PO{play}>>") } else { String::new() };
+        put(
+            &mut out,
+            screen,
+            format!(
+                "<</Type/Annot/Subtype/Screen/Rect[{:.2} {:.2} {:.2} {:.2}]/P {page_ref} 0 R/F 4/T{}/A{play}{on_open}>>",
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                pdf_string(name)
+            )
+            .as_bytes(),
+        );
+        per_page[*page].push(screen);
+    }
+    let font = next;
+    if !fields.is_empty() {
+        next += 1;
+        put(&mut out, font, b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>");
+    }
     let mut all = Vec::new();
     for (page, r, f) in fields {
         let Some(&page_ref) = kids.get(*page) else { continue };
@@ -174,10 +243,12 @@ pub(crate) fn add_fields(pdf: &[u8], fields: &[Placed]) -> Option<Vec<u8>> {
         }
     }
     // The catalog's form.
-    let refs: Vec<String> = all.iter().map(|i| format!("{i} 0 R")).collect();
-    let close = cat.rfind(">>")?;
-    let acro = format!("/AcroForm<</Fields[{}]/NeedAppearances true/DA(/Helv 0 Tf 0 g)/DR<</Font<</Helv {font} 0 R>>>>>>", refs.join(" "));
-    put(&mut out, root, format!("{}{acro}{}", cat[..close].trim(), &cat[close..]).trim().as_bytes());
+    if !all.is_empty() {
+        let refs: Vec<String> = all.iter().map(|i| format!("{i} 0 R")).collect();
+        let close = cat.rfind(">>")?;
+        let acro = format!("/AcroForm<</Fields[{}]/NeedAppearances true/DA(/Helv 0 Tf 0 g)/DR<</Font<</Helv {font} 0 R>>>>>>", refs.join(" "));
+        put(&mut out, root, format!("{}{acro}{}", cat[..close].trim(), &cat[close..]).trim().as_bytes());
+    }
     let xref_at = out.len();
     entries.sort();
     let mut x = String::from("xref\n");

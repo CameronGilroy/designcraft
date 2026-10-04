@@ -718,7 +718,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "app.exportInteractivePdf" => {
             let mut q = if p.is_object() { p.clone() } else { json!({}) };
-            for (k, v) in [("pageLayout", json!("single")), ("view", json!("fitPage")), ("bookmarksPanel", json!(true))] {
+            for (k, v) in [("pageLayout", json!("single")), ("view", json!("fitPage")), ("bookmarksPanel", json!(true)), ("media", json!(true))] {
                 q.as_object_mut().map(|o| o.entry(k).or_insert(v));
             }
             export_pdf(app, &q)
