@@ -9,6 +9,7 @@
 
 pub mod cmd;
 pub mod dtd;
+pub mod guard;
 pub mod links;
 pub mod math;
 pub mod recovery;
@@ -40,6 +41,9 @@ pub enum EngineError {
     NoDocument,
     #[error("{0}")]
     Other(String),
+    /// A command panicked; the guard kept the document (a bug: please report it).
+    #[error("internal error in `{0}` (the document was kept as it was): {1}")]
+    Internal(String, String),
 }
 
 impl From<designcraft_doc::DocError> for EngineError {
@@ -254,6 +258,7 @@ impl Default for Session {
 
 impl Session {
     pub fn new() -> Self {
+        guard::install_panic_hook();
         Session {
             docs: vec![],
             active: None,
@@ -341,7 +346,13 @@ impl Session {
     }
 
     /// Run a command by id. Edits push one undo step (unless inside an interaction).
+    /// Run command `id`. A panic inside it becomes [`EngineError::Internal`] and leaves the
+    /// document as it was (see [`guard`]).
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value> {
+        self.guarded(id, |s| s.execute_unguarded(id, params))
+    }
+
+    fn execute_unguarded(&mut self, id: &str, params: &Value) -> Result<Value> {
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.into()))?;
         (spec.enabled)(self).map_err(|e| EngineError::Disabled(id.into(), e))?;
         let before = self.active().map(|d| (d.uid, d.doc.clone()));
