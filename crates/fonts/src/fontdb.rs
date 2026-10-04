@@ -304,6 +304,20 @@ fn enumerate_faces(data: &[u8]) -> Vec<Found> {
     out
 }
 
+/// The compiled-in Source Sans 3 Regular, for a database that somehow has no faces at all.
+pub(crate) fn last_resort_face() -> Arc<FontFace> {
+    static FACE: std::sync::OnceLock<Arc<FontFace>> = std::sync::OnceLock::new();
+    FACE.get_or_init(|| {
+        // The font is compiled in (`include_bytes!`), so parsing it can't depend on input; the
+        // `last_resort_face_parses` test proves it on every run.
+        #[allow(clippy::expect_used)]
+        let face = make_face(FontBytes::Static(BUNDLED[0]), 0, FALLBACK_FAMILY.into(), "Regular".into(), Vec::new())
+            .expect("the compiled-in Source Sans 3 Regular parses");
+        Arc::new(face)
+    })
+    .clone()
+}
+
 fn make_face(bytes: FontBytes, index: u32, family: String, style: String, coords: Vec<([u8; 4], f32)>) -> Option<FontFace> {
     let data: &[u8] = match &bytes {
         FontBytes::Static(b) => b,
@@ -550,7 +564,7 @@ impl FontDb {
         self.find(FALLBACK_FAMILY, style)
             .or_else(|| self.find(FALLBACK_FAMILY, "Regular"))
             .or_else(|| self.read_faces().first().cloned())
-            .expect("bundled fonts are always present")
+            .unwrap_or_else(last_resort_face)
     }
 
     /// Is `family` available (loaded)?

@@ -4,6 +4,7 @@
 //! Shaping here is style-agnostic: [`shape`] turns a string in one face into glyph ids, clusters
 //! and advances in font units. `designcraft-compose` applies sizes, tracking, scaling and
 //! justification on top.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
 mod fontdb;
@@ -149,6 +150,13 @@ pub fn first_glyph(face: &FontFace, chars: &[char]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn last_resort_face_parses() {
+        let f = fontdb::last_resort_face();
+        assert_eq!(f.family, fontdb::FALLBACK_FAMILY);
+        assert!(f.upem > 0.0);
+    }
 
     #[test]
     fn bundled_families_load() {

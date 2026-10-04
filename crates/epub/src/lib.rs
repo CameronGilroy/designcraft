@@ -4,6 +4,7 @@
 //! frame); paragraph styles become CSS classes (`p.<slug>`), character styles become `span`
 //! classes, local overrides become inline styles. Placed graphics become `<figure>` elements at
 //! their position in the reading order. Parent-page items (folios, running heads) are skipped.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
