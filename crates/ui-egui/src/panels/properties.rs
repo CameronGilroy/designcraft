@@ -830,7 +830,7 @@ fn text_style_section(app: &mut DesignApp, ui: &mut Ui) {
     }
     ui.add_space(5.0);
     let (names, cur): (Vec<String>, String) = {
-        let st = app.session.active().expect("doc");
+        let Some(st) = app.session.active() else { return };
         if tab == 0 {
             (
                 st.doc.styles.paragraph.iter().map(|p| p.name.clone()).filter(|n| n != designcraft_doc::NO_PARA_STYLE).collect(),

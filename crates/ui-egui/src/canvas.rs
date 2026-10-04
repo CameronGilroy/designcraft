@@ -245,7 +245,7 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     }
     handle_input(app, ui, &resp, rect);
     let Some(st) = app.session.active() else { return };
-    let v = *app.view().expect("view");
+    let Some(&v) = app.view() else { return };
     let xf = Xf::new(rect, &v);
     let doc = st.doc.clone();
     let layout = CanvasLayout::new(&doc, st.editing_parents);
@@ -400,7 +400,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
     let doc_changed = app.canvas.shown.is_none_or(|s| s.doc != doc_key);
     let zoom_same = app.canvas.shown.is_some_and(|s| (s.zoom - xf.zoom).abs() < 1e-9);
     let job = |app: &DesignApp| {
-        let st = app.session.active().expect("doc");
+        let st = app.session.active()?;
         let placed: Vec<designcraft_render::Placed> =
             layout.slots.iter().map(|s| designcraft_render::Placed { spread: s.spread, xf: s.xf }).collect();
         let w = (target.size.0 as f64 * ppp).round().max(1.0) as u32;
@@ -424,7 +424,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
             blend_space_view: !app.ui.proof_colors,
             ..Default::default()
         };
-        (st.doc.clone(), placed, w, h, view, opts)
+        Some((st.doc.clone(), placed, w, h, view, opts))
     };
     // Synchronous path: document edits (keep editing crisp), first frame, or no worker.
     #[cfg(not(target_arch = "wasm32"))]
@@ -442,7 +442,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
     }
     if !has_worker || app.canvas.shown.is_none() || (doc_changed && zoom_same) {
         let t0 = crate::now_ms();
-        let (doc, placed, w, h, view, opts) = job(app);
+        let Some((doc, placed, w, h, view, opts)) = job(app) else { return };
         let img = app.canvas.renderer.render(&doc, &app.session.cache, &placed, w, h, view, &opts);
         upload(app, ctx, img);
         app.canvas.shown = Some(target);
@@ -463,7 +463,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
         }) {
             return;
         }
-        let (doc, placed, w, h, view, opts) = job(app);
+        let Some((doc, placed, w, h, view, opts)) = job(app) else { return };
         app.canvas.pending_doc = Some(doc.clone());
         app.canvas.token += 1;
         let token = app.canvas.token;

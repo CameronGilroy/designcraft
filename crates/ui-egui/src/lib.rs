@@ -3,6 +3,7 @@
 //! The UI is thin: every action goes through [`DesignApp::run`], which dispatches UI commands
 //! (view/window) here and everything else to the engine. Menus, shortcuts, the ⌘K palette and
 //! the control channel ([`control`]) share that entry point.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
 pub mod about;
