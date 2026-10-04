@@ -663,7 +663,7 @@ impl Exporter<'_> {
                         let kind: krilla::tagging::TagKind = match tag.as_str() {
                             h if h.len() == 2 && h.starts_with('h') => {
                                 let n = h[1..].parse::<u16>().unwrap_or(1).clamp(1, 6);
-                                Tag::Hn(std::num::NonZeroU16::new(n).expect("1–6"), text()).into()
+                                Tag::Hn(std::num::NonZeroU16::new(n).unwrap_or(std::num::NonZeroU16::MIN), text()).into()
                             }
                             "blockquote" => Tag::BlockQuote.into(),
                             _ => Tag::P.into(),

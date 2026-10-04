@@ -23,6 +23,7 @@
 //!   PDF/X support) — the export report says so.
 //!
 //! Not yet: tagged PDF, bookmarks, hyperlinks, overprint, layers as optional content.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
 mod export;
