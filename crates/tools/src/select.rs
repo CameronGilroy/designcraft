@@ -200,8 +200,11 @@ impl Tool for SelectionTool {
                     && let (Some(b), Some(first)) = (cx.selection_bounds(), cx.selection.items.first())
                     && let Some(loc) = cx.doc.find(*first)
                 {
-                    let off = cx.layout.offset(loc.spread);
-                    self.drag = Drag::Resize { handle: h, start: p, from: b - off, spread: loc.spread };
+                    // On a turned spread the canvas handle is another one of the spread's.
+                    let turns = cx.layout.slot(loc.spread).map_or(0, |s| s.rotation as usize);
+                    let handle = (h + 8 - 2 * turns) % 8;
+                    self.drag =
+                        Drag::Resize { handle, start: p, from: cx.layout.xf(loc.spread).inverse().transform_rect_bbox(b), spread: loc.spread };
                     return vec![Action::Begin("Resize".into())];
                 }
                 // Cmd+Shift-click a parent item on a page: override it there and select the copy.
@@ -259,26 +262,30 @@ impl Tool for SelectionTool {
                         }
                     }
                     self.guides.clear();
+                    // The movement in the spread's own coordinates (its view may be turned).
+                    let mut ds = cx.layout.delta_to_spread(origin_spread, d);
+                    let b0s = bounds0.map(|b| cx.layout.xf(origin_spread).inverse().transform_rect_bbox(b));
                     if cx.snap
-                        && let Some(b0) = bounds0
+                        && let Some(b0) = b0s
                     {
-                        let off = cx.layout.offset(origin_spread);
-                        let snap = crate::snap::snap_rect(cx, origin_spread, b0 + d - off, &cx.selection.items);
-                        d += snap.delta;
+                        let snap = crate::snap::snap_rect(cx, origin_spread, b0 + ds, &cx.selection.items);
+                        ds += snap.delta;
                         self.guides = snap.guides;
                     }
                     // Dragging to another spread moves the items there.
                     let target = cx.layout.spread_at(p).map(|(s, _)| s).unwrap_or(origin_spread);
-                    let mut params = json!({"dx": d.x, "dy": d.y, "copy": ev.mods.alt});
+                    let mut params = json!({"dx": ds.x, "dy": ds.y, "copy": ev.mods.alt});
                     if target != origin_spread {
-                        let off = cx.layout.offset(target) - cx.layout.offset(origin_spread);
-                        params = json!({"dx": d.x - off.x, "dy": d.y - off.y, "copy": ev.mods.alt, "toSpread": spread_json(target)});
+                        // Where the selection's corner lands, in the target spread.
+                        let q0 = b0s.map_or(Point::ORIGIN, |b| Point::new(b.x0, b.y0));
+                        let landed = cx.layout.to_spread(target, cx.layout.to_canvas(origin_spread, q0 + ds));
+                        let dt = landed - q0;
+                        params = json!({"dx": dt.x, "dy": dt.y, "copy": ev.mods.alt, "toSpread": spread_json(target)});
                     }
                     vec![Action::Preview("transform.move".into(), params)]
                 }
                 Drag::Resize { handle, start, from, spread } => {
-                    let off = cx.layout.offset(spread);
-                    let to = resize_rect(from, handle, p - off, ev.mods);
+                    let to = resize_rect(from, handle, cx.layout.to_spread(spread, p), ev.mods);
                     let _ = start;
                     // Space while dragging: Live Distribute (several objects keep their size).
                     let distribute = ev.mods.space && cx.selection.items.len() > 1;
@@ -321,7 +328,7 @@ impl Tool for SelectionTool {
                         for slot in &cx.layout.slots {
                             let Some(sp) = cx.doc.spread(slot.spread) else { continue };
                             for it in &sp.items {
-                                let b = it.bounds() + slot.offset;
+                                let b = slot.xf.transform_rect_bbox(it.bounds());
                                 let locked = it.locked || cx.doc.layer(it.layer).is_some_and(|l| l.locked || !l.visible);
                                 if !locked && !it.hidden && b.x0 < r.x1 && b.x1 > r.x0 && b.y0 < r.y1 && b.y1 > r.y0 {
                                     ids.push(Value::from(it.id.0));

@@ -92,8 +92,9 @@ pub fn fit(app: &mut DesignApp, rect: Rect, what: &str) {
         && let Some(sp) = st.doc.spread(slot.spread)
     {
         let center = app.view().map(|v| v.origin.x + rect.width() as f64 / 2.0 / v.zoom).unwrap_or(0.0);
-        let pi = sp.page_at_x(center - slot.offset.x).unwrap_or(0);
-        b = sp.pages[pi].bounds() + slot.offset;
+        let c = slot.to_spread(Point::new(center, slot.bounds.center().y));
+        let pi = sp.page_at_x(c.x).unwrap_or(0);
+        b = slot.xf.transform_rect_bbox(sp.pages[pi].bounds());
     }
     if what == "all" {
         b = layout.slots.iter().map(|s| s.bounds).reduce(|a, b| a.union(b)).unwrap_or(b);
@@ -107,7 +108,7 @@ pub fn fit(app: &mut DesignApp, rect: Rect, what: &str) {
             .filter_map(|id| {
                 let loc = st.doc.find(*id)?;
                 let slot = layout.slots.iter().find(|s| s.spread == loc.spread)?;
-                Some(st.doc.item(*id)?.bounds() + slot.offset)
+                Some(slot.xf.transform_rect_bbox(st.doc.item(*id)?.bounds()))
             })
             .collect();
         let Some(u) = sel.into_iter().reduce(|a, b| a.union(b)) else { return };
@@ -147,8 +148,8 @@ pub fn current_page(app: &DesignApp) -> Option<usize> {
     let SpreadRef::Doc(si) = slot.spread else { return Some(0) };
     let v = app.view()?;
     let r = app.canvas_rect?;
-    let cx = v.origin.x + r.width() as f64 / 2.0 / v.zoom - slot.offset.x;
-    let pi = st.doc.spreads[si].page_at_x(cx).unwrap_or(0);
+    let c = slot.to_spread(Point::new(v.origin.x + r.width() as f64 / 2.0 / v.zoom, slot.bounds.center().y));
+    let pi = st.doc.spreads[si].page_at_x(c.x).unwrap_or(0);
     Some(st.doc.first_page_of_spread(si) + pi)
 }
 
@@ -401,7 +402,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
     let job = |app: &DesignApp| {
         let st = app.session.active().expect("doc");
         let placed: Vec<designcraft_render::Placed> =
-            layout.slots.iter().map(|s| designcraft_render::Placed { spread: s.spread, offset: s.offset }).collect();
+            layout.slots.iter().map(|s| designcraft_render::Placed { spread: s.spread, xf: s.xf }).collect();
         let w = (target.size.0 as f64 * ppp).round().max(1.0) as u32;
         let h = (target.size.1 as f64 * ppp).round().max(1.0) as u32;
         let view = Affine::scale(ppp) * Affine::scale(xf.zoom) * Affine::translate((-target.origin.x, -target.origin.y));
@@ -486,7 +487,7 @@ fn patch_texture(app: &mut DesignApp, layout: &CanvasLayout, ppp: f64, doc_key: 
     let k = sh.zoom * ppp;
     let mut px: Option<(i64, i64, i64, i64)> = None;
     for (r, rect) in &regions {
-        let c = *rect + layout.offset(*r);
+        let c = layout.xf(*r).transform_rect_bbox(*rect);
         let x0 = ((c.x0 - sh.origin.x) * k).floor() as i64 - 1;
         let y0 = ((c.y0 - sh.origin.y) * k).floor() as i64 - 1;
         let x1 = ((c.x1 - sh.origin.x) * k).ceil() as i64 + 1;
@@ -512,8 +513,7 @@ fn patch_texture(app: &mut DesignApp, layout: &CanvasLayout, ppp: f64, doc_key: 
     if ((x1 - x0) * (y1 - y0)) as f64 > 0.5 * (tw * th) as f64 {
         return false;
     }
-    let placed: Vec<designcraft_render::Placed> =
-        layout.slots.iter().map(|s| designcraft_render::Placed { spread: s.spread, offset: s.offset }).collect();
+    let placed: Vec<designcraft_render::Placed> = layout.slots.iter().map(|s| designcraft_render::Placed { spread: s.spread, xf: s.xf }).collect();
     let view = Affine::translate((-(x0 as f64), -(y0 as f64)))
         * Affine::scale(ppp)
         * Affine::scale(sh.zoom)
@@ -577,7 +577,10 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
     let s = &doc.settings;
     for slot in &layout.slots {
         let Some(sp) = doc.spread(slot.spread) else { continue };
-        let off = slot.offset;
+        // Everything below is in spread coordinates, placed through the slot (which may be turned).
+        let m = slot.xf;
+        let pt = |p: Point| xf.to_screen(m * p);
+        let rect = |r: DRect| xf.rect(m.transform_rect_bbox(r));
         // Bleed: one rectangle around the spread (inside bleed only applies at the spread's outer edges).
         let b = s.bleed;
         if app.ui.guides && b.iter().any(|v| *v > 0.0) && !sp.pages.is_empty() {
@@ -585,12 +588,13 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
             let last = &sp.pages[sp.pages.len() - 1];
             let l = if first.side == PageSide::Left { b[3] } else { b[2] };
             let r = if last.side == PageSide::Right || last.side == PageSide::Single { b[3] } else { b[2] };
-            let sb = sp.bounds() + off;
+            let sb = sp.bounds();
             let br = DRect::new(sb.x0 - l, sb.y0 - b[0], sb.x1 + r, sb.y1 + b[1]);
-            painter.rect_stroke(xf.rect(br), 0.0, Stroke::new(hair(painter), c32(s.bleed_color)), StrokeKind::Middle);
+            painter.rect_stroke(rect(br), 0.0, Stroke::new(hair(painter), c32(s.bleed_color)), StrokeKind::Middle);
         }
+        let pasteboard = m.inverse().transform_rect_bbox(layout.pasteboard);
         for p in &sp.pages {
-            let pr = p.bounds() + off;
+            let pr = p.bounds();
             if !app.ui.guides {
                 continue;
             }
@@ -599,44 +603,43 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
                 let g = &s.baseline_grid;
                 let mut y = g.start;
                 while y < p.height {
-                    let a = xf.to_screen(Point::new(pr.x0, pr.y0 + y));
-                    let bb = xf.to_screen(Point::new(pr.x1, pr.y0 + y));
-                    painter.line_segment([a, bb], Stroke::new(hair(painter), c32(g.color).gamma_multiply(0.8)));
+                    painter.line_segment(
+                        [pt(Point::new(pr.x0, pr.y0 + y)), pt(Point::new(pr.x1, pr.y0 + y))],
+                        Stroke::new(hair(painter), c32(g.color).gamma_multiply(0.8)),
+                    );
                     y += g.increment.max(1.0);
                 }
             }
             // Margins (magenta) and columns (violet).
-            let m = p.margin_rect() + off;
-            painter.rect_stroke(xf.rect(m), 0.0, Stroke::new(hair(painter), c32(s.margin_color)), StrokeKind::Middle);
+            painter.rect_stroke(rect(p.margin_rect()), 0.0, Stroke::new(hair(painter), c32(s.margin_color)), StrokeKind::Middle);
             let cols = p.column_rects();
             if cols.len() > 1 {
                 for (i, c) in cols.iter().enumerate() {
-                    let c = *c + off;
                     let col = Stroke::new(hair(painter), c32(s.column_color));
                     if i > 0 {
-                        painter.line_segment([xf.to_screen(Point::new(c.x0, c.y0)), xf.to_screen(Point::new(c.x0, c.y1))], col);
+                        painter.line_segment([pt(Point::new(c.x0, c.y0)), pt(Point::new(c.x0, c.y1))], col);
                     }
                     if i + 1 < cols.len() {
-                        painter.line_segment([xf.to_screen(Point::new(c.x1, c.y0)), xf.to_screen(Point::new(c.x1, c.y1))], col);
+                        painter.line_segment([pt(Point::new(c.x1, c.y0)), pt(Point::new(c.x1, c.y1))], col);
                     }
                 }
             }
             for g in p.guides.iter().filter(|g| g.visible_in(doc)) {
                 // Spread guides cross the pasteboard; page guides their page.
-                let span = if g.spread { layout.pasteboard } else { pr };
+                let span = if g.spread { pasteboard } else { pr };
                 let (a, bb) = match g.orientation {
-                    designcraft_doc::Orientation::Horizontal => (Point::new(span.x0, g.position + off.y), Point::new(span.x1, g.position + off.y)),
+                    designcraft_doc::Orientation::Horizontal => (Point::new(span.x0, g.position), Point::new(span.x1, g.position)),
                     designcraft_doc::Orientation::Vertical => {
-                        let span = if g.spread { slot.bounds.inflate(0.0, 36.0) } else { pr };
-                        (Point::new(g.position + off.x, span.y0), Point::new(g.position + off.x, span.y1))
+                        let span = if g.spread { sp.bounds().inflate(0.0, 36.0) } else { pr };
+                        (Point::new(g.position, span.y0), Point::new(g.position, span.y1))
                     }
                 };
                 let stroke = Stroke::new(hair(painter), Color32::from_rgb(74, 227, 255));
                 if g.liquid {
                     // Liquid guides are dashed.
-                    painter.extend(egui::Shape::dashed_line(&[xf.to_screen(a), xf.to_screen(bb)], stroke, 6.0, 3.0));
+                    painter.extend(egui::Shape::dashed_line(&[pt(a), pt(bb)], stroke, 6.0, 3.0));
                 } else {
-                    painter.line_segment([xf.to_screen(a), xf.to_screen(bb)], stroke);
+                    painter.line_segment([pt(a), pt(bb)], stroke);
                 }
             }
         }
@@ -647,8 +650,7 @@ fn draw_guides(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
 /// Spread-space → canvas transform for an item at `loc`.
 fn item_canvas_xf(doc: &Document, layout: &CanvasLayout, id: designcraft_doc::ItemId) -> Option<(Affine, &'static str)> {
     let loc = doc.find(id)?;
-    let off = layout.offset(loc.spread);
-    Some((Affine::translate(off) * doc.parent_xf(&loc), ""))
+    Some((layout.xf(loc.spread) * doc.parent_xf(&loc), ""))
 }
 
 fn path_screen(it: &Item, xf: &Xf, a: Affine) -> Vec<Vec<Pos2>> {
@@ -687,7 +689,7 @@ fn draw_frames(app: &DesignApp, painter: &egui::Painter, xf: &Xf, doc: &Document
     }
     for slot in &layout.slots {
         let Some(sp) = doc.spread(slot.spread) else { continue };
-        let a = Affine::translate(slot.offset);
+        let a = slot.xf;
         // Parent items on document pages: dotted edges.
         if let SpreadRef::Doc(si) = slot.spread {
             let first = doc.first_page_of_spread(si);
@@ -1508,7 +1510,7 @@ fn draw_flattener_preview(painter: &egui::Painter, xf: &Xf, doc: &Document, layo
         let Some(sp) = doc.spread(slot.spread) else { continue };
         for it in sp.items.iter().filter(|it| !it.hidden && transparent(it)) {
             let r = it.bounds().inflate(designcraft_render::effect_outset(it), designcraft_render::effect_outset(it));
-            painter.rect_filled(xf.rect(r + slot.offset), 0.0, red);
+            painter.rect_filled(xf.rect(slot.xf.transform_rect_bbox(r)), 0.0, red);
         }
     }
 }
@@ -1589,9 +1591,9 @@ fn guide_at(app: &DesignApp, xf: &Xf, p: Pos2) -> Option<(designcraft_doc::Sprea
     let tol = 3.0 / xf.zoom;
     for slot in &layout.slots {
         let sp = st.doc.spread(slot.spread)?;
-        let local = cp - slot.offset;
+        let local = slot.to_spread(cp);
         for (pi, pg) in sp.pages.iter().enumerate() {
-            let pr = if pg.guides.iter().any(|g| g.spread) { layout.pasteboard - slot.offset } else { pg.bounds() };
+            let pr = if pg.guides.iter().any(|g| g.spread) { slot.xf.inverse().transform_rect_bbox(layout.pasteboard) } else { pg.bounds() };
             for (gi, g) in pg.guides.iter().enumerate() {
                 if !g.editable_in(&st.doc) {
                     continue;

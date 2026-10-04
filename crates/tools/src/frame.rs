@@ -73,7 +73,7 @@ impl Tool for FrameTool {
         match ev.kind {
             PointerKind::Down => {
                 let pos = match cx.layout.spread_at(ev.pos) {
-                    Some((sr, sp)) if cx.snap => crate::snap::snap_point(cx, sr, sp).0 + cx.layout.offset(sr),
+                    Some((sr, sp)) if cx.snap => cx.layout.to_canvas(sr, crate::snap::snap_point(cx, sr, sp).0),
                     _ => ev.pos,
                 };
                 self.start = Some(pos);
@@ -90,12 +90,11 @@ impl Tool for FrameTool {
                     return vec![];
                 }
                 let Some((sr, sa)) = cx.layout.spread_at(a) else { return vec![] };
-                let off = cx.layout.offset(sr);
                 let mut ev = *ev;
                 self.guides.clear();
                 if cx.snap && !ev.mods.shift {
-                    let (p, g) = crate::snap::snap_point(cx, sr, ev.pos - off);
-                    ev.pos = p + off;
+                    let (p, g) = crate::snap::snap_point(cx, sr, cx.layout.to_spread(sr, ev.pos));
+                    ev.pos = cx.layout.to_canvas(sr, p);
                     self.guides = g;
                 }
                 let ev = &ev;
@@ -108,7 +107,7 @@ impl Tool for FrameTool {
                     )));
                 }
                 if shape == "line" {
-                    let mut b = ev.pos - off;
+                    let mut b = cx.layout.to_spread(sr, ev.pos);
                     if ev.mods.shift {
                         let v = b - sa;
                         let v = designcraft_geom::constrain_angle(v, 45.0);
@@ -116,7 +115,7 @@ impl Tool for FrameTool {
                     }
                     out.push(Action::Preview("line.create".into(), json!({"spread": spread_json(sr), "a": [sa.x, sa.y], "b": [b.x, b.y]})));
                 } else {
-                    let r = drag_rect(sa, ev.pos - off, ev.mods);
+                    let r = drag_rect(sa, cx.layout.to_spread(sr, ev.pos), ev.mods);
                     self.last = Some((spread_json(sr), r));
                     out.push(self.preview(spread_json(sr), r));
                 }

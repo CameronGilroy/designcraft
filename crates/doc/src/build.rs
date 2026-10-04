@@ -221,6 +221,7 @@ impl Document {
             show_parent_items: true,
             liquid: Default::default(),
             transition: None,
+            view_rotation: 0,
         }
     }
 

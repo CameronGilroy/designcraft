@@ -132,8 +132,7 @@ impl Tool for PlaceGun {
             PointerKind::Up => {
                 let Some(a) = self.start.take() else { return vec![] };
                 let Some((sr, sa)) = cx.layout.spread_at(a) else { return vec![] };
-                let off = cx.layout.offset(sr);
-                let b = ev.pos - off;
+                let b = cx.layout.to_spread(sr, ev.pos);
                 if (ev.pos - a).hypot() < cx.tol(3.0)
                     && let Some((_, id)) = cx.hit(a)
                     && cx
@@ -215,8 +214,8 @@ impl Tool for PathTypeTool {
 /// objects on both sides resize so the gap moves.
 #[derive(Default)]
 pub struct GapTool {
-    /// Spread, offset and the press point in spread coordinates.
-    start: Option<(designcraft_doc::SpreadRef, designcraft_geom::Vec2, Point)>,
+    /// Spread, its spread → canvas transform and the press point in spread coordinates.
+    start: Option<(designcraft_doc::SpreadRef, designcraft_geom::Affine, Point)>,
     active: bool,
 }
 
@@ -229,14 +228,14 @@ impl Tool for GapTool {
         match ev.kind {
             PointerKind::Down => {
                 if let Some((sr, p)) = cx.layout.spread_at(ev.pos) {
-                    self.start = Some((sr, cx.layout.offset(sr), p));
+                    self.start = Some((sr, cx.layout.xf(sr), p));
                 }
                 self.active = false;
                 vec![]
             }
             PointerKind::Drag => {
-                let Some((sr, off, p)) = self.start else { return vec![] };
-                let d = (ev.pos - off) - p;
+                let Some((sr, xf, p)) = self.start else { return vec![] };
+                let d = (xf.inverse() * ev.pos) - p;
                 let mut out = vec![];
                 if !self.active {
                     if d.hypot() < cx.tol(2.0) {

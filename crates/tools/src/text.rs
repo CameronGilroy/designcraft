@@ -80,8 +80,7 @@ impl Tool for TypeTool {
                     return vec![];
                 }
                 let Some((sr, sa)) = cx.layout.spread_at(a) else { return vec![] };
-                let off = cx.layout.offset(sr);
-                let r = drag_rect(sa, ev.pos - off, ev.mods);
+                let r = drag_rect(sa, cx.layout.to_spread(sr, ev.pos), ev.mods);
                 let mut out = vec![];
                 if !self.drawing {
                     self.drawing = true;

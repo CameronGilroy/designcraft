@@ -55,7 +55,7 @@ impl Tool for PenTool {
         self.hover = ev.pos;
         // The pen continues on the spread where the path started.
         let sp = match self.spread {
-            Some(s) if s != sr => ev.pos - cx.layout.offset(s) + designcraft_geom::Vec2::ZERO,
+            Some(s) if s != sr => cx.layout.to_spread(s, ev.pos),
             _ => sp,
         };
         // Pick up the item id created by path.create (the newest selected path).
@@ -121,22 +121,22 @@ impl Tool for PenTool {
 
     fn overlays(&self, cx: &ToolContext) -> Vec<Overlay> {
         let Some(sr) = self.spread else { return vec![] };
-        let off = cx.layout.offset(sr);
+        let xf = cx.layout.xf(sr);
         let mut out = Vec::new();
         if let Some(last) = self.anchors.last()
             && !self.dragging
         {
             // Rubber band to the pointer.
-            out.push(Overlay::Line { a: last.0 + off, b: self.hover, color: [79, 153, 255], dashed: true });
+            out.push(Overlay::Line { a: xf * last.0, b: self.hover, color: [79, 153, 255], dashed: true });
         }
         if self.path.is_none() && self.anchors.len() == 1 {
             let a = self.anchors[0];
-            out.push(Overlay::Line { a: a.1 + off, b: a.2 + off, color: [79, 153, 255], dashed: false });
+            out.push(Overlay::Line { a: xf * a.1, b: xf * a.2, color: [79, 153, 255], dashed: false });
         }
         if self.dragging
             && let Some(a) = self.anchors.last()
         {
-            out.push(Overlay::Line { a: a.1 + off, b: a.2 + off, color: [79, 153, 255], dashed: false });
+            out.push(Overlay::Line { a: xf * a.1, b: xf * a.2, color: [79, 153, 255], dashed: false });
             let _ = BezPath::new();
         }
         out

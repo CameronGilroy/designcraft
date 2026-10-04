@@ -9,8 +9,8 @@ use crate::{Action, Cursor, Mods, Overlay, PointerEvent, PointerKind, Tool, Tool
 
 #[derive(Default)]
 pub struct PencilTool {
-    /// Spread, canvas offset of that spread, and the canvas points so far.
-    stroke: Option<(SpreadRef, designcraft_geom::Vec2, Vec<Point>)>,
+    /// Spread, its spread → canvas transform, and the canvas points so far.
+    stroke: Option<(SpreadRef, designcraft_geom::Affine, Vec<Point>)>,
 }
 
 impl Tool for PencilTool {
@@ -22,7 +22,7 @@ impl Tool for PencilTool {
         match ev.kind {
             PointerKind::Down => {
                 let Some((sr, _)) = cx.layout.spread_at(ev.pos) else { return vec![] };
-                self.stroke = Some((sr, cx.layout.offset(sr), vec![ev.pos]));
+                self.stroke = Some((sr, cx.layout.xf(sr), vec![ev.pos]));
                 vec![]
             }
             PointerKind::Drag => {
@@ -34,9 +34,10 @@ impl Tool for PencilTool {
                 vec![]
             }
             PointerKind::Up => {
-                let Some((sr, off, mut pts)) = self.stroke.take() else { return vec![] };
+                let Some((sr, xf, mut pts)) = self.stroke.take() else { return vec![] };
                 pts.push(ev.pos);
-                let spread: Vec<Point> = pts.iter().map(|p| *p - off).collect();
+                let inv = xf.inverse();
+                let spread: Vec<Point> = pts.iter().map(|p| inv * *p).collect();
                 // Simplify to about two screen pixels.
                 let anchors = designcraft_geom::freehand::fit(&spread, cx.tol(2.0), ev.mods.alt);
                 if anchors.len() < 2 {
@@ -75,8 +76,8 @@ impl Tool for PencilTool {
 /// Smooth and Erase tools (Pencil group): drag along a selected path.
 pub struct PathDragTool {
     erase: bool,
-    /// Target path, canvas offset of its spread, and the drag in spread coordinates.
-    drag: Option<(u64, designcraft_geom::Vec2, Vec<Point>)>,
+    /// Target path, its spread's spread → canvas transform, and the drag in spread coordinates.
+    drag: Option<(u64, designcraft_geom::Affine, Vec<Point>)>,
 }
 
 impl PathDragTool {
@@ -97,19 +98,19 @@ impl Tool for PathDragTool {
                 let id = cx.selection.items.first().copied().or_else(|| cx.hit(ev.pos).map(|h| h.1));
                 let Some(id) = id else { return vec![] };
                 let Some(loc) = cx.doc.find(id) else { return vec![] };
-                let off = cx.layout.offset(loc.spread);
-                self.drag = Some((id.0, off, vec![ev.pos - off]));
+                let xf = cx.layout.xf(loc.spread);
+                self.drag = Some((id.0, xf, vec![xf.inverse() * ev.pos]));
                 vec![]
             }
             PointerKind::Drag => {
-                if let Some((_, off, pts)) = &mut self.drag {
-                    pts.push(ev.pos - *off);
+                if let Some((_, xf, pts)) = &mut self.drag {
+                    pts.push(xf.inverse() * ev.pos);
                 }
                 vec![]
             }
             PointerKind::Up => {
-                let Some((id, off, mut pts)) = self.drag.take() else { return vec![] };
-                pts.push(ev.pos - off);
+                let Some((id, xf, mut pts)) = self.drag.take() else { return vec![] };
+                pts.push(xf.inverse() * ev.pos);
                 let points: Vec<_> = pts.iter().map(|p| json!([p.x, p.y])).collect();
                 let cmd = if self.erase { "path.erase" } else { "path.smooth" };
                 vec![Action::Exec(cmd.into(), json!({"id": id, "points": points, "tolerance": cx.tol(6.0)}))]
@@ -119,10 +120,10 @@ impl Tool for PathDragTool {
     }
 
     fn overlays(&self, _cx: &ToolContext) -> Vec<Overlay> {
-        let Some((_, off, pts)) = &self.drag else { return vec![] };
+        let Some((_, xf, pts)) = &self.drag else { return vec![] };
         let mut path = BezPath::new();
         for (i, p) in pts.iter().enumerate() {
-            let p = *p + *off;
+            let p = *xf * *p;
             if i == 0 {
                 path.move_to(p);
             } else {

@@ -308,7 +308,7 @@ fn layout(doc: &Document) -> Vec<(Placed, Rect)> {
             let b = sp.bounds();
             let offset = Vec2::new(-b.center().x, y - b.y0);
             y += b.height() + 36.0;
-            (Placed { spread: SpreadRef::Doc(i), offset }, b + offset)
+            (Placed { spread: SpreadRef::Doc(i), xf: designcraft_geom::Affine::translate(offset) }, b + offset)
         })
         .collect()
 }
@@ -443,8 +443,8 @@ fn measure(doc: &Document, runs: usize) -> Vec<Row> {
             let screen = designcraft_geom::Rect::new(0.0, 0.0, W as f64, H as f64);
             let mut px: Option<designcraft_geom::Rect> = None;
             for (sr, rect) in designcraft_render::damage::damage_with(&old, &d, Some(&cache)).unwrap_or_default() {
-                let off = all.iter().find(|p| p.spread == sr).map_or(Vec2::ZERO, |p| p.offset);
-                let r = v.transform_rect_bbox(rect + off).intersect(screen);
+                let m = all.iter().find(|p| p.spread == sr).map_or(designcraft_geom::Affine::IDENTITY, |p| p.xf);
+                let r = v.transform_rect_bbox(m.transform_rect_bbox(rect)).intersect(screen);
                 if r.width() > 0.0 && r.height() > 0.0 {
                     px = Some(px.map_or(r, |p| p.union(r)));
                 }

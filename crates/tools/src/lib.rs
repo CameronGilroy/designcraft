@@ -160,8 +160,7 @@ impl ToolContext<'_> {
     /// Spread-space → canvas transform of the spread holding item `id`.
     pub fn item_canvas_xf(&self, id: ItemId) -> Option<Affine> {
         let loc = self.doc.find(id)?;
-        let off = self.layout.offset(loc.spread);
-        Some(Affine::translate(off) * self.doc.parent_xf(&loc))
+        Some(self.layout.xf(loc.spread) * self.doc.parent_xf(&loc))
     }
 
     pub fn item(&self, id: ItemId) -> Option<&Item> {

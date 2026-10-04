@@ -30,7 +30,7 @@ fn render_with(d: &Document, threads: u16) -> Rendered {
     let mut r = Renderer::new();
     r.threads = threads;
     let opts = RenderOptions { background: Some([255, 255, 255, 255]), ..Default::default() };
-    r.render(d, &Cache::new(), &[Placed { spread: SpreadRef::Doc(0), offset: Vec2::ZERO }], SIZE, SIZE, Affine::IDENTITY, &opts)
+    r.render(d, &Cache::new(), &[Placed { spread: SpreadRef::Doc(0), xf: Affine::translate(Vec2::ZERO) }], SIZE, SIZE, Affine::IDENTITY, &opts)
 }
 
 fn render(d: &Document) -> Rendered {

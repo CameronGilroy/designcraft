@@ -1055,26 +1055,20 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             Ok(Value::Null)
         }
         "view.rotateSpread" => {
+            // Turns the spread in the middle of the view (InDesign's Rotate Spread).
             let angle = p.get("angle").and_then(Value::as_i64).unwrap_or(90);
-            let (Some(rect), Some(v)) = (app.canvas_rect, app.view().copied()) else { return Some(Err("no view".into())) };
-            let xf = crate::canvas::Xf::new(rect, &v);
-            let centre = xf.to_canvas(rect.center());
-            let screen = crate::canvas::view_rect(rect, v.rotation);
-            let rot = match angle {
-                0 => 0,
-                a => ((v.rotation as i64 + a.div_euclid(90)).rem_euclid(4)) as u8,
+            let Some(st) = app.session.active() else { return Some(Err("no document".into())) };
+            let layout = designcraft_tools::CanvasLayout::new(&st.doc, st.editing_parents);
+            let Some(slot) = crate::canvas::current_slot(app, &layout).and_then(|i| layout.slots.get(i).copied()) else {
+                return Some(Err("no spread".into()));
             };
-            let new_rect = crate::canvas::view_rect(screen, rot);
-            app.canvas_rect = Some(new_rect);
-            if let Some(v) = app.view_mut() {
-                v.rotation = rot;
-                v.origin = designcraft_geom::Point::new(
-                    centre.x - new_rect.width() as f64 / 2.0 / v.zoom,
-                    centre.y - new_rect.height() as f64 / 2.0 / v.zoom,
-                );
+            let designcraft_doc::SpreadRef::Doc(si) = slot.spread else { return Some(Err("parent spreads don't turn".into())) };
+            let r = app.run("layout.rotateSpreadView", json!({"spread": si, "angle": angle}));
+            if let Some(rect) = app.canvas_rect {
+                crate::canvas::fit(app, rect, "spread");
             }
             app.canvas.shown = None;
-            Ok(json!(rot as u32 * 90))
+            r.map(|v| v["rotation"].clone())
         }
         "view.proofColors" => {
             app.ui.proof_colors = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.proof_colors);
@@ -1610,7 +1604,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "view.flattenerPreview" => app.ui.flattener_preview,
         "view.tagMarkers" => app.ui.tag_markers,
         "view.rotateSpread" => match params.get("angle").and_then(Value::as_i64) {
-            Some(0) => app.view().is_some_and(|v| v.rotation == 0),
+            Some(0) => app.session.active().is_some_and(|st| st.doc.spreads.iter().all(|sp| sp.pages.first().is_none_or(|p| p.view_rotation == 0))),
             _ => return None,
         },
         "view.proofSetup" => match (params.get("target").and_then(Value::as_str), params.get("simulatePaper")) {
@@ -2038,7 +2032,7 @@ mod tests {
     #[test]
     fn rotate_spread_view() {
         let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
-        app.session.execute("file.new", &json!({})).unwrap();
+        app.session.execute("file.new", &json!({"pages": 3})).unwrap();
         let ctx = egui::Context::default();
         let frame = |app: &mut crate::DesignApp| {
             let input =
@@ -2051,29 +2045,20 @@ mod tests {
         };
         frame(&mut app);
         frame(&mut app);
-        let r0 = app.canvas_rect.unwrap();
-        let xf0 = crate::canvas::Xf::new(r0, app.view().unwrap());
-        let centre = xf0.to_canvas(r0.center());
         assert_eq!(run_ui(&mut app, "view.rotateSpread", &json!({"angle": 90})).unwrap().unwrap(), json!(90));
         frame(&mut app);
-        let r1 = app.canvas_rect.unwrap();
-        // Width and height swap (the rulers hide while rotated, so it grows by their width).
-        assert!(r0.width() > r0.height() && r1.height() > r1.width(), "{r0:?} {r1:?}");
-        let xf = crate::canvas::Xf::new(r1, app.view().unwrap());
-        let c = xf.to_canvas(r1.center());
-        let tol = 30.0 / xf.zoom;
-        assert!((c.x - centre.x).abs() < tol && (c.y - centre.y).abs() < tol, "the centre stays put");
-        // Screen ↔ canvas round trip, and canvas +x points down the screen after a clockwise turn.
-        let p = designcraft_geom::Point::new(c.x + 50.0, c.y);
-        let sp = xf.to_screen(p);
-        assert!(sp.y > r1.center().y + 1.0 && (sp.x - r1.center().x).abs() < 1.0, "{sp:?}");
-        let back = xf.to_canvas(sp);
-        assert!((back.x - p.x).abs() < 1e-3 && (back.y - p.y).abs() < 1e-3);
-        run_ui(&mut app, "view.rotateSpread", &json!({"angle": -90})).unwrap().unwrap();
-        assert_eq!(app.view().unwrap().rotation, 0);
-        run_ui(&mut app, "view.rotateSpread", &json!({"angle": 180})).unwrap().unwrap();
+        // Only the spread in view turns: its canvas footprint swaps width and height.
+        let d = app.session.active().unwrap().doc.clone();
+        let turned: Vec<usize> = d.spreads.iter().enumerate().filter(|(_, sp)| sp.pages[0].view_rotation == 1).map(|(i, _)| i).collect();
+        assert_eq!(turned.len(), 1);
+        let layout = designcraft_tools::CanvasLayout::new(&d, false);
+        let slot = layout.slots[turned[0]];
+        let b = d.spreads[turned[0]].bounds();
+        assert!((slot.bounds.width() - b.height()).abs() < 1e-6 && (slot.bounds.height() - b.width()).abs() < 1e-6);
+        assert_eq!(checked(&app, "view.rotateSpread", &json!({"angle": 0})), Some(false));
+        run_ui(&mut app, "view.rotateSpread", &json!({"angle": 0})).unwrap().unwrap();
+        assert_eq!(checked(&app, "view.rotateSpread", &json!({"angle": 0})), Some(true));
         frame(&mut app);
-        assert_eq!(run_ui(&mut app, "view.rotateSpread", &json!({"angle": 0})).unwrap().unwrap(), json!(0));
     }
 
     #[test]

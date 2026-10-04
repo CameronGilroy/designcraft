@@ -96,6 +96,24 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
+        cmd!(
+            "layout.rotateSpreadView",
+            "Rotate Spread",
+            [],
+            None,
+            "{spread?: index (0), angle: 90 (clockwise) | -90 | 180 | 0 (clear)} — turn one spread on screen (output is unaffected)",
+            has_doc,
+            |s, p| {
+                let si = p.get("spread").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let angle = p.get("angle").and_then(Value::as_i64).unwrap_or(90);
+                s.edit(|d, _| {
+                    let sp = d.spreads.get_mut(si).ok_or_else(|| bad("layout.rotateSpreadView", "no such spread"))?;
+                    let pg = std::sync::Arc::make_mut(sp).pages.first_mut().ok_or_else(|| bad("layout.rotateSpreadView", "empty spread"))?;
+                    pg.view_rotation = if angle == 0 { 0 } else { ((pg.view_rotation as i64 + angle.div_euclid(90)).rem_euclid(4)) as u8 };
+                    Ok(json!({"rotation": pg.view_rotation as u32 * 90}))
+                })
+            }
+        ),
         cmd!("layout.pages.delete", "Delete Pages", ["Layout", "Pages"], None, "{pages: [index]}", has_doc, |s, p| {
             let pages: Vec<usize> = p
                 .get("pages")

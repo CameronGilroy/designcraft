@@ -80,18 +80,18 @@ pub fn snap_rect(cx: &ToolContext, sr: SpreadRef, r: Rect, exclude: &[ItemId]) -
     let tol = cx.tol(5.0);
     let (xs, ys) = targets(cx, sr, exclude);
     let mut s = Snap::default();
-    let off = cx.layout.offset(sr);
+    let xf = cx.layout.xf(sr);
     if let Some((d, t)) = best(&[r.x0, r.center().x, r.x1], &xs, tol) {
         s.delta.x = d;
         let lo = t.lo.min(r.y0) - 6.0;
         let hi = t.hi.max(r.y1) + 6.0;
-        s.guides.push(guide(Point::new(t.v, lo) + off, Point::new(t.v, hi) + off, t.smart));
+        s.guides.push(guide(xf * Point::new(t.v, lo), xf * Point::new(t.v, hi), t.smart));
     }
     if let Some((d, t)) = best(&[r.y0, r.center().y, r.y1], &ys, tol) {
         s.delta.y = d;
         let lo = t.lo.min(r.x0) - 6.0;
         let hi = t.hi.max(r.x1) + 6.0;
-        s.guides.push(guide(Point::new(lo, t.v) + off, Point::new(hi, t.v) + off, t.smart));
+        s.guides.push(guide(xf * Point::new(lo, t.v), xf * Point::new(hi, t.v), t.smart));
     }
     s
 }

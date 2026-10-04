@@ -170,11 +170,11 @@ impl Default for RenderOptions {
     }
 }
 
-/// A spread placed on the canvas: canvas = spread + offset.
+/// A spread placed on the canvas: canvas = xf × spread (a translation, turned for a rotated spread view).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Placed {
     pub spread: SpreadRef,
-    pub offset: Vec2,
+    pub xf: Affine,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -289,8 +289,8 @@ impl Renderer {
         let canvas_visible = view.inverse().transform_rect_bbox(Rect::new(0.0, 0.0, w as f64, h as f64));
         for pl in spreads {
             let Some(sp) = doc.spread(pl.spread) else { continue };
-            let sview = view * Affine::translate(pl.offset);
-            let visible = canvas_visible - pl.offset;
+            let sview = view * pl.xf;
+            let visible = pl.xf.inverse().transform_rect_bbox(canvas_visible);
             let bounds = sp.bounds();
             // Cull spreads far outside the viewport (pasteboard items may extend; allow a margin).
             if !rect_overlaps(bounds.inflate(2000.0, 2000.0), visible) {
@@ -324,7 +324,7 @@ impl Renderer {
         let view = Affine::scale(scale) * Affine::translate(-r.origin().to_vec2());
         let mut o = opts.clone();
         o.background = Some([255, 255, 255, 255]);
-        Some(self.render(doc, cache, &[Placed { spread: SpreadRef::Doc(si), offset: Vec2::ZERO }], w, h, view, &o))
+        Some(self.render(doc, cache, &[Placed { spread: SpreadRef::Doc(si), xf: Affine::translate(Vec2::ZERO) }], w, h, view, &o))
     }
 
     fn draw_spread(&mut self, ctx: &mut RenderContext, f: &Frame, sr: SpreadRef) {

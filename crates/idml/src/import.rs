@@ -1661,6 +1661,7 @@ impl<'r> Importer<'r> {
                 show_parent_items: show,
                 liquid: Default::default(),
                 transition: None,
+                view_rotation: 0,
             });
         }
         let overrides: Vec<Vec<String>> =

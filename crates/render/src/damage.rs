@@ -215,7 +215,7 @@ mod tests {
         let lid = d.default_layer();
         let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(72.0, 72.0, 300.0, 200.0), lid, "Hello there", ParaFormat::default()).unwrap();
         let cache = designcraft_compose::Cache::new();
-        let placed = [Placed { spread: SpreadRef::Doc(0), offset: Vec2::ZERO }];
+        let placed = [Placed { spread: SpreadRef::Doc(0), xf: Affine::translate(Vec2::ZERO) }];
         let (w, h) = (400u32, 300u32);
         let view = Affine::scale(1.3);
         let mut r = Renderer::new();

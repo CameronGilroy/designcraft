@@ -44,7 +44,7 @@ fn placed(d: &Document) -> Vec<Placed> {
     (0..d.spreads.len())
         .map(|i| {
             let b = d.spreads[i].bounds();
-            let p = Placed { spread: SpreadRef::Doc(i), offset: Vec2::new(-b.x0, y) };
+            let p = Placed { spread: SpreadRef::Doc(i), xf: Affine::translate(Vec2::new(-b.x0, y)) };
             y += b.height() + 36.0;
             p
         })

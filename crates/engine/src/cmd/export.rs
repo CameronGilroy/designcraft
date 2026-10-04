@@ -318,7 +318,7 @@ fn flatten(d: &designcraft_doc::Document, cache: &designcraft_compose::Cache, pp
             let img = rr.render(
                 &below,
                 cache,
-                &[designcraft_render::Placed { spread: SpreadRef::Doc(si), offset: designcraft_geom::Vec2::ZERO }],
+                &[designcraft_render::Placed { spread: SpreadRef::Doc(si), xf: designcraft_geom::Affine::translate(designcraft_geom::Vec2::ZERO) }],
                 w,
                 h,
                 view,
@@ -406,7 +406,7 @@ fn rasterize_where(
         let img = rr.render(
             &solo,
             cache,
-            &[designcraft_render::Placed { spread: SpreadRef::Doc(si), offset: designcraft_geom::Vec2::ZERO }],
+            &[designcraft_render::Placed { spread: SpreadRef::Doc(si), xf: designcraft_geom::Affine::translate(designcraft_geom::Vec2::ZERO) }],
             w,
             h,
             view,

@@ -117,6 +117,14 @@ pub struct Page {
     /// Window › Interactive › Page Transitions (the spread's first page holds the spread's).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transition: Option<PageTransition>,
+    /// View › Rotate Spread: quarter turns clockwise of the spread on screen (the spread's first
+    /// page holds it).
+    #[serde(default, skip_serializing_if = "is_zero_u8")]
+    pub view_rotation: u8,
+}
+
+fn is_zero_u8(v: &u8) -> bool {
+    *v == 0
 }
 
 /// A page transition for interactive PDF.
@@ -344,6 +352,7 @@ mod tests {
             show_parent_items: true,
             liquid: Default::default(),
             transition: None,
+            view_rotation: 0,
         }
     }
 

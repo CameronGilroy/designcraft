@@ -67,7 +67,7 @@ fn cmd_shift_click_overrides_parent_item() {
         d.add_text_frame(SpreadRef::Parent(0), Rect::new(px + 100.0, 100.0, px + 200.0, 200.0), lid, "folio", ParaFormat::default()).unwrap();
     let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
     let cx = ctx(&d, &s, &c, &l);
-    let off = l.offset(SpreadRef::Doc(0));
+    let off = l.xf(SpreadRef::Doc(0)).translation();
     let x = d.spreads[0].pages[0].x + 150.0 + off.x;
     let mut t = create("selection");
     // A plain click doesn't reach parent items.
@@ -87,7 +87,7 @@ fn gradient_tool_drag_sets_the_vector() {
     let (fid, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 300.0, 200.0), lid, "", ParaFormat::default()).unwrap();
     let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
     let cx = ctx(&d, &s, &c, &l);
-    let off = l.offset(SpreadRef::Doc(0));
+    let off = l.xf(SpreadRef::Doc(0)).translation();
     let mut t = create("gradientSwatch");
     assert_eq!(t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 120.0 + off.x, 150.0 + off.y)), vec![Action::Begin("Gradient".into())]);
     // Shift snaps a slightly tilted drag to horizontal.
@@ -112,7 +112,7 @@ fn anchor_tools_emit_path_commands() {
     let (fid, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 200.0), lid, "", ParaFormat::default()).unwrap();
     let (s, c, l) = (Selection::items(vec![fid]), Cache::new(), CanvasLayout::new(&d, false));
     let cx = ctx(&d, &s, &c, &l);
-    let off = l.offset(SpreadRef::Doc(0));
+    let off = l.xf(SpreadRef::Doc(0)).translation();
     let at = |x: f64, y: f64| (x + off.x, y + off.y);
     let ev = |k, (x, y): (f64, f64)| PointerEvent::new(k, x, y);
     let mut add = create("addAnchor");
@@ -150,7 +150,7 @@ fn scissors_tool_cuts_where_clicked() {
     let (fid, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 200.0), lid, "", ParaFormat::default()).unwrap();
     let (s, c, l) = (Selection::items(vec![fid]), Cache::new(), CanvasLayout::new(&d, false));
     let cx = ctx(&d, &s, &c, &l);
-    let off = l.offset(SpreadRef::Doc(0));
+    let off = l.xf(SpreadRef::Doc(0)).translation();
     let mut t = create("scissors");
     let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 150.0 + off.x, 100.0 + off.y));
     assert_eq!(a, vec![Action::Exec("path.split".into(), serde_json::json!({"id": fid.0, "at": [150.0, 100.0]}))]);
@@ -161,7 +161,7 @@ fn pencil_draws_a_smooth_path() {
     let d = Document::new(&NewDocument::default());
     let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
     let cx = ctx(&d, &s, &c, &l);
-    let off = l.offset(SpreadRef::Doc(0));
+    let off = l.xf(SpreadRef::Doc(0)).translation();
     let mut t = create("pencil");
     t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 100.0 + off.x, 100.0 + off.y));
     for i in 1..=90 {
@@ -228,7 +228,7 @@ fn page_tool_opens_page_size() {
     let d = Document::new(&NewDocument::default());
     let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
     let cx = ctx(&d, &s, &c, &l);
-    let off = l.offset(SpreadRef::Doc(0));
+    let off = l.xf(SpreadRef::Doc(0)).translation();
     let mut t = create("page");
     let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 200.0 + off.x + d.spreads[0].pages[0].x, 200.0 + off.y));
     assert_eq!(a, vec![Action::Dialog("cmd:layout.pageSize".into(), serde_json::json!({"pages": [1], "width": 612.0, "height": 792.0}))]);
@@ -249,7 +249,7 @@ fn type_on_path_tool_targets_paths() {
     d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
     let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
     let cx = ctx(&d, &s, &c, &l);
-    let off = l.offset(SpreadRef::Doc(0));
+    let off = l.xf(SpreadRef::Doc(0)).translation();
     let mut t = create("typeOnPath");
     let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 200.0 + off.x, 100.0 + off.y));
     assert_eq!(a, vec![Action::Exec("type.onPath".into(), serde_json::json!({"id": id.0})), Action::SwitchTool("type".into())]);
@@ -269,4 +269,26 @@ fn vertical_type_tool_draws_vertical_frames() {
         _ => None,
     });
     assert_eq!(p.unwrap()["vertical"], true);
+}
+
+#[test]
+fn turned_spread_maps_points_both_ways() {
+    let mut d = Document::new(&NewDocument::default());
+    std::sync::Arc::make_mut(&mut d.spreads[0]).pages[0].view_rotation = 1;
+    let l = CanvasLayout::new(&d, false);
+    let slot = l.slots[0];
+    let b = d.spreads[0].bounds();
+    assert!((slot.bounds.width() - b.height()).abs() < 1e-6);
+    let p = designcraft_geom::Point::new(b.x0 + 10.0, b.y0 + 20.0);
+    let c = slot.to_canvas(p);
+    let back = slot.to_spread(c);
+    assert!((back - p).hypot() < 1e-9);
+    // A quarter turn clockwise: the spread's top-left lands at the canvas top-right.
+    assert!((c.x - (slot.bounds.x1 - 20.0)).abs() < 1e-6 && (c.y - (slot.bounds.y0 + 10.0)).abs() < 1e-6, "{c:?} {:?}", slot.bounds);
+    let (sr, sp) = l.spread_at(c).unwrap();
+    assert_eq!(sr, SpreadRef::Doc(0));
+    assert!((sp - p).hypot() < 1e-9);
+    // A canvas drag rightwards is a drag down the spread.
+    let dv = slot.delta_to_spread(designcraft_geom::Vec2::new(10.0, 0.0));
+    assert!(dv.x.abs() < 1e-9 && (dv.y + 10.0).abs() < 1e-9 || (dv.y - 10.0).abs() < 1e-9, "{dv:?}");
 }
