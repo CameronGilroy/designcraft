@@ -93,7 +93,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Graphic cells (`table.placeGraphic`, `table.textCell`, Table › Convert Cell Type, Table panel): images in table cells, fitted or filled, clipped to the cell on screen and in PDF.
 - Live Distribute (Space while dragging a selection handle; `transform.resize {distribute}`): objects keep their size and spread with the bounds.
 - Liquid Layout (`liquid.pageRule/object`, `guide.liquid`, `layout.createAlternate`, Liquid Layout panel): scale / re-center / guide-based / object-based page rules applied on page resize and Document Setup; dashed liquid guides; alternate layouts as resized page copies in a named section. Alternate layouts aren't linked to their source.
-- Split Window / New Window (`window.split`, `window.newWindow`, Window ▸ Arrange): two side-by-side views of the document with their own zoom, scroll and render cache. New Window opens that second view rather than a separate OS window.
+- Split Window / New Window (`window.split`, `window.newWindow`, Window ▸ Arrange): two side-by-side views of the document with their own zoom, scroll and render cache. New Window puts the second view in its own OS window (an egui viewport; a floating window on the web).
 - Transparency flattener (`file.exportPdf {flatten: high|medium|low|ppi}`, Edit ▸ Transparency Flattener Presets): each object involving transparency becomes an opaque image of its area over what's beneath it, so everything else stays vector (spreads with transparent parent items are rasterised whole).
 - Video and sound (place .mp4/.mov/.webm/.mp3/.wav…, `media.options/get`, Media panel): media frames show a poster or placeholder on screen, in print and in PDF, and export as HTML5 `<video>`/`<audio>` in EPUB. No in-app playback or PDF rich media.
 - Right-to-left text (World-Ready basics): right-to-left runs are shaped right to left, lines are reordered by the Unicode Bidirectional Algorithm (matched against the reference implementation), Paragraph Direction (`type.para {direction}`, Paragraph panel, IDML ParagraphDirection, EPUB `dir`). Kashida justification, caret movement in visual order and digit substitution aren't there yet.
@@ -177,7 +177,7 @@ four agents in parallel on separate crates:
 | Work | Estimate |
 |---|---|
 | Open P0 (2: PDF/X-4 validation against a certified checker, PostScript interpretation for EPS) | 8 h |
-| Open P1 (3 partial: New Window as a separate OS window, language support, on-screen blending in the blend space) | 10 h |
+| Open P1 (1 partial: on-screen blending in the blend space) | 4 h |
 | Open P2 (16 partial: vertical/RTL refinements, alternate-layout linking, separations from source colours, buttons as form fields, interactive PDF extras, scripting, localization breadth, …) | 45 h |
 | Depth and pixel fidelity of every dialog, panel and menu against InDesign 2026 | 90 h |
 | Performance (incremental composition, GPU raster) and interchange hardening (IDML/PDF corpus) | 55 h |

@@ -112,7 +112,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("window.dockPanel", "Dock Panel", None, "{panel} — back into the dock's icon column"),
     ("window.controlBar", "Control", Some("Cmd+Alt+6"), "{}"),
     ("window.split", "Split Window", None, "{on?: bool} — two views of the document side by side, each with its own zoom and scroll"),
-    ("window.newWindow", "New Window", None, "{} — another view of the active document (shown beside the first)"),
+    ("window.newWindow", "New Window", None, "{on?: bool} — another view of the active document in its own window"),
     ("window.taskBar", "Contextual Task Bar", None, "{}"),
     ("help.discord", "Join the ArtCraft Discord…", None, "{} — opens https://discord.gg/artcraft in the browser"),
     ("help.appPage", "DesignCraft Website…", None, "{} — opens https://getartcraft.com/apps/designcraft"),
@@ -1202,14 +1202,26 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             flag(&mut app.ui.tag_markers)
         }
         "edit.dynamicSpelling" => flag(&mut app.ui.dynamic_spelling),
-        "window.split" | "window.newWindow" => {
-            let on = if id == "window.newWindow" { true } else { p.get("on").and_then(Value::as_bool).unwrap_or(!app.split) };
+        "window.split" => {
+            let on = p.get("on").and_then(Value::as_bool).unwrap_or(!app.split);
             app.split = on;
-            if !on {
+            if on {
+                app.second_window = false;
+            } else {
                 app.switch_pane(0);
                 app.focus_pane = 0;
             }
             Ok(json!(on))
+        }
+        "window.newWindow" => {
+            // The second view moves into its own window (on the web: a floating window).
+            app.second_window = p.get("on").and_then(Value::as_bool).unwrap_or(true);
+            app.split = false;
+            if !app.second_window {
+                app.switch_pane(0);
+                app.focus_pane = 0;
+            }
+            Ok(json!(app.second_window))
         }
         "window.taskBar" => flag(&mut app.ui.task_bar),
         "help.about" => {
@@ -1593,6 +1605,7 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "changes.track" => app.session.active().is_some_and(|d| d.doc.settings.track_changes),
         "window.controlBar" => app.ui.control_bar,
         "window.split" => app.split,
+        "window.newWindow" => app.second_window,
         "view.proofColors" => app.ui.proof_colors,
         "view.flattenerPreview" => app.ui.flattener_preview,
         "view.tagMarkers" => app.ui.tag_markers,
@@ -2114,6 +2127,35 @@ mod tests {
             let r = app.session.execute("script.run", &json!({"text": text}));
             assert!(r.is_ok(), "{name}: {r:?}");
         }
+    }
+
+    #[test]
+    fn new_window_shows_a_second_view() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        let ctx = egui::Context::default();
+        let frame = |app: &mut crate::DesignApp| {
+            let input =
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                app.logic(&ui.ctx().clone());
+                app.ui(ui);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut app);
+        assert_eq!(run_ui(&mut app, "window.newWindow", &json!({})).unwrap().unwrap(), json!(true));
+        assert!(!app.split);
+        frame(&mut app);
+        frame(&mut app);
+        // Pane 1 was drawn (its rect is held for it) and has its own view.
+        assert!(app.other_pane.as_ref().and_then(|o| o.1).is_some() || app.pane == 1);
+        app.switch_pane(1);
+        assert!(app.view().is_some(), "the second window has a view");
+        app.switch_pane(0);
+        assert_eq!(checked(&app, "window.newWindow", &Value::Null), Some(true));
+        run_ui(&mut app, "window.newWindow", &json!({"on": false})).unwrap().unwrap();
+        frame(&mut app);
     }
 
     #[test]

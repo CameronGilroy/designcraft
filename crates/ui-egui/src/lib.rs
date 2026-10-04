@@ -332,6 +332,8 @@ pub struct DesignApp {
     pub canvas_rect: Option<egui::Rect>,
     /// Window › Arrange › Split Window: two views of the document side by side.
     pub split: bool,
+    /// Window › Arrange › New Window: the second view in its own window (pane 1).
+    pub second_window: bool,
     /// The current pane (0 or 1): views, cache and rect refer to it.
     pub pane: u8,
     /// The pane last clicked (menu zoom and scroll go there).
@@ -372,6 +374,7 @@ impl DesignApp {
             canvas: CanvasCache::new(),
             canvas_rect: None,
             split: false,
+            second_window: false,
             pane: 0,
             focus_pane: 0,
             other_pane: None,
@@ -666,10 +669,48 @@ impl DesignApp {
                 self.switch_pane(self.focus_pane);
             } else {
                 self.switch_pane(0);
-                self.focus_pane = 0;
+                // With a second window, the main one takes the focus back when clicked.
+                if !self.second_window || (ui.input(|i| i.pointer.any_pressed()) && ui.ui_contains_pointer()) {
+                    self.focus_pane = 0;
+                }
                 canvas::show(self, ui);
             }
         });
+        // New Window: pane 1 in a window of its own.
+        if self.second_window
+            && !presenting
+            && let Some(title) = self.session.active().map(|d| format!("{} — 2", d.doc.title))
+        {
+            let fill = t.pasteboard;
+            let ctx = ui.ctx().clone();
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("designcraft_second_window"),
+                egui::ViewportBuilder::default().with_title(title).with_inner_size([960.0, 720.0]),
+                |ui, _class| {
+                    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(fill)).show(ui, |ui| {
+                        self.switch_pane(1);
+                        if self.view().is_none() {
+                            self.switch_pane(0);
+                            let v = self.view().copied();
+                            self.switch_pane(1);
+                            if let (Some(mut v), Some(m)) = (v, self.view_mut()) {
+                                v.fitted = false;
+                                *m = v;
+                            }
+                        }
+                        if ui.input(|i| i.pointer.any_pressed()) {
+                            self.focus_pane = 1;
+                        }
+                        canvas::show(self, ui);
+                    });
+                    if ui.input(|i| i.viewport().close_requested()) {
+                        self.second_window = false;
+                        self.focus_pane = 0;
+                    }
+                },
+            );
+            self.switch_pane(self.focus_pane);
+        }
         dock::flyout(self, &ctx);
         dock::floating(self, &ctx);
         story_editor::show(self, &ctx);
