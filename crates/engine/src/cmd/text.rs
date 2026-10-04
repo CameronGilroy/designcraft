@@ -360,6 +360,19 @@ fn smart_quotes(s: &Session, text: &str) -> String {
             story.text[..t.range().start.min(story.len())].chars().last()
         })
         .unwrap_or(' ');
+    // The language at the insertion point picks the quote marks.
+    let language = s
+        .active()
+        .and_then(|st| {
+            let t = st.selection.text?;
+            let story = st.doc.text_story(t.story, t.cell)?;
+            let pos = t.range().start.min(story.len());
+            let pi = story.para_at(pos).min(story.paras.len().saturating_sub(1));
+            let base = st.doc.styles.resolve_para(story.paras.get(pi)?).1;
+            Some(st.doc.styles.resolve_char(&base, story.char_format_at(pos)).language)
+        })
+        .unwrap_or_default();
+    let [dq_open, dq_close, sq_open, sq_close] = quote_marks(&language);
     let mut out = String::with_capacity(text.len());
     let mut last = prev;
     for c in text.chars() {
@@ -367,16 +380,17 @@ fn smart_quotes(s: &Session, text: &str) -> String {
         let r = match c {
             '"' => {
                 if open {
-                    '\u{201C}'
+                    dq_open
                 } else {
-                    '\u{201D}'
+                    dq_close
                 }
             }
             '\'' => {
                 if open {
-                    '\u{2018}'
+                    sq_open
                 } else {
-                    '\u{2019}'
+                    // An apostrophe inside a word stays an apostrophe.
+                    if last.is_alphanumeric() { '\u{2019}' } else { sq_close }
                 }
             }
             c => c,
@@ -385,6 +399,45 @@ fn smart_quotes(s: &Session, text: &str) -> String {
         last = c;
     }
     out
+}
+
+/// Typographer's quotes of a language: [double open, double close, single open, single close].
+pub fn quote_marks(language: &str) -> [char; 4] {
+    let l = language.to_ascii_lowercase();
+    if l.starts_with("german: swiss") || l.contains("swiss") {
+        ['\u{00AB}', '\u{00BB}', '\u{2039}', '\u{203A}']
+    } else if l.starts_with("german")
+        || l.starts_with("czech")
+        || l.starts_with("slovak")
+        || l.starts_with("bulgarian")
+        || l.starts_with("lithuanian")
+    {
+        ['\u{201E}', '\u{201C}', '\u{201A}', '\u{2018}']
+    } else if l.starts_with("french")
+        || l.starts_with("russian")
+        || l.starts_with("ukrainian")
+        || l.starts_with("norwegian")
+        || l.starts_with("greek")
+    {
+        ['\u{00AB}', '\u{00BB}', '\u{2039}', '\u{203A}']
+    } else if l.starts_with("spanish") || l.starts_with("italian") || l.starts_with("portuguese") || l.starts_with("catalan") {
+        ['\u{00AB}', '\u{00BB}', '\u{201C}', '\u{201D}']
+    } else if l.starts_with("dutch")
+        || l.starts_with("polish")
+        || l.starts_with("romanian")
+        || l.starts_with("hungarian")
+        || l.starts_with("croatian")
+    {
+        ['\u{201E}', '\u{201D}', '\u{201A}', '\u{2019}']
+    } else if l.starts_with("swedish") || l.starts_with("finnish") {
+        ['\u{201D}', '\u{201D}', '\u{2019}', '\u{2019}']
+    } else if l.starts_with("japanese") || l.starts_with("chinese") {
+        ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']
+    } else if l.starts_with("danish") {
+        ['\u{00BB}', '\u{00AB}', '\u{203A}', '\u{2039}']
+    } else {
+        ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}']
+    }
 }
 
 pub(crate) fn delete_selection(s: &mut Session) -> Result<Value> {
@@ -1086,5 +1139,27 @@ mod autocorrect_tests {
         assert_eq!(text(&s), "teh The cat.");
         // The caret ends after the inserted punctuation.
         assert_eq!(s.doc().unwrap().selection.text.unwrap().focus, "teh The cat.".len());
+    }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn language_sets_quotes_spelling_and_hyphenation() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": ""})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        s.execute("type.char", &json!({"attrs": {"language": "German: 2006 Reform"}})).unwrap();
+        s.execute("text.insert", &json!({"text": "\"Wort\" ist's"})).unwrap();
+        let text = s.doc().unwrap().doc.stories[&designcraft_doc::StoryId(sid)].text.clone();
+        assert_eq!(text, "\u{201E}Wort\u{201C} ist\u{2019}s");
+        // German words aren't English misspellings.
+        let st = s.execute("spelling.check", &json!({"story": sid})).unwrap();
+        assert!(st.as_array().unwrap().is_empty(), "{st}");
     }
 }

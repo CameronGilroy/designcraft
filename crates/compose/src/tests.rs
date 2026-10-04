@@ -885,3 +885,17 @@ fn cjk_text_breaks_between_characters_with_kinsoku() {
         assert!(!"、。".contains(first), "kinsoku: {:?}", &text[l.range.clone()]);
     }
 }
+
+#[test]
+fn only_english_text_gets_english_hyphenation() {
+    let text = "internationalization internationalization internationalization internationalization";
+    let narrow = Rect::new(36.0, 36.0, 120.0, 700.0);
+    let hyphenated = |d: &Document, sid| all_lines(&compose_story(d, sid, &ComposeOptions::default())).iter().filter(|l| l.hyphenated).count();
+    let (d, sid, _) = doc_with(text, narrow, ParaAttrs::default());
+    assert!(hyphenated(&d, sid) > 0, "English hyphenates");
+    let mut d2 = d.clone();
+    let st = d2.story_mut(sid).unwrap();
+    let n = st.len();
+    st.format_chars(0..n, |f| f.over.language = Some("French".into()));
+    assert_eq!(hyphenated(&d2, sid), 0, "French isn't hyphenated with English rules");
+}

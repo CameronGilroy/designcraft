@@ -550,7 +550,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
                 // The same spacing, hyphenation and breaker as the layout below.
                 let mut gl = sp.glyphs.clone();
                 apply_desired_spacing(&mut gl, &pp);
-                let hy = hyphenation_points(&story.text, &gl, &pp, &hyph_exceptions);
+                let hy = hyphenation_points(&story.text, &gl, &pp, &hyph_exceptions, &foreign_ranges(doc, story, prange.clone(), &base_chars));
                 let breaks = if pp.composer == Composer::SingleLine || gl.iter().any(|g| g.ch == '\t') || gl.len() > 4000 {
                     breaker::greedy(&gl, &hy, &spacing, &width)
                 } else if pp.balance_ragged && !spacing.justify {
@@ -618,7 +618,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
         }
         let mut glyphs = sp.glyphs;
         apply_desired_spacing(&mut glyphs, &pp);
-        let hyph_after = hyphenation_points(&story.text, &glyphs, &pp, &hyph_exceptions);
+        let hyph_after = hyphenation_points(&story.text, &glyphs, &pp, &hyph_exceptions, &foreign_ranges(doc, story, prange.clone(), &base_chars));
         let base_size = base_chars.size;
         let base_leading = match base_chars.leading {
             designcraft_doc::Leading::Auto => base_size * pp.auto_leading,
@@ -1776,7 +1776,28 @@ type LimitsKey = (usize, usize, usize, bool);
 
 /// Mark glyphs after which a hyphen may be inserted (dictionary/pattern points within the
 /// paragraph's limits; words with discretionary hyphens break only there).
-fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps, exceptions: &HashMap<String, Vec<usize>>) -> Vec<bool> {
+/// Whether a language uses the English hyphenation and spelling dictionaries.
+pub fn is_english(language: &str) -> bool {
+    language.starts_with("English")
+}
+
+/// Byte ranges of paragraph `prange` set in a language other than English (no English
+/// hyphenation there).
+fn foreign_ranges(doc: &Document, story: &designcraft_doc::Story, prange: Range<usize>, base: &designcraft_doc::CharProps) -> Vec<Range<usize>> {
+    if is_english(&base.language)
+        && story.runs().all(|(_, f)| f.over.language.as_deref().is_none_or(is_english) && f.style == designcraft_doc::story::NO_CHAR_STYLE)
+    {
+        return vec![];
+    }
+    story
+        .runs()
+        .filter(|(r, _)| r.start < prange.end && r.end > prange.start)
+        .filter(|(_, f)| !is_english(&doc.styles.resolve_char(base, f).language))
+        .map(|(r, _)| r)
+        .collect()
+}
+
+fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps, exceptions: &HashMap<String, Vec<usize>>, foreign: &[Range<usize>]) -> Vec<bool> {
     let mut out = vec![false; glyphs.len()];
     if !pp.hyphenate {
         return out;
@@ -1822,7 +1843,8 @@ fn hyphenation_points(text: &str, glyphs: &[Glyph], pp: &ParaProps, exceptions: 
             let word = &text[a..b];
             // Do not hyphenate the paragraph's last word unless allowed.
             let is_last_word = !pp.hyph_last_word && glyphs[j..].iter().all(|g| !g.is_letter());
-            if !is_last_word {
+            let in_foreign = foreign.iter().any(|r| r.contains(&a));
+            if !is_last_word && !in_foreign {
                 let user = (!exceptions.is_empty()).then(|| exceptions.get(&word.to_lowercase())).flatten();
                 let pts: &[usize] = match user {
                     // User dictionary exceptions win over the patterns and the built-in list.

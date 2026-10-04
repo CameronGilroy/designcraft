@@ -1521,7 +1521,7 @@ fn draw_dynamic_spelling(app: &DesignApp, ctx: &egui::Context, painter: &egui::P
         let bad: std::sync::Arc<Vec<std::ops::Range<usize>>> = match ctx.data(|d| d.get_temp(key)) {
             Some(v) => v,
             None => {
-                let v = std::sync::Arc::new(designcraft_engine::cmd::spelling::misspellings(story, &doc.user_words));
+                let v = std::sync::Arc::new(designcraft_engine::cmd::spelling::misspellings(doc, story, &doc.user_words));
                 ctx.data_mut(|d| d.insert_temp(key, v.clone()));
                 v
             }

@@ -161,7 +161,19 @@ pub fn suggest(dict: &Dictionary, w: &str) -> Vec<String> {
 }
 
 /// Misspelled words of a story: byte ranges (acronyms skipped; the user dictionary counts).
-pub fn misspellings(story: &designcraft_doc::Story, user: &[String]) -> Vec<std::ops::Range<usize>> {
+pub fn misspellings(doc: &designcraft_doc::Document, story: &designcraft_doc::Story, user: &[String]) -> Vec<std::ops::Range<usize>> {
+    // Text in other languages isn't checked against the English dictionary.
+    let foreign: Vec<std::ops::Range<usize>> = {
+        story
+            .runs()
+            .filter(|(r, f)| {
+                let pi = story.para_at(r.start.min(story.len()));
+                let base = doc.styles.resolve_para(&story.paras[pi.min(story.paras.len().saturating_sub(1))]).1;
+                !designcraft_compose::is_english(&doc.styles.resolve_char(&base, f).language)
+            })
+            .map(|(r, _)| r)
+            .collect()
+    };
     let dict = Dictionary::en_us();
     let text = &story.text;
     let bytes: Vec<(usize, char)> = text.char_indices().collect();
@@ -182,7 +194,7 @@ pub fn misspellings(story: &designcraft_doc::Story, user: &[String]) -> Vec<std:
         let end = bytes.get(j).map(|b| b.0).unwrap_or(text.len());
         let word = &text[start..end];
         let acronym = word.chars().all(|c| c.is_uppercase()) && word.chars().count() <= 5;
-        if !acronym && !known(dict, user, &word.to_lowercase()) {
+        if !acronym && !foreign.iter().any(|r| r.contains(&start)) && !known(dict, user, &word.to_lowercase()) {
             out.push(start..end);
         }
         i = j.max(i + 1);
@@ -202,7 +214,7 @@ fn check(s: &mut Session, p: &Value) -> Result<Value> {
     let mut out = Vec::new();
     for sid in stories {
         let Some(story) = d.story(sid) else { continue };
-        for r in misspellings(story, &d.user_words) {
+        for r in misspellings(d, story, &d.user_words) {
             let word = &story.text[r.clone()];
             let sugg = if want_sugg { suggest(dict, &word.to_lowercase()) } else { vec![] };
             out.push(json!({"story": sid.0, "start": r.start, "end": r.end, "word": word, "suggestions": sugg}));
@@ -237,7 +249,7 @@ mod tests {
         assert_eq!(s.execute("spelling.words", &serde_json::json!({})).unwrap(), serde_json::json!(["quux", "zorbo"]));
         let mut story = designcraft_doc::Story::new(designcraft_doc::StoryId(1));
         story.insert(0, "zorbo qwzx");
-        let bad = misspellings(&story, &s.doc().unwrap().doc.user_words);
+        let bad = misspellings(&s.doc().unwrap().doc, &story, &s.doc().unwrap().doc.user_words);
         assert_eq!(bad, vec![6..10]);
     }
 

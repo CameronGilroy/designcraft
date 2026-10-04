@@ -82,6 +82,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Edit ▸ Menus (`window.hideMenuItem`): hide menu items; menus with hidden items end in Show All Menu Items.
 - View ▸ Separations Preview (`view.separations`): one process plate as ink density, or areas over an ink limit in red (a GCR preview of the rendered view; spot plates and the flattener preview aren't there).
 - Separations Preview plates now come from each object's own colour (CMYK as authored; RGB and images through the colour settings, images via a cached 17³ table), so pure black shows only on the black plate.
+- Language (Character panel ▸ Language, `type.char {language}`): text in other languages isn't hyphenated or spell-checked with the English dictionaries, and typographer's quotes follow the language (German „…“, French and Russian «…», Swiss, Spanish, Dutch, Nordic, CJK 「…」). Hyphenation dictionaries for other languages aren't bundled yet.
 - Books (`book.new/open/add/remove/list/styleSource/paginate/syncStyles/exportPdf`, Book panel): `.dcbook` files, continuous page numbering, style sync from a style source, one merged PDF.
 - Track Changes (`changes.track/list/acceptAll/rejectAll`, Type ▸ Track Changes): typing is marked added (highlighted on screen), deletions are kept but hidden from layout and exports until accepted or rejected. Per-change accept/reject and authors aren't there yet.
 - Track Changes: per-change Accept / Reject (`changes.accept`, `changes.reject`) and a Track Changes panel listing every change.

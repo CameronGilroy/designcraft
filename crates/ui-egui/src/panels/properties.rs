@@ -1139,6 +1139,39 @@ fn text_frame_section(app: &mut DesignApp, ui: &mut Ui) {
     }
 }
 
+/// Languages offered for text (InDesign-style names).
+const LANGUAGES: &[&str] = &[
+    "[No Language]",
+    "English: USA",
+    "English: UK",
+    "English: Canadian",
+    "German: 2006 Reform",
+    "German: Swiss 2006 Reform",
+    "French",
+    "French: Canadian",
+    "Spanish",
+    "Italian",
+    "Portuguese",
+    "Portuguese: Brazilian",
+    "Dutch: 2005 Reform",
+    "Danish",
+    "Swedish",
+    "Norwegian: Bokmål",
+    "Finnish",
+    "Polish",
+    "Czech",
+    "Hungarian",
+    "Greek",
+    "Russian",
+    "Ukrainian",
+    "Turkish",
+    "Japanese",
+    "Chinese",
+    "Korean",
+    "Arabic",
+    "Hebrew",
+];
+
 pub fn character_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     let Some(a) = text_attrs(app) else {
         ui.label("Select text or a text frame.");
@@ -1151,6 +1184,18 @@ pub fn character_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
     super::font_family_picker(app, ui, &fam, 220.0);
     super::font_style_picker(app, ui, &fam, &sty, 220.0);
     variable_font_axes(app, ui, &fam, &sty);
+    // Language: hyphenation, spelling and typographer's quotes follow it.
+    let lang = c["language"].as_str().unwrap_or("English: USA").to_string();
+    ui.horizontal(|ui| {
+        caption(ui, "Language");
+        egui::ComboBox::from_id_salt("char_language").selected_text(&lang).width(170.0).show_ui(ui, |ui| {
+            for l in LANGUAGES {
+                if ui.selectable_label(*l == lang, *l).clicked() {
+                    let _ = app.run("type.char", json!({"attrs": {"language": l}}));
+                }
+            }
+        });
+    });
     egui::Grid::new("chargrid").num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
         caption(ui, "Size");
         if let Some(v) = number(ui, "pcs", c["size"].as_f64(), " pt", 60.0, 2) {
