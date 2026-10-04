@@ -565,18 +565,22 @@ fn move_caret(s: &mut Session, p: &Value) -> Result<Value> {
     let new = match dir.as_str() {
         "left" if !extend && !t.is_caret() => collapse_to(true),
         "right" if !extend && !t.is_caret() => collapse_to(false),
-        "left" => {
-            if word {
-                prev_word(&text, pos)
-            } else {
-                prev_char(&text, pos)
-            }
-        }
-        "right" => {
-            if word {
-                next_word(&text, pos)
-            } else {
-                next_char(&text, pos)
+        "left" | "right" => {
+            // Lines with right-to-left text move as drawn; at a line's edge, or by words, a
+            // right-to-left line's "left" is forward in the text.
+            let left = dir == "left";
+            let visual = if word { None } else { compose::visual_step(&cs, pos, left) };
+            match visual {
+                Some(p) => p,
+                None => {
+                    let forward = left == compose::line_rtl(&cs, pos);
+                    match (forward, word) {
+                        (true, true) => next_word(&text, pos),
+                        (true, false) => next_char(&text, pos),
+                        (false, true) => prev_word(&text, pos),
+                        (false, false) => prev_char(&text, pos),
+                    }
+                }
             }
         }
         "up" | "down" => vertical(&cs, pos, dir == "up").unwrap_or(pos),
@@ -1204,5 +1208,30 @@ mod tcy_tests {
         assert_eq!(get(&s), Some(false));
         s.execute("type.tateChuYoko", &json!({"on": true})).unwrap();
         assert_eq!(get(&s), Some(true));
+    }
+}
+
+#[cfg(test)]
+mod bidi_caret_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn arrow_keys_in_a_right_to_left_paragraph() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": "سلام عليكم"})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        s.execute("type.para", &json!({"attrs": {"direction": "rightToLeft"}})).unwrap();
+        s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 0})).unwrap();
+        // Left moves forward through right-to-left text, Right back.
+        let p = s.execute("text.move", &json!({"dir": "left"})).unwrap()["pos"].as_u64().unwrap();
+        assert_eq!(p, 'س'.len_utf8() as u64);
+        let p = s.execute("text.move", &json!({"dir": "right"})).unwrap()["pos"].as_u64().unwrap();
+        assert_eq!(p, 0);
+        // By words too.
+        let p = s.execute("text.move", &json!({"dir": "left", "word": true})).unwrap()["pos"].as_u64().unwrap();
+        assert!(p >= "سلام".len() as u64, "{p}");
     }
 }

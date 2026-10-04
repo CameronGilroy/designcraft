@@ -232,7 +232,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Document Setup…",
             ["File"],
             Some("Cmd+Alt+P"),
-            "{width?, height?, pages?: count, startPage?: n, facingPages?, intent?: print|web|mobile, bleed?, slug?: n | [top, bottom, inside, outside], adjustLayout?: bool (objects follow the new page size)} → the document setup",
+            "{width?, height?, pages?: count, startPage?: n, facingPages?, binding?: leftToRight|rightToLeft, intent?: print|web|mobile, bleed?, slug?: n | [top, bottom, inside, outside], adjustLayout?: bool (objects follow the new page size)} → the document setup",
             has_doc,
             |s, p| {
                 let p = p.clone();
@@ -256,6 +256,9 @@ pub fn specs() -> Vec<CommandSpec> {
                     let before = adjust.then(|| margin_boxes(d));
                     if let Some(f) = p.get("facingPages").and_then(Value::as_bool) {
                         d.settings.facing_pages = f;
+                    }
+                    if let Some(b) = p.get("binding").and_then(Value::as_str) {
+                        d.settings.right_to_left_binding = b == "rightToLeft";
                     }
                     if let Some(b) = bleed {
                         d.settings.bleed = b;
@@ -702,7 +705,7 @@ fn document_setup(d: &designcraft_doc::Document) -> Value {
     let st = &d.settings;
     let start = d.sections.iter().find(|x| x.start == 0).and_then(|x| x.start_number).unwrap_or(1);
     json!({"width": st.page_width, "height": st.page_height, "pages": d.page_count(), "startPage": start, "facingPages": st.facing_pages,
-        "intent": st.intent, "bleed": st.bleed, "slug": st.slug})
+        "binding": if st.right_to_left_binding { "rightToLeft" } else { "leftToRight" }, "intent": st.intent, "bleed": st.bleed, "slug": st.slug})
 }
 
 #[cfg(test)]
@@ -729,6 +732,32 @@ mod setup_tests {
         let r = s.execute("layout.documentSetup", &json!({"pages": 3})).unwrap();
         assert_eq!(r["pages"], 3);
         s.doc().unwrap().doc.check().unwrap();
+    }
+
+    #[test]
+    fn right_to_left_binding_reverses_spreads() {
+        use designcraft_doc::PageSide::{Left, Right};
+        let mut s = crate::Session::new();
+        s.execute("file.new", &json!({"pages": 4})).unwrap();
+        // A frame on page 2 stays on page 2.
+        let w = s.doc().unwrap().doc.settings.page_width;
+        let f = s.execute("frame.create", &json!({"rect": [w + 72.0, 72, w + 200.0, 200], "content": "text", "text": "two"})).unwrap();
+        let r = s.execute("layout.documentSetup", &json!({"binding": "rightToLeft"})).unwrap();
+        assert_eq!(r["binding"], "rightToLeft");
+        let d = &s.doc().unwrap().doc;
+        let shape: Vec<Vec<(designcraft_doc::PageSide, f64)>> = d.spreads.iter().map(|sp| sp.pages.iter().map(|p| (p.side, p.x)).collect()).collect();
+        // Page 1 alone on the left; pages 2–3 with 2 on the right; page 4 alone on the right.
+        assert_eq!(shape, vec![vec![(Left, 0.0)], vec![(Right, w), (Left, 0.0)], vec![(Right, 0.0)]]);
+        let (si, _) = d.page_loc(1).unwrap();
+        assert_eq!(si, 1);
+        let it = d.item(designcraft_doc::ItemId(f["id"].as_u64().unwrap())).unwrap();
+        assert_eq!(d.spreads[si].page_at_x(it.bounds().center().x), Some(0), "the frame is still on page 2");
+        assert!(it.bounds().x0 >= w, "page 2 is the right page now");
+        d.check().unwrap();
+        // And back.
+        s.execute("layout.documentSetup", &json!({"binding": "leftToRight"})).unwrap();
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.spreads[1].pages.iter().map(|p| (p.side, p.x)).collect::<Vec<_>>(), vec![(Left, 0.0), (Right, w)]);
     }
 }
 

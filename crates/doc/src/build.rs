@@ -287,6 +287,7 @@ impl Document {
             }
         }
         let facing = self.settings.facing_pages;
+        let rtl = facing && self.settings.right_to_left_binding;
         let mut spreads: Vec<Spread> = Vec::new();
         let mut cur: Vec<(Page, Vec<Arc<Item>>)> = Vec::new();
         let total = pages.len();
@@ -295,27 +296,29 @@ impl Document {
                 return;
             }
             let mut sp = Spread { id, pages: vec![], items: vec![], parent: None, allow_shuffle: true };
-            let mut x = 0.0;
             let n = cur.len();
+            let mut all_items = Vec::new();
             for (i, (mut p, items)) in cur.drain(..).enumerate() {
                 p.side = if !facing {
                     PageSide::Single
                 } else if n == 1 {
                     // Lone page: right if odd page number position, decided by caller via side preset.
                     p.side
-                } else if i == 0 {
+                } else if (i == 0) != rtl {
                     PageSide::Left
                 } else {
                     PageSide::Right
                 };
-                p.x = x;
+                all_items.push(items);
+                sp.pages.push(p);
+            }
+            sp.relayout();
+            for (p, items) in sp.pages.iter().zip(all_items) {
                 for it in items {
                     let mut it = Arc::unwrap_or_clone(it);
-                    it.xf = Affine::translate((x, 0.0)) * it.xf;
+                    it.xf = Affine::translate((p.x, 0.0)) * it.xf;
                     sp.items.push(Arc::new(it));
                 }
-                x += p.width;
-                sp.pages.push(p);
             }
             spreads.push(sp);
         };
@@ -324,8 +327,11 @@ impl Document {
         for (i, (mut p, items)) in pages.into_iter().enumerate() {
             if facing {
                 // Page i (0-based) is a right page when its number is odd (1, 3, 5 …).
-                p.side = if (i + shift) % 2 == 0 { PageSide::Right } else { PageSide::Left };
-                if p.side == PageSide::Left && !cur.is_empty() {
+                // Bound right to left, odd pages are left pages and spreads start on the right.
+                let odd = (i + shift) % 2 == 0;
+                p.side = if odd != rtl { PageSide::Right } else { PageSide::Left };
+                let starts = if rtl { PageSide::Right } else { PageSide::Left };
+                if p.side == starts && !cur.is_empty() {
                     let id = SpreadId(self.alloc());
                     flush(&mut cur, &mut spreads, id);
                 }

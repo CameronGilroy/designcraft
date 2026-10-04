@@ -678,7 +678,7 @@ impl<'a> Ex<'a> {
                 .attr("PreserveLayoutWhenShuffling", "true")
                 .attr("AllowPageShuffle", "true")
                 .attr("OverprintBlack", bool_s(s.overprint_black))
-                .attr("PageBinding", "LeftToRight")
+                .attr("PageBinding", if s.right_to_left_binding { "RightToLeft" } else { "LeftToRight" })
                 .attr("ColumnDirection", "Horizontal")
                 .attr(
                     "Intent",

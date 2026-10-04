@@ -976,14 +976,32 @@ fn draw_text_selection(
             if s > e || (s == e && !(l.range.end < range.end && e == l.range.end)) {
                 continue;
             }
-            let x0 = caret_x(l, s);
-            let x1 = if e == l.range.end && range.end > l.range.end { l.end_x.max(x0 + 3.0) } else { caret_x(l, e) };
-            quads.push([
-                Point::new(x0, l.baseline - l.ascent),
-                Point::new(x1, l.baseline - l.ascent),
-                Point::new(x1, l.baseline + l.descent),
-                Point::new(x0, l.baseline + l.descent),
-            ]);
+            let quad = |x0: f64, x1: f64| {
+                [
+                    Point::new(x0, l.baseline - l.ascent),
+                    Point::new(x1, l.baseline - l.ascent),
+                    Point::new(x1, l.baseline + l.descent),
+                    Point::new(x0, l.baseline + l.descent),
+                ]
+            };
+            if l.glyphs.iter().any(|g| g.rtl) {
+                // Mixed directions: the selected glyphs' boxes, joined where they touch.
+                let mut spans: Vec<(f64, f64)> =
+                    l.glyphs.iter().filter(|g| g.len > 0 && g.byte >= s && g.byte < e).map(|g| (g.x, g.x + g.adv)).collect();
+                spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+                let mut merged: Vec<(f64, f64)> = Vec::new();
+                for (a, b) in spans {
+                    match merged.last_mut() {
+                        Some(m) if a <= m.1 + 0.5 => m.1 = m.1.max(b),
+                        _ => merged.push((a, b)),
+                    }
+                }
+                quads.extend(merged.into_iter().map(|(a, b)| quad(a, b)));
+            } else {
+                let x0 = compose::caret_x(l, s);
+                let x1 = if e == l.range.end && range.end > l.range.end { l.end_x.max(x0 + 3.0) } else { compose::caret_x(l, e) };
+                quads.push(quad(x0, x1));
+            }
             for (gi, g) in l.glyphs.iter().enumerate() {
                 if g.visible && g.len > 0 && g.byte >= s && g.byte < e {
                     glyphs.push((li, gi));
@@ -1044,8 +1062,8 @@ fn draw_cell_selection(
             if s > e || (s == e && !(l.range.end < range.end && e == l.range.end)) {
                 continue;
             }
-            let x0 = caret_x(l, s);
-            let x1 = if e == l.range.end && range.end > l.range.end { l.end_x.max(x0 + 3.0) } else { caret_x(l, e) };
+            let x0 = compose::caret_x(l, s);
+            let x1 = if e == l.range.end && range.end > l.range.end { l.end_x.max(x0 + 3.0) } else { compose::caret_x(l, e) };
             let q = [
                 xf.to_screen(m * Point::new(x0, l.baseline - l.ascent)),
                 xf.to_screen(m * Point::new(x1, l.baseline - l.ascent)),
@@ -1160,18 +1178,6 @@ fn draw_inverse_highlight(
         }
     };
     painter.image(tex.id(), bbox, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-}
-
-fn caret_x(l: &compose::Line, pos: usize) -> f64 {
-    for g in &l.glyphs {
-        if g.len > 0 && pos >= g.byte && pos < g.byte + g.len {
-            return g.x + g.adv * (pos - g.byte) as f64 / g.len as f64;
-        }
-        if g.len > 0 && g.byte >= pos {
-            return g.x;
-        }
-    }
-    l.end_x
 }
 
 fn draw_tool_overlays(app: &mut DesignApp, painter: &egui::Painter, xf: &Xf) {

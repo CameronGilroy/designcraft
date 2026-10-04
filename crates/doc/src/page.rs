@@ -291,6 +291,8 @@ impl Spread {
     pub fn spine_x(&self) -> f64 {
         match self.pages.iter().position(|p| p.side == PageSide::Right) {
             Some(i) => self.pages[i].x,
+            // Left pages only (a right-to-left document's first page): the spine is on their right.
+            None if !self.pages.is_empty() && self.pages.iter().all(|p| p.side == PageSide::Left) => self.bounds().x1,
             None => self.bounds().center().x,
         }
     }
@@ -299,14 +301,26 @@ impl Spread {
         if self.pages.is_empty() {
             return None;
         }
-        self.pages
-            .iter()
-            .position(|p| x >= p.x && x < p.x + p.width)
-            .or_else(|| if x < self.pages[0].x { Some(0) } else { Some(self.pages.len() - 1) })
+        self.pages.iter().position(|p| x >= p.x && x < p.x + p.width).or_else(|| {
+            // The pasteboard: the page nearest that side.
+            let (l, r) = (0..self.pages.len()).fold((0, 0), |(l, r), i| {
+                (if self.pages[i].x < self.pages[l].x { i } else { l }, if self.pages[i].x > self.pages[r].x { i } else { r })
+            });
+            Some(if x < self.pages[l].x { l } else { r })
+        })
     }
-    /// Lay the pages out left to right with no gaps, starting at x = 0.
+    /// Lay the pages out with no gaps from x = 0: left to right, or right to left for a
+    /// right-to-left bound pair (its first page is the right one).
     pub fn relayout(&mut self) {
+        let rtl = self.pages.len() == 2 && self.pages[0].side == PageSide::Right && self.pages[1].side == PageSide::Left;
         let mut x = 0.0;
+        if rtl {
+            for p in self.pages.iter_mut().rev() {
+                p.x = x;
+                x += p.width;
+            }
+            return;
+        }
         for p in &mut self.pages {
             p.x = x;
             x += p.width;

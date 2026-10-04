@@ -296,6 +296,9 @@ pub struct DocSettings {
     pub page_width: f64,
     pub page_height: f64,
     pub facing_pages: bool,
+    /// Binding: Right to Left — page 1 is a left page and spreads read from right to left.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub right_to_left_binding: bool,
     pub primary_text_frame: bool,
     /// Bleed: top, bottom, inside, outside.
     pub bleed: [f64; 4],
@@ -339,6 +342,7 @@ impl Default for DocSettings {
             page_width: 612.0,
             page_height: 792.0,
             facing_pages: true,
+            right_to_left_binding: false,
             primary_text_frame: false,
             bleed: [0.0; 4],
             slug: [0.0; 4],

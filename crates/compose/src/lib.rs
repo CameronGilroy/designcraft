@@ -103,6 +103,8 @@ pub struct PlacedGlyph {
     pub upright: bool,
     /// Tate-chu-yoko placement (see [`shape::Glyph::tcy`]).
     pub tcy: Option<[f64; 3]>,
+    /// Set right to left (an odd bidi level): the caret before it is at its right edge.
+    pub rtl: bool,
 }
 
 impl PlacedGlyph {
@@ -1587,6 +1589,10 @@ fn layout_line(
         let leader = leaders.iter().find(|(k, _)| *k == i).map(|(_, l)| l.as_str());
         let (tab_x, tab_w) = (x, p.adv);
         x += p.adv;
+        if let Some((_, l)) = kashidas.iter().find(|k| k.0 == i) {
+            // The glyph keeps its own width; the gap before it is the tatweel's.
+            p.adv -= l;
+        }
         out.push(p);
         if let Some(l) = leader {
             tab_leader(g, l, tab_x, tab_w, tab_origin, &mut out);
@@ -1680,6 +1686,7 @@ fn reorder_visual(line: &[Glyph], out: &mut [PlacedGlyph], pens: &[f64], start: 
         let u = &units[k];
         for i in u.clone() {
             shifts[i] = cur - pens[u.start];
+            out[i].rtl = levels[k].is_rtl();
         }
         cur += width(u);
     }
@@ -1720,6 +1727,7 @@ fn tab_leader(tab: &Glyph, leader: &str, x: f64, w: f64, origin: f64, out: &mut 
                 visible: true,
                 upright: false,
                 tcy: None,
+                rtl: false,
             });
             at += adv;
         }
@@ -1822,6 +1830,7 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
         visible,
         upright: upright_in_vertical(g.ch),
         tcy: g.tcy,
+        rtl: false,
     }
 }
 
@@ -1991,6 +2000,12 @@ fn vertical_justify(ft: &mut FrameText, f: &FrameSpec) {
 
 /// Caret geometry for story byte `pos`: (frame index, x, baseline, ascent, descent).
 pub fn caret(cs: &ComposedStory, pos: usize) -> Option<(usize, f64, f64, f64, f64)> {
+    let (fi, l) = caret_line(cs, pos)?;
+    Some((fi, caret_x(l, pos), l.baseline, l.ascent, l.descent))
+}
+
+/// The line the caret at `pos` is drawn on (and its frame index).
+fn caret_line(cs: &ComposedStory, pos: usize) -> Option<(usize, &Line)> {
     let mut best: Option<(usize, &Line)> = None;
     for (fi, ft) in cs.frames.iter().enumerate() {
         for l in &ft.lines {
@@ -2009,22 +2024,54 @@ pub fn caret(cs: &ComposedStory, pos: usize) -> Option<(usize, f64, f64, f64, f6
             break;
         }
     }
-    let (fi, l) = best?;
-    Some((fi, caret_x(l, pos), l.baseline, l.ascent, l.descent))
+    best
 }
 
-fn caret_x(l: &Line, pos: usize) -> f64 {
+/// The caret's x on line `l` for story byte `pos` (bidi-aware).
+pub fn caret_x(l: &Line, pos: usize) -> f64 {
     for g in &l.glyphs {
         if g.len > 0 && pos >= g.byte && pos < g.byte + g.len {
             // Inside a multi-char cluster (ligature): interpolate.
             let t = (pos - g.byte) as f64 / g.len as f64;
-            return g.x + g.adv * t;
+            return if g.rtl { g.x + g.adv * (1.0 - t) } else { g.x + g.adv * t };
         }
         if g.len > 0 && g.byte >= pos {
-            return g.x;
+            return if g.rtl { g.x + g.adv } else { g.x };
         }
     }
-    l.end_x
+    match l.glyphs.iter().rev().find(|g| g.len > 0) {
+        Some(g) if g.rtl => g.x,
+        _ => l.end_x,
+    }
+}
+
+/// Caret positions on a line with their x, for lines with right-to-left text.
+fn caret_stops(l: &Line) -> Vec<(usize, f64)> {
+    let mut ps: Vec<usize> = l.glyphs.iter().filter(|g| g.len > 0).flat_map(|g| [g.byte, g.byte + g.len]).collect();
+    ps.extend([l.range.start, l.range.end]);
+    ps.sort_unstable();
+    ps.dedup();
+    ps.into_iter().filter(|p| l.range.contains(p) || *p == l.range.end).map(|p| (p, caret_x(l, p))).collect()
+}
+
+/// Bidi caret movement: the position one step to the left (or right) of `pos` on its line as
+/// drawn. `None` when the line has no right-to-left text or `pos` is at that side's edge of the
+/// line: then move in text order ([`line_rtl`] says which way that runs).
+pub fn visual_step(cs: &ComposedStory, pos: usize, left: bool) -> Option<usize> {
+    let (_, l) = caret_line(cs, pos)?;
+    if !l.glyphs.iter().any(|g| g.rtl) {
+        return None;
+    }
+    let x = caret_x(l, pos);
+    let stops = caret_stops(l);
+    let side = |s: &&(usize, f64)| if left { s.1 < x - 0.01 } else { s.1 > x + 0.01 };
+    let pick = stops.iter().filter(side);
+    if left { pick.max_by(|a, b| a.1.total_cmp(&b.1)) } else { pick.min_by(|a, b| a.1.total_cmp(&b.1)) }.map(|s| s.0)
+}
+
+/// Does the line at `pos` start (in text order) with right-to-left text?
+pub fn line_rtl(cs: &ComposedStory, pos: usize) -> bool {
+    caret_line(cs, pos).and_then(|(_, l)| l.glyphs.iter().find(|g| g.len > 0)).is_some_and(|g| g.rtl)
 }
 
 /// Story byte nearest to point `p` (frame inner space) in frame `fi`.
@@ -2040,6 +2087,10 @@ pub fn hit(cs: &ComposedStory, fi: usize, p: Point) -> Option<usize> {
         .filter(|l| p.x >= l.x0 - 20.0 && p.x <= l.x1 + 20.0 || ft.columns.len() <= 1)
         .min_by(|a, b| line_dist(a, p.y).total_cmp(&line_dist(b, p.y)))
         .or_else(|| ft.lines.first())?;
+    if l.glyphs.iter().any(|g| g.rtl) {
+        // Bidi: the caret position drawn nearest the point.
+        return caret_stops(l).into_iter().min_by(|a, b| (a.1 - p.x).abs().total_cmp(&(b.1 - p.x).abs())).map(|s| s.0);
+    }
     let mut best = l.range.start;
     let mut prev_mid = f64::NEG_INFINITY;
     for g in l.glyphs.iter().filter(|g| g.len > 0) {

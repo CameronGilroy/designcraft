@@ -274,7 +274,7 @@ pub fn open_document_setup(app: &mut DesignApp) {
     let units = app.session.active().map(|s| s.doc.settings.horizontal_units).unwrap_or(Unit::Picas);
     let fm = |v: &Value| json!(format_measure(v.as_f64().unwrap_or(0.0), units));
     let mut f = json!({"intent": cur["intent"], "pages": cur["pages"], "startPage": cur["startPage"], "facingPages": cur["facingPages"],
-        "width": fm(&cur["width"]), "height": fm(&cur["height"])});
+        "binding": cur["binding"], "width": fm(&cur["width"]), "height": fm(&cur["height"])});
     for k in ["bleed", "slug"] {
         for (i, e) in ["Top", "Bottom", "Inside", "Outside"].iter().enumerate() {
             f[format!("{k}{e}")] = fm(&cur[k][i]);
@@ -311,6 +311,19 @@ fn document_setup(ui: &mut egui::Ui, d: &mut Dialog) {
         ui.end_row();
         ui.label("Start Page #:");
         text_field(ui, d, "startPage", 60.0);
+        ui.end_row();
+        ui.label("Binding:");
+        let rtl = d.s("binding") == "rightToLeft";
+        egui::ComboBox::from_id_salt("ds_binding").selected_text(if rtl { "Right to Left" } else { "Left to Right" }).width(110.0).show_ui(
+            ui,
+            |ui| {
+                for (v, l) in [("leftToRight", "Left to Right"), ("rightToLeft", "Right to Left")] {
+                    if ui.selectable_label((v == "rightToLeft") == rtl, l).clicked() {
+                        d.fields.insert("binding".into(), json!(v));
+                    }
+                }
+            },
+        );
         ui.end_row();
     });
     ui.add_space(8.0);
@@ -1309,7 +1322,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             app.run(
                 "layout.documentSetup",
                 json!({"intent": d.s("intent"), "pages": d.n("pages").unwrap_or(1.0).max(1.0) as u64, "startPage": d.n("startPage").unwrap_or(1.0).max(1.0) as u64,
-                    "facingPages": d.b("facingPages"), "width": d.m("width"), "height": d.m("height"), "bleed": edges("bleed"), "slug": edges("slug"), "adjustLayout": d.b("adjustLayout")}),
+                    "facingPages": d.b("facingPages"), "binding": d.s("binding"), "width": d.m("width"), "height": d.m("height"), "bleed": edges("bleed"), "slug": edges("slug"), "adjustLayout": d.b("adjustLayout")}),
             )
         }
         "paragraphStyleOptions" => {

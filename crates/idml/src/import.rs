@@ -414,6 +414,9 @@ impl<'r> Importer<'r> {
         if let Some(v) = e.boolean("FacingPages") {
             s.facing_pages = v;
         }
+        if let Some(v) = e.get("PageBinding") {
+            s.right_to_left_binding = v == "RightToLeft";
+        }
         for (i, k) in ["DocumentBleedTopOffset", "DocumentBleedBottomOffset", "DocumentBleedInsideOrLeftOffset", "DocumentBleedOutsideOrRightOffset"]
             .iter()
             .enumerate()

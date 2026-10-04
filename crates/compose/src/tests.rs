@@ -842,6 +842,34 @@ fn bidi_matches_the_reference_order() {
 }
 
 #[test]
+fn carets_in_right_to_left_text_follow_the_drawing() {
+    let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
+    let lid = d.default_layer();
+    // "abc" then an Arabic word, in a left-to-right paragraph.
+    let text = "abc سلام";
+    let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 400.0, 200.0), lid, text, ParaFormat::default()).unwrap();
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let l = &cs.frames[0].lines[0];
+    let ar = text.find('س').unwrap();
+    assert!(l.glyphs.iter().filter(|g| g.len > 0 && g.byte >= ar).all(|g| g.rtl));
+    assert!(l.glyphs.iter().filter(|g| g.byte < 3).all(|g| !g.rtl));
+    let x = |p: usize| caret(&cs, p).unwrap().1;
+    // The Arabic word starts at its right edge and runs left.
+    let after = ar + 'س'.len_utf8();
+    assert!(x(after) < x(ar), "{} {}", x(after), x(ar));
+    assert!(x(text.len()) < x(ar));
+    // Arrow keys move as drawn: the word's start is at its right edge, so Left steps into it.
+    assert_eq!(visual_step(&cs, ar, true), Some(after));
+    assert_eq!(visual_step(&cs, after, false), Some(ar));
+    // Latin text has no right-to-left glyphs.
+    let (_, s2) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 300.0, 400.0, 400.0), lid, "abc", ParaFormat::default()).unwrap();
+    assert_eq!(visual_step(&compose_story(&d, s2, &ComposeOptions::default()), 1, true), None);
+    // A click at the word's right edge puts the caret at its start.
+    let hx = x(ar) - 0.1;
+    assert_eq!(hit(&cs, 0, Point::new(hx, l.baseline)), Some(ar));
+}
+
+#[test]
 fn kashidas_stretch_justified_arabic_before_spaces() {
     let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
     let lid = d.default_layer();
