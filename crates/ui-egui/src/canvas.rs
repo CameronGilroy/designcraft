@@ -421,6 +421,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
             quality: app.ui.display_quality,
             rich_black: app.ui.rich_black,
             overprint_preview: app.ui.overprint_preview,
+            blend_space_view: !app.ui.proof_colors,
             ..Default::default()
         };
         (st.doc.clone(), placed, w, h, view, opts)
@@ -533,6 +534,7 @@ fn patch_texture(app: &mut DesignApp, layout: &CanvasLayout, ppp: f64, doc_key: 
         quality: app.ui.display_quality,
         rich_black: app.ui.rich_black,
         overprint_preview: app.ui.overprint_preview,
+        blend_space_view: !app.ui.proof_colors,
         ..Default::default()
     };
     let img = app.canvas.patcher.render(&new, &app.session.cache, &placed, (x1 - x0) as u32, (y1 - y0) as u32, view, &opts);

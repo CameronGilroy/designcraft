@@ -130,6 +130,9 @@ pub struct RenderOptions {
     pub rich_black: bool,
     /// View › Overprint Preview: overprinting inks mix with what's beneath.
     pub overprint_preview: bool,
+    /// Screen: spreads with transparency are shown as blended in the document's blend space (a
+    /// CMYK blend space keeps their colours in the working CMYK gamut).
+    pub blend_space_view: bool,
 }
 
 /// View › Display Performance: how placed graphics and effects are drawn on screen.
@@ -166,6 +169,7 @@ impl Default for RenderOptions {
             quality: DisplayQuality::High,
             rich_black: false,
             overprint_preview: false,
+            blend_space_view: false,
         }
     }
 }
@@ -303,6 +307,17 @@ impl Renderer {
         // Render straight into the returned buffer (no extra copy of the frame).
         let mut pixels = vec![0u8; w as usize * h as usize * 4];
         ctx.render(vello_cpu::PixmapMut::new(w, h, &mut pixels).expect("buffer size"), &mut self.resources);
+        if opts.blend_space_view && doc.settings.blend_space == designcraft_doc::BlendSpace::Cmyk && opts.plate.is_none() {
+            let mut img = Rendered { width: w as u32, height: h as u32, pixels };
+            for pl in spreads {
+                let Some(sp) = doc.spread(pl.spread) else { continue };
+                if sp.items.iter().any(|it| it.involves_transparency() && !it.hidden) {
+                    let r = (view * pl.xf).transform_rect_bbox(sp.bounds());
+                    blend_space_view(&mut img, r);
+                }
+            }
+            pixels = img.pixels;
+        }
         self.ctx = Some(ctx);
         self.stories.clear();
         self.stats.micros = now().saturating_sub(start);
@@ -1066,6 +1081,31 @@ pub fn proof_view(img: &mut Rendered, setup: &designcraft_color::cms::ProofSetup
     }
 }
 
+/// A CMYK transparency blend space on screen: the pixels of `area` (device space) through the
+/// working CMYK profile and back, as a spread composited in that space looks.
+fn blend_space_view(img: &mut Rendered, area: Rect) {
+    use designcraft_color::cms::{ProofSetup, ProofTarget};
+    let lut = designcraft_color::cms::active().proof_lut(&ProofSetup { target: ProofTarget::WorkingCmyk, ..Default::default() });
+    let (w, h) = (img.width as i64, img.height as i64);
+    let (x0, y0) = ((area.x0.floor() as i64).clamp(0, w), (area.y0.floor() as i64).clamp(0, h));
+    let (x1, y1) = ((area.x1.ceil() as i64).clamp(0, w), (area.y1.ceil() as i64).clamp(0, h));
+    for y in y0..y1 {
+        let row = &mut img.pixels[((y * w + x0) * 4) as usize..((y * w + x1) * 4) as usize];
+        for px in row.chunks_exact_mut(4) {
+            let a = px[3];
+            if a == 0 {
+                continue;
+            }
+            let k = 255.0 / a as f32;
+            let rgb = [px[0], px[1], px[2]].map(|v| ((v as f32 * k).round()).min(255.0) as u8);
+            let out = lut.apply8(rgb);
+            for i in 0..3 {
+                px[i] = ((out[i] as u32 * a as u32 + 127) / 255) as u8;
+            }
+        }
+    }
+}
+
 pub fn separation_view(img: &mut Rendered, plate: Option<u8>, ink_limit: Option<f32>) {
     for px in img.pixels.chunks_exact_mut(4) {
         let a = px[3] as f32 / 255.0;
@@ -1205,6 +1245,33 @@ mod tests {
         let on = px(true, &mut r);
         assert!(off[2] > 100, "magenta knocks out: {off:?}");
         assert!(on[2] < 60 && on[0] > 180, "magenta over yellow → red: {on:?}");
+    }
+
+    #[test]
+    fn cmyk_blend_space_shows_transparent_spreads_in_cmyk() {
+        let mut d = Document::new(&NewDocument::default());
+        d.swatches.push(designcraft_color::swatch::Swatch::color("Green", designcraft_color::Color::rgb8(0, 255, 0)));
+        let lid = d.default_layer();
+        let id = designcraft_doc::ItemId(d.alloc());
+        let mut it =
+            Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(100.0, 100.0, 200.0, 200.0)));
+        it.fill = Fill::swatch("Green");
+        d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
+        let cache = Cache::new();
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let px = |d: &Document, r: &mut Renderer| {
+            r.render_page(d, &cache, 0, 1.0, false, &RenderOptions { blend_space_view: true, ..Default::default() }).unwrap().pixel(150, 150)
+        };
+        // No transparency on the spread: shown as is.
+        assert_eq!(px(&d, &mut r)[1], 255);
+        // With transparency in a CMYK blend space the bright green leaves the RGB gamut's edge.
+        d.item_mut(id).unwrap().opacity = 0.99;
+        let cmyk = px(&d, &mut r);
+        assert!(cmyk[0] > 20 || cmyk[1] < 240, "{cmyk:?}");
+        d.settings.blend_space = designcraft_doc::BlendSpace::Rgb;
+        let rgb = px(&d, &mut r);
+        assert!(rgb[1] > 245 && rgb[0] < 10, "{rgb:?}");
     }
 
     #[test]

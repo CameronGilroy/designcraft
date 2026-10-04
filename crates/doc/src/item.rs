@@ -1100,6 +1100,16 @@ impl Item {
         self.shape == Shape::Group && matches!(self.content, Content::Group { .. })
     }
 
+    /// Does this object (or anything in it) involve transparency (opacity, a blend mode, effects,
+    /// knockout)?
+    pub fn involves_transparency(&self) -> bool {
+        self.opacity < 1.0
+            || self.blend != Default::default()
+            || self.effects.any()
+            || self.knockout
+            || self.children().iter().any(|c| c.involves_transparency())
+    }
+
     /// A frame with items pasted into it (Edit › Paste Into): drawn clipped to its path.
     pub fn has_nested_items(&self) -> bool {
         self.shape != Shape::Group && matches!(&self.content, Content::Group { items } if !items.is_empty())

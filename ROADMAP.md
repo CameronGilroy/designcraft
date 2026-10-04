@@ -49,7 +49,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Endnotes (`endnote.insert/edit/delete/list/options`, Type ▸ Insert Endnote): references number through the document, the endnote frame on a new last page lists them under a heading; IDML keeps the listed text only.
 - Editorial notes (`note.new/edit/delete/convertToText/list`, Notes panel): anchored in text, flagged on screen, never printed or exported.
 - File ▸ Print Booklet (`file.printBooklet`): saddle-stitch or 2-up consecutive printer spreads as PDF, padded with blanks, with a gap between pages.
-- Edit ▸ Transparency Blend Space (`edit.transparencyBlendSpace`; RGB for web/mobile documents; IDML TransparencyPreference) — exported PDFs give pages with transparency a DeviceCMYK or DeviceRGB page group, so viewers and RIPs blend in that space; on-screen compositing is still RGB.
+- Edit ▸ Transparency Blend Space (`edit.transparencyBlendSpace`; RGB for web/mobile documents; IDML TransparencyPreference) — exported PDFs give pages with transparency a DeviceCMYK or DeviceRGB page group, so viewers and RIPs blend in that space. On screen, spreads with transparency in a CMYK blend space are shown through the working CMYK profile (their colours keep to its gamut, as when composited in CMYK).
 - High Contrast interface theme (fifth Interface Color Theme: black chrome, white text, yellow selection).
 - Place Excel workbooks (.xlsx): the first worksheet's used range becomes a table (shared/inline strings, numbers, booleans).
 - Object Library (`library.new/open/add/place/remove/list/json/close`, Library panel): `.dclib` files of snippets that keep stories, styles, swatches and images.
@@ -167,18 +167,18 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 
 ## How far from full parity (estimate, 2026-10-04)
 
-**Breadth: ~99% weighted** (P0 core 99%, P1 99%, P2 96%) over the 275 features of the InDesign catalogue, scored
+**Breadth: ~99% weighted** (P0 core 99%, P1 100%, P2 97%) over the 275 features of the InDesign catalogue, scored
 row by row in [docs/parity.md](docs/parity.md) (`cargo xtask parity` recomputes it). Many features scored done still
-lack some of InDesign's options or dialog details, so **overall parity including depth is about 82%**.
+lack some of InDesign's options or dialog details, so **overall parity including depth is about 83%**.
 
-**Remaining work: about 185 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 60–85 hours with
+**Remaining work: about 170 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 60–85 hours with
 four agents in parallel on separate crates:
 
 | Work | Estimate |
 |---|---|
 | Open P0 (2: PDF/X-4 validation against a certified checker, PostScript interpretation for EPS) | 8 h |
-| Open P1 (1 partial: on-screen blending in the blend space) | 4 h |
-| Open P2 (16 partial: vertical/RTL refinements, alternate-layout linking, separations from source colours, buttons as form fields, interactive PDF extras, scripting, localization breadth, …) | 45 h |
+| Open P1 (none partial) | 0 h |
+| Open P2 (4 partial: localization breadth, INDD pages (not readable clean-room), in-app media playback, vertical metrics and warichu) | 14 h |
 | Depth and pixel fidelity of every dialog, panel and menu against InDesign 2026 | 90 h |
 | Performance (incremental composition, GPU raster) and interchange hardening (IDML/PDF corpus) | 55 h |
 

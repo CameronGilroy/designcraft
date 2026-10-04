@@ -226,7 +226,7 @@ pub(crate) fn options(p: &Value, page_count: usize) -> Result<PdfOptions> {
 
 /// Does this object (or anything in it) need the transparency flattener?
 fn transparent(it: &designcraft_doc::Item) -> bool {
-    it.opacity < 1.0 || it.blend != Default::default() || it.effects.any() || it.knockout || it.children().iter().any(|c| transparent(c))
+    it.involves_transparency()
 }
 
 /// Transparency Flattener: each object involving transparency becomes an opaque image of its
