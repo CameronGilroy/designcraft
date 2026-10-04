@@ -349,6 +349,17 @@ fn shape_run(
     };
     for (i, c) in text[range.clone()].char_indices() {
         let i = range.start + i;
+        // Digits drawn in another script (World-Ready Digits): each is set as its substitute.
+        if c.is_ascii_digit() && p.digits != designcraft_doc::Digits::Default {
+            let d = p.digits.map(c, &p.language);
+            if d != c {
+                flush(seg_start, i, &seg_face, out);
+                seg_start = i + 1;
+                let face = if primary.covers(d) { primary.clone() } else { db.fallback_for(d, primary.id()).unwrap_or_else(|| primary.clone()) };
+                shape_segment(db, text, i..i + 1, Some(d.encode_utf8(&mut [0; 4])), p, &face, auto_leading, style, out, sub.vertical);
+                continue;
+            }
+        }
         let special = matches!(
             c,
             '\t' | story::FORCED_LINE_BREAK

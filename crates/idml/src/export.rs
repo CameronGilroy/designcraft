@@ -1037,6 +1037,9 @@ impl<'a> Ex<'a> {
         if let Some(v) = a.no_break {
             el.set("NoBreak", bool_s(v));
         }
+        if let Some(v) = a.digits {
+            el.set("DigitsType", names::digits_out(v));
+        }
         if let Some(v) = a.tate_chu_yoko {
             el.set("Tatechuyoko", bool_s(v));
         }

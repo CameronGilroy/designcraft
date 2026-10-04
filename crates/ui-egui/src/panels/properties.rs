@@ -1196,6 +1196,22 @@ pub fn character_panel(app: &mut DesignApp, ui: &mut egui::Ui) {
             }
         });
     });
+    // Digits (World-Ready): shown for right-to-left paragraphs or once set.
+    let digits = c["digits"].as_str().unwrap_or("default").to_string();
+    if digits != "default" || a["para"]["direction"].as_str() == Some("rightToLeft") {
+        ui.horizontal(|ui| {
+            caption(ui, "Digits");
+            let opts = [("default", "Default"), ("arabic", "Arabic"), ("hindi", "Hindi"), ("farsi", "Farsi"), ("native", "Native")];
+            let cur = opts.iter().find(|o| o.0 == digits).map_or("Default", |o| o.1);
+            egui::ComboBox::from_id_salt("char_digits").selected_text(cur).width(120.0).show_ui(ui, |ui| {
+                for (k, l) in opts {
+                    if ui.selectable_label(k == digits, l).clicked() {
+                        let _ = app.run("type.char", json!({"attrs": {"digits": k}}));
+                    }
+                }
+            });
+        });
+    }
     egui::Grid::new("chargrid").num_columns(4).spacing(vec2(6.0, 4.0)).show(ui, |ui| {
         caption(ui, "Size");
         if let Some(v) = number(ui, "pcs", c["size"].as_f64(), " pt", 60.0, 2) {

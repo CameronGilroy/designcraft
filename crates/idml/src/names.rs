@@ -636,3 +636,18 @@ pub fn path_align_in(v: &str) -> designcraft_doc::PathAlign {
         _ => designcraft_doc::PathAlign::Baseline,
     }
 }
+
+pub fn digits_out(d: designcraft_doc::Digits) -> &'static str {
+    use designcraft_doc::Digits;
+    match d {
+        Digits::Default => "DefaultDigits",
+        Digits::Arabic => "ArabicDigits",
+        Digits::Hindi => "HindiDigits",
+        Digits::Farsi => "FarsiDigits",
+        Digits::Native => "NativeDigits",
+    }
+}
+pub fn digits_in(s: &str) -> Option<designcraft_doc::Digits> {
+    use designcraft_doc::Digits;
+    [Digits::Default, Digits::Arabic, Digits::Hindi, Digits::Farsi, Digits::Native].into_iter().find(|d| digits_out(*d) == s)
+}

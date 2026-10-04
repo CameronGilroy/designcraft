@@ -124,6 +124,57 @@ pub enum TextDirection {
     RightToLeft,
 }
 
+/// Digits (World-Ready): the figures 0–9 are drawn as these.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Digits {
+    /// As typed.
+    #[default]
+    Default,
+    /// European (0123).
+    Arabic,
+    /// Arabic-Indic (٠١٢٣).
+    Hindi,
+    /// Extended Arabic-Indic, as used for Persian and Urdu (۰۱۲۳).
+    Farsi,
+    /// Those of the text's language (Thai, Devanagari, Bengali, Arabic, Persian…); else as typed.
+    Native,
+}
+
+impl Digits {
+    /// The digit `c` (0–9) is drawn as, for text in `language`.
+    pub fn map(self, c: char, language: &str) -> char {
+        let Some(d) = c.to_digit(10) else { return c };
+        let zero = match self {
+            Digits::Default | Digits::Arabic => return c,
+            Digits::Hindi => 0x0660,
+            Digits::Farsi => 0x06F0,
+            Digits::Native => {
+                let l = language.to_ascii_lowercase();
+                match () {
+                    _ if l.starts_with("arabic") => 0x0660,
+                    _ if l.starts_with("persian") || l.starts_with("farsi") || l.starts_with("urdu") => 0x06F0,
+                    _ if l.starts_with("hindi") || l.starts_with("marathi") || l.starts_with("nepali") || l.starts_with("sanskrit") => 0x0966,
+                    _ if l.starts_with("bengali") => 0x09E6,
+                    _ if l.starts_with("gujarati") => 0x0AE6,
+                    _ if l.starts_with("punjabi") => 0x0A66,
+                    _ if l.starts_with("tamil") => 0x0BE6,
+                    _ if l.starts_with("telugu") => 0x0C66,
+                    _ if l.starts_with("kannada") => 0x0CE6,
+                    _ if l.starts_with("malayalam") => 0x0D66,
+                    _ if l.starts_with("thai") => 0x0E50,
+                    _ if l.starts_with("lao") => 0x0ED0,
+                    _ if l.starts_with("tibetan") => 0x0F20,
+                    _ if l.starts_with("burmese") => 0x1040,
+                    _ if l.starts_with("khmer") => 0x17E0,
+                    _ => return c,
+                }
+            }
+        };
+        char::from_u32(zero + d).unwrap_or(c)
+    }
+}
+
 /// A tracked change on text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -480,6 +531,8 @@ attr_set! {
         no_break: bool = false,
         /// Tate-chu-yoko: in vertical text, the run is set horizontally within one em of the line.
         tate_chu_yoko: bool = false,
+        /// Digits (World-Ready): how 0–9 are drawn.
+        digits: Digits = Digits::Default,
         language: String = "English: USA".into(),
         /// Additional OpenType features, e.g. `["onum", "ss01"]`.
         otf_features: Vec<String> = Vec::new(),
@@ -579,6 +632,16 @@ attr_set! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn digits_map_to_their_script() {
+        assert_eq!(Digits::Default.map('7', "Arabic"), '7');
+        assert_eq!(Digits::Hindi.map('3', ""), '\u{0663}');
+        assert_eq!(Digits::Farsi.map('0', ""), '\u{06F0}');
+        assert_eq!(Digits::Native.map('5', "Thai"), '\u{0E55}');
+        assert_eq!(Digits::Native.map('5', "English: USA"), '5');
+        assert_eq!(Digits::Hindi.map('x', ""), 'x');
+    }
 
     #[test]
     fn merge_and_resolve() {
