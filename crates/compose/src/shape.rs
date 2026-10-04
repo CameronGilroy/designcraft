@@ -79,6 +79,8 @@ pub struct SubstCtx {
     pub objects: HashMap<usize, ObjectSpec>,
     /// Conditions currently hidden (conditional text with only these isn't shown).
     pub hidden_conditions: Vec<String>,
+    /// Set in a Vertical Type frame: vertical glyph forms (`vert`, `vrt2`).
+    pub vertical: bool,
 }
 
 /// The stand-in character of hidden conditional text: no width, no break, not drawn.
@@ -308,7 +310,7 @@ fn shape_run(
     let mut seg_face = primary.clone();
     let flush = |a: usize, b: usize, face: &Arc<FontFace>, out: &mut Vec<Glyph>| {
         if a < b {
-            shape_segment(db, text, a..b, None, p, face, auto_leading, style, out);
+            shape_segment(db, text, a..b, None, p, face, auto_leading, style, out, sub.vertical);
         }
     };
     for (i, c) in text[range.clone()].char_indices() {
@@ -339,7 +341,7 @@ fn shape_run(
             seg_start = i + c.len_utf8();
             if let Some(vi) = designcraft_doc::vars::var_index(c) {
                 match sub.vars.get(vi).filter(|v| !v.is_empty()) {
-                    Some(v) => shape_segment(db, text, i..i + c.len_utf8(), Some(v), p, &primary, auto_leading, style, out),
+                    Some(v) => shape_segment(db, text, i..i + c.len_utf8(), Some(v), p, &primary, auto_leading, style, out, sub.vertical),
                     None => {
                         let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
                         g.adv = 0.0;
@@ -355,7 +357,7 @@ fn shape_run(
                     } else {
                         sub.page_name.clone().unwrap_or_else(|| "#".into())
                     };
-                    shape_segment(db, text, i..i + c.len_utf8(), Some(&s), p, &primary, auto_leading, style, out);
+                    shape_segment(db, text, i..i + c.len_utf8(), Some(&s), p, &primary, auto_leading, style, out, sub.vertical);
                 }
                 designcraft_doc::OBJECT_MARK => {
                     let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
@@ -378,7 +380,7 @@ fn shape_run(
                     out.push(g);
                 }
                 designcraft_doc::XREF_MARK => match sub.xrefs.get(&i).filter(|t| !t.is_empty()) {
-                    Some(t) => shape_segment(db, text, i..i + c.len_utf8(), Some(t), p, &primary, auto_leading, style, out),
+                    Some(t) => shape_segment(db, text, i..i + c.len_utf8(), Some(t), p, &primary, auto_leading, style, out, sub.vertical),
                     None => {
                         let mut g = control_glyph(&primary, p, auto_leading, style, i, c);
                         g.adv = 0.0;
@@ -387,7 +389,7 @@ fn shape_run(
                 },
                 designcraft_doc::FOOTNOTE_REF | designcraft_doc::ENDNOTE_REF => {
                     let s = sub.notes.get(&i).map_or("#", String::as_str);
-                    shape_segment(db, text, i..i + c.len_utf8(), Some(s), p, &primary, auto_leading, style, out);
+                    shape_segment(db, text, i..i + c.len_utf8(), Some(s), p, &primary, auto_leading, style, out, sub.vertical);
                 }
                 _ => {
                     // Zero-width control glyph carrying metrics (tabs get their width at line layout).
@@ -547,6 +549,7 @@ fn shape_segment(
     auto_leading: TypeEnv,
     style: u32,
     out: &mut Vec<Glyph>,
+    vertical: bool,
 ) {
     let _ = db;
     let (size, k, ascent, descent, leading, cap, xh, shift) = metrics(face, p, auto_leading);
@@ -555,7 +558,10 @@ fn shape_segment(
     let manual = if let Kerning::Manual(v) = p.kerning { v / 1000.0 * p.size } else { 0.0 };
     let src = replacement.unwrap_or(&text[range.clone()]);
     let caps = p.capitalization == Capitalization::AllCaps;
-    let feats = features_for(p);
+    let mut feats = features_for(p);
+    if vertical {
+        feats.extend(["vert", "vrt2"].iter().filter_map(|t| designcraft_fonts::feature(t)));
+    }
     let space = face.advance(face.glyph_for(' ')) * k * hs;
     let shaped: Vec<ShapedGlyph> = shape_cached(face, src, &feats, caps);
     let n = shaped.len();

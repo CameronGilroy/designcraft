@@ -105,7 +105,7 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - Colour management exposed: Edit ▸ Color Settings (`color.settings`: RGB/CMYK working spaces, intent, black-point compensation; `color.loadProfile` for ICC files; `color.convert` through the working spaces, with gamut checks) and View ▸ Proof Setup / Proof Colors (press, sRGB, legacy Mac RGB, colour-blindness simulations, simulate paper) on the canvas.
 - Keyboard: Tab / Shift+Tab hide and show all panels / all but Tools (`window.hidePanels`, `window.hidePanelsExceptTools`); Cmd+F6 / Cmd+Shift+F6 cycle documents; panel fields are reached with Tab and Escape returns to the layout.
 - View ▸ Rotate Spread (`view.rotateSpread`, `layout.rotateSpreadView`): the spread in view turns in quarter turns on screen (stored with the document; output is unaffected). The canvas maps each spread through its own transform, so tools, snapping, resize handles, guides, overlays and rendering all follow the turned spread.
-- Vertical type (Vertical Type Tool, Type ▸ Story Direction, `object.textFrameOptions {vertical}`, IDML StoryOrientation): lines run top to bottom and follow each other right to left; CJK characters stay upright and other text turns, on screen and in PDF; CJK line breaking with basic kinsoku (also in horizontal text). Vertical punctuation forms (`vert`), tate-chu-yoko and vertical metrics aren't there yet.
+- Vertical type (Vertical Type Tool, Type ▸ Story Direction, `object.textFrameOptions {vertical}`, IDML StoryOrientation): lines run top to bottom and follow each other right to left; CJK characters stay upright and other text turns, on screen and in PDF; CJK line breaking with basic kinsoku (also in horizontal text). Punctuation and brackets take their vertical forms (OpenType `vert`/`vrt2`) in vertical frames. Tate-chu-yoko and vertical metrics (`vmtx`) aren't there yet.
 - Math expressions (Type ▸ Insert Math Expression…, `math.insert`, `math.svg`): a LaTeX subset (fractions, scripts, roots, big operators with limits, Greek, relations and operators with math spacing, `\left…\right`, `\text`) typeset by our own engine into SVG, placed inline at the cursor or as a frame; the LaTeX is kept as alt text and can be edited.
 - Object Layer Options for placed PDFs (`object.pdfLayers`, `object.layerOptions`, Object ▸ Object Layer Options…): the file's optional-content layers listed and shown or hidden per frame on screen; in exported PDFs such graphics go out as 300 ppi images of their visible layers.
 - Effects: Inner Glow (edge or centre), Bevel and Emboss (inner bevel lit from the light angle), Satin (`object.innerGlow`, `object.bevel`, `object.satin`); PDF export now keeps soft effects: objects with shadows, glows, feathers, bevels or satin go out as 300 ppi transparent images of their appearance (threaded text frames excepted).
@@ -165,13 +165,13 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 
 **Next (in order):** books · New Window / split view · Ink Manager and Separations Preview · XML structure, tags and export · buttons and forms · PDF/X-4 output intent (needs krilla support) · EPS place.
 
-## How far from full parity (estimate, 2026-10-02, updated)
+## How far from full parity (estimate, 2026-10-04)
 
-**Breadth: ~98% weighted** (P0 core 99%, P1 98%, P2 89%) over the 275 features of the InDesign catalogue, scored
+**Breadth: ~99% weighted** (P0 core 99%, P1 99%, P2 96%) over the 275 features of the InDesign catalogue, scored
 row by row in [docs/parity.md](docs/parity.md) (`cargo xtask parity` recomputes it). Many features scored done still
-lack some of InDesign's options or dialog details, so **overall parity including depth is about 80%**.
+lack some of InDesign's options or dialog details, so **overall parity including depth is about 82%**.
 
-**Remaining work: about 200 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 60–85 hours with
+**Remaining work: about 185 wall-clock hours of a single Claude Opus 5.5 agent** (±30%), or roughly 60–85 hours with
 four agents in parallel on separate crates:
 
 | Work | Estimate |
