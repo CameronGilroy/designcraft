@@ -592,6 +592,8 @@ attr_set! {
         glyph_scale_max: f64 = 1.0,
         auto_leading: f64 = 1.2,
         single_word_justify: Align = Align::FullyJustified,
+        /// Insert Kashidas (World-Ready): justified Arabic lines stretch at joins before spaces.
+        kashidas: bool = true,
         // Keeps
         keep_with_next: u32 = 0,
         keep_lines_together: bool = false,

@@ -842,6 +842,33 @@ fn bidi_matches_the_reference_order() {
 }
 
 #[test]
+fn kashidas_stretch_justified_arabic_before_spaces() {
+    let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
+    let lid = d.default_layer();
+    let text = "بسم الله الرحمن الرحيم الحمد لله رب العالمين الرحمن الرحيم مالك يوم الدين اياك نعبد واياك نستعين";
+    let pf = ParaFormat {
+        para: ParaAttrs { align: Some(Align::RightJustified), direction: Some(designcraft_doc::TextDirection::RightToLeft), ..Default::default() },
+        ..Default::default()
+    };
+    let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 260.0, 400.0), lid, text, pf).unwrap();
+    let first = |d: &Document| compose_story(d, sid, &ComposeOptions::default()).frames[0].lines[0].clone();
+    let with = first(&d);
+    assert!(compose_story(&d, sid, &ComposeOptions::default()).frames[0].lines.len() > 1);
+    // Spaces keep (about) their natural width; the joins took the extra length.
+    let space_w = |l: &Line| l.glyphs.iter().filter(|g| g.len > 0 && text[g.byte..].starts_with(' ')).map(|g| g.adv).fold(0.0, f64::max);
+    d.story_mut(sid).unwrap().paras[0].para.kashidas = Some(false);
+    let without = first(&d);
+    assert!(space_w(&with) < space_w(&without) - 0.5, "{} {}", space_w(&with), space_w(&without));
+    // Both fill the measure: the line's (visually last) glyph reaches the left edge either way.
+    let left = |l: &Line| l.glyphs.iter().filter(|g| g.len > 0).map(|g| g.x).fold(f64::MAX, f64::min);
+    assert!((left(&with) - left(&without)).abs() < 1.0, "{} {}", left(&with), left(&without));
+    // Tatweels are drawn in the gaps when the font has one.
+    if with.glyphs.iter().any(|g| g.len == 0 && g.gid != 0) {
+        assert!(with.glyphs.len() > without.glyphs.len());
+    }
+}
+
+#[test]
 fn digits_option_draws_figures_in_another_script() {
     let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
     let lid = d.default_layer();

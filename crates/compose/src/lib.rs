@@ -1480,7 +1480,7 @@ fn layout_line(
         measure += hl + hr;
     }
     let natural: f64 = line.iter().map(|g| g.adv).sum();
-    let extra = measure - natural;
+    let mut extra = measure - natural;
     let spaces: Vec<usize> = line.iter().enumerate().filter(|(_, g)| g.is_space() && !g.no_break).map(|(i, _)| i).collect();
     let align = match pp.align {
         Align::TowardsSpine => {
@@ -1506,6 +1506,20 @@ fn layout_line(
     let mut add = vec![0.0; line.len()];
     let mut scale = vec![1.0; line.len()];
     let mut offset = 0.0;
+    // Kashidas: in justified Arabic, the joins of words take the extra length first.
+    let mut kashidas: Vec<(usize, f64)> = Vec::new();
+    if justify_this && extra > 0.0 && pp.kashidas {
+        let points = kashida_points(&line);
+        if !points.is_empty() {
+            let total = extra.min(points.iter().map(|&i| line[i].size * 1.5).sum());
+            let per = total / points.len() as f64;
+            kashidas = points.into_iter().map(|i| (i, per)).collect();
+            extra -= total;
+            for &(i, l) in &kashidas {
+                add[i] += l;
+            }
+        }
+    }
     if (justify_this || squeeze_last) && !spaces.is_empty() {
         distribute(&line, &spaces, extra, sp, &mut add, &mut scale);
     } else if justify_this && spaces.is_empty() && line.len() > 1 && !last {
@@ -1566,6 +1580,10 @@ fn layout_line(
             p.adv *= scale[i];
         }
         p.adv += add[i];
+        if let Some((_, l)) = kashidas.iter().find(|k| k.0 == i) {
+            // Right to left: the stretch is on the glyph's left, toward the letter it joins.
+            p.x += l;
+        }
         let leader = leaders.iter().find(|(k, _)| *k == i).map(|(_, l)| l.as_str());
         let (tab_x, tab_w) = (x, p.adv);
         x += p.adv;
@@ -1578,7 +1596,64 @@ fn layout_line(
         pens.push(x);
         reorder_visual(&line, &mut out, &pens, x0 + offset, rtl_para);
     }
+    for (i, l) in kashidas {
+        let (g, at) = (&line[i], out[i].x - l);
+        let gid = designcraft_fonts::first_glyph(&g.face, &['\u{0640}']);
+        let w = g.face.advance(gid) * g.sx;
+        if gid == 0 || w <= 0.0 {
+            continue;
+        }
+        // One tatweel stretched over the gap (overlapping its neighbours a little).
+        let k = (l + 0.4) / w;
+        out.push(PlacedGlyph { gid, x: at - 0.2, y: -g.shift, adv: 0.0, sx: g.sx * k, len: 0, upright: false, tcy: None, ..place(g, at) });
+    }
     (out, x, ratio)
+}
+
+/// Arabic letters that join the following letter (dual-joining).
+fn joins_next(c: char) -> bool {
+    matches!(c as u32,
+        0x0626 | 0x0628 | 0x062A..=0x062E | 0x0633..=0x063F | 0x0641..=0x0647 | 0x0649 | 0x064A | 0x066E | 0x066F
+        | 0x0678..=0x0687 | 0x069A..=0x06BF | 0x06C1 | 0x06CC | 0x06CE | 0x06D0 | 0x06D1 | 0x06FA..=0x06FC)
+}
+
+/// Arabic letters that join the preceding one (dual- or right-joining).
+fn joins_prev(c: char) -> bool {
+    joins_next(c)
+        || matches!(c as u32,
+            0x0622..=0x0625 | 0x0627 | 0x0629 | 0x062F..=0x0632 | 0x0648 | 0x0671..=0x0673 | 0x0675..=0x0677 | 0x0688..=0x0699
+            | 0x06C0 | 0x06C3..=0x06CB | 0x06CD | 0x06CF | 0x06D2 | 0x06D3)
+}
+
+/// Where kashidas go on a line: one join per word, after a seen or sad when there is one, else the
+/// word's last join (indices of the glyph before the join).
+fn kashida_points(line: &[Glyph]) -> Vec<usize> {
+    let is_mark = |g: &Glyph| matches!(g.ch as u32, 0x064B..=0x065F | 0x0670 | 0x06D6..=0x06ED);
+    let mut out = Vec::new();
+    let mut best: Option<(bool, usize)> = None;
+    for i in 0..line.len() {
+        let g = &line[i];
+        if g.is_space() || g.len == 0 {
+            if let Some((_, k)) = best.take() {
+                out.push(k);
+            }
+            continue;
+        }
+        if !joins_next(g.ch) || line.get(i + 1).is_some_and(|n| n.byte == g.byte) {
+            continue;
+        }
+        // The next letter (past any marks) must join back, and lam–alef stays a ligature.
+        let Some(n) = line[i + 1..].iter().find(|n| !is_mark(n)) else { continue };
+        if !joins_prev(n.ch) || n.len == 0 || (g.ch == '\u{0644}' && matches!(n.ch, '\u{0622}' | '\u{0623}' | '\u{0625}' | '\u{0627}')) {
+            continue;
+        }
+        let seen = matches!(g.ch as u32, 0x0633..=0x0636);
+        if best.is_none_or(|(s, _)| !s || seen) {
+            best = Some((seen, i));
+        }
+    }
+    out.extend(best.map(|b| b.1));
+    out
 }
 
 /// Bidi: put a laid-out line (glyphs in text order, `pens` their pen positions and then the end
