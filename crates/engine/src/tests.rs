@@ -443,3 +443,15 @@ fn gap_tool_drag_moves_the_gap() {
     assert_eq!(b.x1, 220.0, "{b:?}");
     assert_eq!(s.doc().unwrap().history.undo.len(), 2, "create + one gap move");
 }
+
+/// Parameters reach commands from the control channel, MCP and scripts as any JSON value.
+/// Commands that add a key to their parameters (`q["fixedLayout"] = …`) panicked on an array.
+#[test]
+fn commands_take_non_object_params_without_panicking() {
+    let mut s = Session::new();
+    s.execute("file.new", &json!({})).unwrap();
+    for p in [json!([1, 2]), json!("text"), json!(3), Value::Null] {
+        let r = s.execute("file.exportFixedEpub", &p);
+        assert!(r.is_ok(), "{p}: {r:?}");
+    }
+}

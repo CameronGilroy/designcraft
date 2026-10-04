@@ -214,6 +214,13 @@ pub fn find_command(id: &str) -> Option<&'static CommandSpec> {
 pub(crate) fn bad(cmd: &str, msg: impl Into<String>) -> EngineError {
     EngineError::BadParams { cmd: cmd.into(), msg: msg.into() }
 }
+/// `p` with `key` set to `v`. Parameters come from callers (control channel, MCP, scripts) and
+/// may not be an object: `p[key] = v` panics on an array or a string, so start from `{}` then.
+pub(crate) fn with_param(p: &Value, key: &str, v: Value) -> Value {
+    let mut m = p.as_object().cloned().unwrap_or_default();
+    m.insert(key.to_string(), v);
+    Value::Object(m)
+}
 pub(crate) fn f64_or(p: &Value, key: &str, default: f64) -> f64 {
     p.get(key).and_then(Value::as_f64).unwrap_or(default)
 }

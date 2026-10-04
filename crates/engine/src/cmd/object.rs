@@ -626,9 +626,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     for c in 0..cols {
                         let x0 = rect.x0 + c as f64 * (cw + gutter);
                         let y0 = rect.y0 + r as f64 * (ch + gutter);
-                        let mut q = p.clone();
-                        q["rect"] = json!([x0, y0, x0 + cw, y0 + ch]);
-                        q["caret"] = json!(false);
+                        let q = super::with_param(&super::with_param(p, "rect", json!([x0, y0, x0 + cw, y0 + ch])), "caret", json!(false));
                         ids.push(frame_create(s, &q)?["id"].clone());
                     }
                 }
@@ -1071,15 +1069,14 @@ fn transform_again(s: &mut Session, p: &Value) -> Result<Value> {
     if list.is_empty() {
         return Err(bad("transform.again", "no transform to repeat"));
     }
-    let steps: Vec<(String, Value)> = if bool_or(p, "sequence", false) { list.clone() } else { vec![list.last().cloned().expect("non-empty")] };
+    let steps: Vec<(String, Value)> = if bool_or(p, "sequence", false) { list.clone() } else { list.last().cloned().into_iter().collect() };
     let mut groups: Vec<Vec<ItemId>> = if bool_or(p, "individually", false) { ids.iter().map(|i| vec![*i]).collect() } else { vec![ids.clone()] };
     // Run the steps directly (no recording, one undo step for the whole repeat).
     let saved = s.transforms.clone();
     for (cmd, params) in &steps {
         let spec = super::find_command(cmd).ok_or_else(|| bad("transform.again", "unknown transform"))?;
         for g in &groups {
-            let mut q = params.clone();
-            q["ids"] = json!(g.iter().map(|i| i.0).collect::<Vec<_>>());
+            let q = super::with_param(params, "ids", json!(g.iter().map(|i| i.0).collect::<Vec<_>>()));
             (spec.run)(s, &q)?;
         }
         // Moving a copy selects the copies: later steps (and the next repeat) act on them.
@@ -1192,7 +1189,7 @@ fn transform_values(s: &mut Session, p: &Value, ids: &[ItemId], rf: usize) -> Re
             let delta = designcraft_geom::decompose::compose(&t) * lin(cur).inverse();
             // Δ in measuring space about `a`, brought into the item's container space.
             let m = parent.inverse() * Affine::translate(a.to_vec2()) * delta * Affine::translate(-a.to_vec2()) * parent;
-            let it = d.item_mut(*id).expect("found");
+            let it = d.item_mut(*id).ok_or(designcraft_doc::DocError::NoItem(*id))?;
             it.xf = m * it.xf;
             // Scale: relative to what is shown (frames show 100% — their scale lives in the geometry).
             if sx.is_some() || sy.is_some() {
@@ -1281,7 +1278,7 @@ fn arrange(s: &mut Session, p: &Value) -> Result<Value> {
             if loc.path.len() != 1 {
                 continue;
             }
-            let sp = d.spread_mut(loc.spread).expect("found");
+            let Some(sp) = d.spread_mut(loc.spread) else { continue };
             let i = loc.path[0];
             let n = sp.items.len();
             let it = sp.items.remove(i);
@@ -1333,7 +1330,7 @@ fn ungroup(s: &mut Session, p: &Value) -> Result<Value> {
             if loc.path.len() != 1 {
                 continue;
             }
-            let sp = d.spread_mut(loc.spread).expect("found");
+            let Some(sp) = d.spread_mut(loc.spread) else { continue };
             sp.items.remove(loc.path[0]);
             for (k, c) in items.iter().enumerate() {
                 let mut c = (**c).clone();
@@ -1711,7 +1708,7 @@ impl RemoveKeep for Document {
         if loc.path.len() != 1 {
             return Err(bad("object", "nested items can't be detached"));
         }
-        let sp = self.spread_mut(loc.spread).expect("found");
+        let sp = self.spread_mut(loc.spread).ok_or(designcraft_doc::DocError::NoItem(id))?;
         Ok(Arc::unwrap_or_clone(sp.items.remove(loc.path[0])))
     }
 }
