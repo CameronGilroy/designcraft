@@ -101,6 +101,21 @@ pub struct PlacedGlyph {
     pub visible: bool,
     /// Stays upright in vertical frames (CJK ideographs, kana, hangul, full-width forms).
     pub upright: bool,
+    /// Tate-chu-yoko placement (see [`shape::Glyph::tcy`]).
+    pub tcy: Option<[f64; 3]>,
+}
+
+impl PlacedGlyph {
+    /// In a vertical frame, the turn that sets this glyph upright (about its em box centre, or
+    /// across the line in a tate-chu-yoko group), applied after drawing it at `x` on `baseline`.
+    pub fn vertical_xf(&self, baseline: f64) -> Option<designcraft_geom::Affine> {
+        let turn = -std::f64::consts::FRAC_PI_2;
+        if let Some([along, across, em]) = self.tcy {
+            let c = Point::new(self.x + along, baseline + self.y - em * 0.38);
+            return Some(designcraft_geom::Affine::rotate_about(turn, c) * designcraft_geom::Affine::translate((c.x + across - self.x, 0.0)));
+        }
+        self.upright.then(|| designcraft_geom::Affine::rotate_about(turn, Point::new(self.x + self.adv / 2.0, baseline + self.y - self.adv * 0.38)))
+    }
 }
 
 /// Characters set upright (unrotated) in vertical text.
@@ -1629,6 +1644,7 @@ fn tab_leader(tab: &Glyph, leader: &str, x: f64, w: f64, origin: f64, out: &mut 
                 len: 0,
                 visible: true,
                 upright: false,
+                tcy: None,
             });
             at += adv;
         }
@@ -1730,6 +1746,7 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
         len: g.len,
         visible,
         upright: upright_in_vertical(g.ch),
+        tcy: g.tcy,
     }
 }
 

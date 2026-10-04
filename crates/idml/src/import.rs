@@ -1069,6 +1069,7 @@ impl<'r> Importer<'r> {
             a.otf_features = Some(otf_list);
         }
         a.no_break = e.boolean("NoBreak");
+        a.tate_chu_yoko = e.boolean("Tatechuyoko");
         if let Some(v) = e.get("AppliedConditions").filter(|v| !v.trim().is_empty()) {
             let names: Vec<String> = v.split_whitespace().filter_map(|r| self.condition_names.get(r).cloned()).collect();
             if !names.is_empty() {

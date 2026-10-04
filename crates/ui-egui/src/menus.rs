@@ -393,6 +393,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:object.textFrameOptions|Horizontal|{\"vertical\": false}",
             "cmd:object.textFrameOptions|Vertical|{\"vertical\": true}",
             "<",
+            "cmd:type.tateChuYoko",
             ">Track Changes",
             "cmd:changes.track",
             "cmd:changes.acceptAll",

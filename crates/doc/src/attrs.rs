@@ -478,6 +478,8 @@ attr_set! {
         strikethrough_tint: f32 = 1.0,
         ligatures: bool = true,
         no_break: bool = false,
+        /// Tate-chu-yoko: in vertical text, the run is set horizontally within one em of the line.
+        tate_chu_yoko: bool = false,
         language: String = "English: USA".into(),
         /// Additional OpenType features, e.g. `["onum", "ss01"]`.
         otf_features: Vec<String> = Vec::new(),

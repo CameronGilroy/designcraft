@@ -132,10 +132,9 @@ fn build_line(db: &FontDb, cs: &ComposedStory, l: &Line, vertical: bool) -> Line
         }
         let skew = if style.skew != 0.0 { Affine::new([1.0, 0.0, -style.skew.to_radians().tan(), 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
         let mut a = Affine::translate((g.x, l.baseline + g.y)) * skew * Affine::scale_non_uniform(g.sx, g.sy);
-        if vertical && g.upright {
-            // Upright in vertical text: turned back a quarter about the em box centre.
-            let c = kurbo::Point::new(g.x + g.adv / 2.0, l.baseline + g.y - g.adv * 0.38);
-            a = Affine::rotate_about(-std::f64::consts::FRAC_PI_2, c) * a;
+        if vertical && let Some(turn) = g.vertical_xf(l.baseline) {
+            // Upright in vertical text.
+            a = turn * a;
         }
         let bp = match runs.iter_mut().find(|r| r.0 == g.style) {
             Some(r) => &mut r.1,

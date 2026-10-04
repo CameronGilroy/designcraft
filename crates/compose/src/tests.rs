@@ -842,6 +842,34 @@ fn bidi_matches_the_reference_order() {
 }
 
 #[test]
+fn tate_chu_yoko_sets_digits_across_one_em() {
+    let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
+    let lid = d.default_layer();
+    let (fid, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 400.0), lid, "令和12年", ParaFormat::default()).unwrap();
+    let at = "令和".len();
+    d.story_mut(sid).unwrap().format_chars(at..at + 2, |f| f.over.tate_chu_yoko = Some(true));
+    let glyphs = |d: &Document| compose_story(d, sid, &ComposeOptions::default()).frames[0].lines[0].glyphs.clone();
+    // Horizontal text ignores it.
+    assert!(glyphs(&d).iter().all(|g| g.tcy.is_none()));
+    if let Some(tf) = d.item_mut(fid).and_then(|i| i.text_frame_mut()) {
+        tf.options.vertical = true;
+    }
+    let gs = glyphs(&d);
+    let digits: Vec<_> = gs.iter().filter(|g| g.tcy.is_some()).collect();
+    assert_eq!(digits.len(), 2);
+    let em = digits[0].tcy.unwrap()[2];
+    // The pair takes one em along the line, so the next ideograph follows an em after it.
+    assert!((digits.iter().map(|g| g.adv).sum::<f64>() - em).abs() < 1e-6);
+    let nen = gs.iter().find(|g| g.byte == at + 2).unwrap();
+    assert!((nen.x - (digits[0].x + em)).abs() < 1e-6, "{} {}", nen.x, digits[0].x);
+    // Both turn about the same centre and sit side by side across it.
+    let [a0, x0, _] = digits[0].tcy.unwrap();
+    let [a1, x1, _] = digits[1].tcy.unwrap();
+    assert!(((digits[0].x + a0) - (digits[1].x + a1)).abs() < 1e-6);
+    assert!(x0 < 0.0 && x1 > x0 && x1 < em, "{x0} {x1}");
+}
+
+#[test]
 fn vertical_frames_compose_in_the_turned_box() {
     let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
     let lid = d.default_layer();

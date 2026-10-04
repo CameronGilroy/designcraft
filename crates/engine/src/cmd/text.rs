@@ -138,6 +138,25 @@ pub fn specs() -> Vec<CommandSpec> {
             s,
             &json!({"capitalization": "allCaps"})
         )),
+        cmd!(
+            "type.tateChuYoko",
+            "Tate-Chu-Yoko",
+            [],
+            None,
+            "{on?: bool} — set the selected text horizontally within one em of a vertical line (toggles by default)",
+            has_text_or_frames,
+            |s, p| {
+                let on = match p.get("on").and_then(Value::as_bool) {
+                    Some(v) => v,
+                    None => !format_targets(s).first().is_some_and(|t| {
+                        s.doc().ok().and_then(|d| d.doc.text_story(t.story, t.cell)).is_some_and(|st| {
+                            st.char_format_at(if t.range.is_empty() { t.range.start } else { t.range.start + 1 }).over.tate_chu_yoko == Some(true)
+                        })
+                    }),
+                };
+                format_chars(s, &json!({"tate_chu_yoko": on}))
+            }
+        ),
         cmd!("type.sizeUp", "Increase Point Size", [], Some("Cmd+Shift+."), "{}", has_text_or_frames, |s, _| step_size(s, 2.0)),
         cmd!("type.sizeDown", "Decrease Point Size", [], Some("Cmd+Shift+,"), "{}", has_text_or_frames, |s, _| step_size(s, -2.0)),
         cmd!(
@@ -1161,5 +1180,29 @@ mod language_tests {
         // German words aren't English misspellings.
         let st = s.execute("spelling.check", &json!({"story": sid})).unwrap();
         assert!(st.as_array().unwrap().is_empty(), "{st}");
+    }
+}
+
+#[cfg(test)]
+mod tcy_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn tate_chu_yoko_toggles_on_the_selection() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 200, 400], "content": "text", "text": "令和12年", "vertical": true})).unwrap();
+        let sid = r["story"].as_u64().unwrap();
+        let at = "令和".len();
+        s.execute("text.select", &json!({"story": sid, "anchor": at, "focus": at + 2})).unwrap();
+        let get = |s: &Session| s.doc().unwrap().doc.stories[&designcraft_doc::StoryId(sid)].char_format_at(at + 1).over.tate_chu_yoko;
+        s.execute("type.tateChuYoko", &json!({})).unwrap();
+        assert_eq!(get(&s), Some(true));
+        s.execute("type.tateChuYoko", &json!({})).unwrap();
+        assert_eq!(get(&s), Some(false));
+        s.execute("type.tateChuYoko", &json!({"on": true})).unwrap();
+        assert_eq!(get(&s), Some(true));
     }
 }

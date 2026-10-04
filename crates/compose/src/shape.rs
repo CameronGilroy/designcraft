@@ -38,6 +38,9 @@ pub struct Glyph {
     pub style: u32,
     /// Unbreakable (No Break).
     pub no_break: bool,
+    /// Tate-chu-yoko in a vertical frame: [centre of the group's em along the line from `x`,
+    /// this glyph's left edge across the line from that centre, the em] (see [`collapse_tcy`]).
+    pub tcy: Option<[f64; 3]>,
     /// Width of a word space (U+0020) in this glyph's font, size and horizontal scale: the unit of
     /// word and letter spacing in justification.
     pub space: f64,
@@ -255,7 +258,38 @@ pub(crate) fn shape_para(
             shape_run(db, &story.text, k..b, &props, auto_leading, style, sub, &mut glyphs);
         }
     }
+    collapse_tcy(&mut glyphs, sub.vertical);
     ShapedPara { glyphs, range }
+}
+
+/// Tate-chu-yoko: in vertical text each run of marked glyphs takes one em along the line, its
+/// glyphs set side by side across it; elsewhere the mark is dropped.
+pub(crate) fn collapse_tcy(glyphs: &mut [Glyph], vertical: bool) {
+    let mut i = 0;
+    while i < glyphs.len() {
+        if glyphs[i].tcy.is_none() {
+            i += 1;
+            continue;
+        }
+        let j = i + glyphs[i..].iter().position(|g| g.tcy.is_none()).unwrap_or(glyphs.len() - i);
+        if !vertical {
+            glyphs[i..j].iter_mut().for_each(|g| g.tcy = None);
+            i = j;
+            continue;
+        }
+        let run = &mut glyphs[i..j];
+        let width: f64 = run.iter().map(|g| g.adv).sum();
+        let em = run.iter().map(|g| g.size).fold(0.0, f64::max);
+        let step = em / run.len() as f64;
+        let mut across = -width / 2.0;
+        for (k, g) in run.iter_mut().enumerate() {
+            g.tcy = Some([em / 2.0 - k as f64 * step, across + g.dx, em]);
+            across += g.adv;
+            g.adv = step;
+            g.dx = 0.0;
+        }
+        i = j;
+    }
 }
 
 fn features_for(p: &CharProps) -> Vec<Feature> {
@@ -534,6 +568,7 @@ fn control_glyph(face: &Arc<FontFace>, p: &CharProps, auto_leading: TypeEnv, sty
         size,
         style,
         no_break: p.no_break,
+        tcy: p.tate_chu_yoko.then_some([0.0; 3]),
         space: face.advance(face.glyph_for(' ')) * k * p.h_scale,
     }
 }
@@ -603,6 +638,7 @@ fn shape_segment(
             size,
             style,
             no_break: p.no_break,
+            tcy: p.tate_chu_yoko.then_some([0.0; 3]),
             space,
         });
     }
