@@ -4,6 +4,7 @@
 //! `layout.pages.insert`…) and JSON parameters. The egui UI, the CLI, the control channel and MCP
 //! all go through [`Session::execute`]. Tools (pointer gestures) are hosted here and reduce to
 //! commands, so every gesture is journaled and replayable.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
 pub mod cmd;
@@ -407,7 +408,7 @@ impl Session {
                 if story.frames.len() < 2 {
                     break;
                 }
-                let last = *story.frames.last().expect("frames");
+                let Some(&last) = story.frames.last() else { break };
                 let cs = designcraft_compose::compose_story(&d, sid, &Default::default());
                 if cs.frame(last).is_some_and(|ft| !ft.range.is_empty()) {
                     break;

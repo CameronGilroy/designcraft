@@ -17,9 +17,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "file.exportFixedEpub", "Export EPUB (Fixed Layout)…", ["File"], None,
         "{path?, title?, author?, language?} — pre-paginated EPUB → {path, bytes} (no path: {base64, bytes})",
         has_doc, |s, p| {
-            let mut q = p.clone();
-            q["fixedLayout"] = serde_json::json!(true);
-            export_epub(s, &q)
+            export_epub(s, &super::with_param(p, "fixedLayout", serde_json::json!(true)))
         }),
         cmd!(noundo "file.printBooklet", "Print Booklet…", ["File"], None,
         "{path?, type?: saddleStitch|twoUpConsecutive, spaceBetween? (pt)} — printer spreads as PDF (pages imposed in booklet order) → {path, bytes, sheets} (no path: {base64, …})",

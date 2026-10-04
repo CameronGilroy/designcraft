@@ -6,6 +6,7 @@
 //! replayable by the control channel and MCP, and tools are testable without a UI.
 //!
 //! Pointer positions are **canvas** coordinates (see [`layout::CanvasLayout`]).
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
 mod anchors;
