@@ -414,6 +414,7 @@ fn render_texture(app: &mut DesignApp, ctx: &egui::Context, rect: Rect, xf: &Xf,
             note_indicators: !preview && app.session.prefs.show_note_anchors,
             change_markup: !preview && app.session.prefs.show_added_text,
             tag_markers: !preview && app.ui.tag_markers,
+            plate: app.ui.separation,
             highlight_keeps: !preview && app.session.prefs.highlight_keeps,
             highlight_custom_tracking: !preview && app.session.prefs.highlight_custom_tracking,
             quality: app.ui.display_quality,
@@ -526,6 +527,7 @@ fn patch_texture(app: &mut DesignApp, layout: &CanvasLayout, ppp: f64, doc_key: 
         note_indicators: !preview && app.session.prefs.show_note_anchors,
         change_markup: !preview && app.session.prefs.show_added_text,
         tag_markers: !preview && app.ui.tag_markers,
+        plate: app.ui.separation,
         highlight_keeps: !preview && app.session.prefs.highlight_keeps,
         highlight_custom_tracking: !preview && app.session.prefs.highlight_custom_tracking,
         quality: app.ui.display_quality,
@@ -556,8 +558,9 @@ fn upload(app: &mut DesignApp, ctx: &egui::Context, mut img: designcraft_render:
     if app.ui.proof_colors {
         designcraft_render::proof_view(&mut img, &app.ui.proof_setup);
     }
-    if app.ui.separation.is_some() || app.ui.ink_limit.is_some() {
-        designcraft_render::separation_view(&mut img, app.ui.separation, app.ui.ink_limit);
+    // Plates render from source colours; the ink limit is estimated from the composite.
+    if app.ui.separation.is_none() && app.ui.ink_limit.is_some() {
+        designcraft_render::separation_view(&mut img, None, app.ui.ink_limit);
     }
     let ci = egui::ColorImage::from_rgba_premultiplied([img.width as usize, img.height as usize], &img.pixels);
     match &mut app.canvas.texture {

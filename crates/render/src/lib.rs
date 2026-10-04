@@ -120,6 +120,9 @@ pub struct RenderOptions {
     pub change_markup: bool,
     /// View › Structure › Show Tag Markers: brackets around inline-tagged text (screen view).
     pub tag_markers: bool,
+    /// Separations Preview: draw one process plate (0 = cyan … 3 = black) as grey ink coverage,
+    /// from each object's own colour (CMYK as authored, others through the colour settings).
+    pub plate: Option<u8>,
     /// View › Display Performance.
     pub quality: DisplayQuality,
     /// Preferences › Appearance of Black: show 100% K as rich (pure) black instead of the
@@ -159,6 +162,7 @@ impl Default for RenderOptions {
             note_indicators: false,
             change_markup: false,
             tag_markers: false,
+            plate: None,
             quality: DisplayQuality::High,
             rich_black: false,
             overprint_preview: false,
@@ -272,6 +276,7 @@ impl Renderer {
         };
         let mt = ctx.render_settings().num_threads > 0;
         RICH_BLACK.with(|r| r.set(opts.rich_black));
+        PLATE.with(|p| p.set(opts.plate));
         self.stats = FrameStats::default();
         self.stories.clear();
         self.glyphs.tick();
@@ -704,6 +709,10 @@ impl Renderer {
         let hidden = HIDDEN_LAYERS.with(|h| h.borrow().clone());
         let data = if !hidden.is_empty() && is_pdf(&asset.data) { pdf_layers::layered(&asset.data, &hidden) } else { asset.data.clone() };
         let Some(pm) = images::mip(&data, asset.page, g.size.0, on_screen) else { return };
+        let pm = match PLATE.with(|p| p.get()) {
+            Some(plate) => plate_pixmap(&pm, plate),
+            None => pm,
+        };
         let rect = Rect::new(0.0, 0.0, g.size.0, g.size.1);
         ctx.set_transform(f.view * xf * g.xf);
         let sx = g.size.0 / pm.width().max(1) as f64;
@@ -718,6 +727,78 @@ impl Renderer {
     }
 }
 
+/// sRGB → working CMYK through a 17³ table built once per colour settings (trilinear).
+fn cmyk_lut(rgb: [f32; 3]) -> [f32; 4] {
+    const N: usize = 17;
+    type Lut = (designcraft_color::cms::ColorSettings, std::sync::Arc<Vec<[f32; 4]>>);
+    static LUT: std::sync::Mutex<Option<Lut>> = std::sync::Mutex::new(None);
+    let settings = designcraft_color::cms::active_settings();
+    let table = {
+        let mut g = LUT.lock().unwrap_or_else(|e| e.into_inner());
+        match g.as_ref() {
+            Some((s, t)) if *s == settings => t.clone(),
+            _ => {
+                let cms = designcraft_color::cms::active();
+                let step = |i: usize| i as f32 / (N - 1) as f32;
+                let t: Vec<[f32; 4]> = (0..N * N * N)
+                    .map(|i| {
+                        cms.srgb_to_cmyk([step(i / (N * N)), step(i / N % N), step(i % N)], designcraft_color::cms::Intent::RelativeColorimetric)
+                    })
+                    .collect();
+                let t = std::sync::Arc::new(t);
+                *g = Some((settings, t.clone()));
+                t
+            }
+        }
+    };
+    let f = rgb.map(|v| v.clamp(0.0, 1.0) * (N - 1) as f32);
+    let i = f.map(|v| (v as usize).min(N - 2));
+    let d = [f[0] - i[0] as f32, f[1] - i[1] as f32, f[2] - i[2] as f32];
+    let mut out = [0.0f32; 4];
+    for (corner, w) in (0..8).map(|c| {
+        let (a, b, cc) = (c >> 2 & 1, c >> 1 & 1, c & 1);
+        let w = (if a == 1 { d[0] } else { 1.0 - d[0] }) * (if b == 1 { d[1] } else { 1.0 - d[1] }) * (if cc == 1 { d[2] } else { 1.0 - d[2] });
+        ((i[0] + a) * N * N + (i[1] + b) * N + i[2] + cc, w)
+    }) {
+        for k in 0..4 {
+            out[k] += table[corner][k] * w;
+        }
+    }
+    out
+}
+
+/// An image's ink coverage on one process plate, as grey (cached per image and plate).
+fn plate_pixmap(pm: &std::sync::Arc<vello_cpu::Pixmap>, plate: u8) -> std::sync::Arc<vello_cpu::Pixmap> {
+    type Cache = std::collections::HashMap<(usize, u8), std::sync::Arc<vello_cpu::Pixmap>>;
+    static CACHE: std::sync::Mutex<Option<Cache>> = std::sync::Mutex::new(None);
+    let key = (std::sync::Arc::as_ptr(pm) as usize, plate);
+    if let Some(v) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|c| c.get(&key).cloned()) {
+        return v;
+    }
+    let data: Vec<vello_cpu::color::PremulRgba8> = pm
+        .data()
+        .iter()
+        .map(|p| {
+            if p.a == 0 {
+                return *p;
+            }
+            let k = 255.0 / p.a as f32;
+            let rgb = [p.r, p.g, p.b].map(|v| (v as f32 * k / 255.0).min(1.0));
+            let cmyk = cmyk_lut(rgb);
+            let v = ((1.0 - cmyk[plate.min(3) as usize].clamp(0.0, 1.0)) * p.a as f32).round() as u8;
+            vello_cpu::color::PremulRgba8 { r: v, g: v, b: v, a: p.a }
+        })
+        .collect();
+    let out = std::sync::Arc::new(vello_cpu::Pixmap::from_parts(data, pm.width(), pm.height()));
+    let mut c = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let map = c.get_or_insert_with(Default::default);
+    if map.len() > 32 {
+        map.clear();
+    }
+    map.insert(key, out.clone());
+    out
+}
+
 fn rect_overlaps(a: Rect, b: Rect) -> bool {
     a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0
 }
@@ -727,9 +808,19 @@ thread_local! {
     static HIDDEN_LAYERS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     /// Appearance of Black for the render on this thread: 100% K as pure black.
     static RICH_BLACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Separations Preview plate for the render on this thread.
+    static PLATE: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
 }
 
 pub fn color_of(c: &designcraft_color::Color, alpha: f32) -> peniko::Color {
+    if let Some(p) = PLATE.with(|p| p.get()) {
+        let cmyk = match *c {
+            designcraft_color::Color::Cmyk { c, m, y, k } => [c, m, y, k],
+            _ => c.to_cmyk_managed(designcraft_color::cms::Intent::RelativeColorimetric),
+        };
+        let v = ((1.0 - cmyk[p.min(3) as usize].clamp(0.0, 1.0)) * 255.0).round() as u8;
+        return peniko::Color::from_rgba8(v, v, v, (alpha.clamp(0.0, 1.0) * 255.0).round() as u8);
+    }
     if RICH_BLACK.with(|r| r.get())
         && let designcraft_color::Color::Cmyk { c: cc, m, y, k } = *c
         && cc <= 1e-3

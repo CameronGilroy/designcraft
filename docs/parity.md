@@ -11,7 +11,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 |---|---|---|---|---|---|
 | P0 | 102 | 100 | 2 | 0 | 99% |
 | P1 | 97 | 94 | 3 | 0 | 98% |
-| P2 | 76 | 64 | 12 | 0 | 92% |
+| P2 | 76 | 65 | 11 | 0 | 93% |
 
 | Area | Parity |
 |---|---|
@@ -20,7 +20,7 @@ Each row of the InDesign feature catalogue is scored **D** (done), **P** (partia
 | Layers | 100% |
 | Frames, shapes & paths | 100% |
 | Transform | 100% |
-| Fill, stroke, colour | 99% |
+| Fill, stroke, colour | 100% |
 | Effects & transparency | 92% |
 | Placing & links | 93% |
 | Type & text frames | 99% |
@@ -155,7 +155,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | Fill, stroke, colour | Stroke styles | P1 | D |
 | Fill, stroke, colour | Color management | P1 | D |
 | Fill, stroke, colour | Overprint Preview | P1 | D |
-| Fill, stroke, colour | Separations Preview | P2 | P |
+| Fill, stroke, colour | Separations Preview | P2 | D |
 | Fill, stroke, colour | Eyedropper | P1 | D |
 | Fill, stroke, colour | Appearance of Black prefs | P1 | D |
 | Effects & transparency | Opacity & blend modes | P0 | D |
