@@ -84,8 +84,8 @@ pub fn specs() -> Vec<CommandSpec> {
                     st.replace(a..b, &text);
                     let len = st.len();
                     if let Some(t) = sel.text.as_mut().filter(|t| t.story == sid) {
-                        t.anchor = t.anchor.min(len);
-                        t.focus = t.focus.min(len);
+                        t.anchor = floor_char_boundary(&st.text, t.anchor);
+                        t.focus = floor_char_boundary(&st.text, t.focus);
                     }
                     Ok(json!({"length": len}))
                 })
@@ -971,6 +971,27 @@ mod open_type_tests {
         assert_eq!((t.anchor, t.focus), (0, 0));
         s.execute("text.move", &json!({"dir": "right"})).unwrap();
         assert_eq!(s.doc().unwrap().selection.text.unwrap().focus, 3);
+    }
+
+    #[test]
+    fn replacing_a_range_stays_on_utf8_boundaries() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [0, 0, 200, 100], "content": "text", "text": "é漢🙂x"})).unwrap();
+        let sid = r["story"].clone();
+        // Offsets inside 漢 (2..5) and 🙂 (5..9) snap back to the character starts: 漢 is replaced.
+        s.execute("story.replaceRange", &json!({"story": sid, "start": 3, "end": 6, "text": "字"})).unwrap();
+        let story = designcraft_doc::StoryId(sid.as_u64().unwrap());
+        assert_eq!(s.doc().unwrap().doc.story(story).unwrap().text, "é字🙂x");
+        // A caret before 🙂 (byte 5) would land inside it once é (2 bytes) is gone.
+        s.execute("text.select", &json!({"story": sid, "anchor": 5})).unwrap();
+        s.execute("story.replaceRange", &json!({"story": sid, "start": 0, "end": 2, "text": ""})).unwrap();
+        let st = s.doc().unwrap();
+        let t = st.selection.text.unwrap();
+        let text = &st.doc.story(t.story).unwrap().text;
+        assert_eq!(text, "字🙂x");
+        assert!(text.is_char_boundary(t.anchor) && text.is_char_boundary(t.focus), "caret {t:?} in {text:?}");
+        s.execute("text.move", &json!({"dir": "right"})).unwrap();
     }
 
     #[test]
