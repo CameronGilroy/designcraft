@@ -250,7 +250,7 @@ impl ToolContext<'_> {
         self.doc.item(id)
     }
 
-    /// Canvas bounds of the selected items.
+    /// Canvas bounds of the selected items' paths. Handles and resize use this geometric box.
     pub fn selection_bounds(&self) -> Option<Rect> {
         let mut r: Option<Rect> = None;
         for id in &self.selection.items {
@@ -259,6 +259,21 @@ impl ToolContext<'_> {
             r = Some(r.map_or(b, |r| r.union(b)));
         }
         r
+    }
+
+    /// Canvas union of the selection's visible bounds. A group uses the alignment box.
+    pub fn selection_visible_bounds(&self) -> Option<Rect> {
+        let mut acc: Option<Rect> = None;
+        for id in &self.selection.items {
+            let (Some(it), Some(xf)) = (self.doc.item(*id), self.item_canvas_xf(*id)) else { continue };
+            let Some(local) = crate::snap::moving_bounds(it) else { continue };
+            let b = xf.transform_rect_bbox(local);
+            if !(b.x0.is_finite() && b.y0.is_finite() && b.x1.is_finite() && b.y1.is_finite()) {
+                continue;
+            }
+            acc = Some(acc.map_or(b, |have| have.union(b)));
+        }
+        acc
     }
 }
 

@@ -252,14 +252,15 @@ fn zone_tol(cx: &ToolContext) -> Option<f64> {
 /// Matched rotation, in the same degrees `transform.rotate` receives.
 ///
 /// Runs only for [`Gesture::Rotate`], and only when Smart Guides and Smart Dimensions are on.
-/// `angle` is compared with `decompose(item.xf).rotation` in the same sign. The tolerance is
-/// the zone length subtended at `radius` (`atan(zone / radius)` in degrees). A radius below
-/// 1 pt, or a non-finite angle, radius, or zone, does not hit. Candidates are visible items
-/// on the requested spread, including children of a group, plus shown parent items. Each
-/// candidate is that item's own transform, not an ancestor composed in. Hidden items and the
-/// shared exclude list are skipped. An unrotated item contributes 0. The closest angle wins,
-/// folding whole turns so a few degrees across 0 still match. The measure is the angle in
-/// degrees and there is no guide line.
+/// `angle` is compared with `decompose` of the absolute transform in the same sign. That
+/// transform is the ancestor chain composed with `item.xf`. A top-level item has no ancestor,
+/// so it stays `decompose(item.xf)`. The tolerance is the zone length subtended at `radius`
+/// (`atan(zone / radius)` in degrees). A radius below 1 pt, or a non-finite angle, radius, or
+/// zone, does not hit. Candidates are visible items on the requested spread, including children
+/// of a group, plus shown parent items. A child inside a rotated group uses the composed angle,
+/// not its local 0. Hidden items and the shared exclude list are skipped. An unrotated item
+/// contributes 0. The closest angle wins, folding whole turns so a few degrees across 0 still
+/// match. The measure is the angle in degrees and there is no guide line.
 fn rotation_snap(cx: &ToolContext, req: &SnapRequest<'_>, zone_length: f64) -> Snap {
     let Some(angle) = match_rotation(cx, req, zone_length) else {
         return Snap::default();
@@ -288,7 +289,7 @@ fn match_rotation(cx: &ToolContext, req: &SnapRequest<'_>, zone_length: f64) -> 
     let mut seen = HashSet::new();
     if let Some(spread) = cx.doc.spread(req.spread) {
         for item in &spread.items {
-            push_rotation(&mut best, cx.selection, req, item, false, 0, &mut seen, proposed, tol);
+            push_rotation(&mut best, cx.selection, req, item, Affine::IDENTITY, false, 0, &mut seen, proposed, tol);
         }
     }
     // Parent editing already lists those items on the spread. Do not add them again.
@@ -299,7 +300,7 @@ fn match_rotation(cx: &ToolContext, req: &SnapRequest<'_>, zone_length: f64) -> 
 }
 
 /// Shown parent items, same page and `based_on` walk as parent lengths.
-/// Each item is passed through [`push_rotation`], so the angle is still its own `xf`.
+/// Parent items are only translated onto the page, so the angle is still `item.xf`.
 fn push_parent_rotations(
     best: &mut Option<(f64, f64)>,
     cx: &ToolContext,
@@ -351,7 +352,7 @@ fn push_parent_rotation_chain(
             if parent.pages.len() > 1 && parent.page_at_x(item.bounds().center().x) != Some(page_idx) {
                 continue;
             }
-            push_rotation(best, cx.selection, req, item, false, 0, seen_items, proposed, tol);
+            push_rotation(best, cx.selection, req, item, Affine::IDENTITY, false, 0, seen_items, proposed, tol);
         }
     }
     let Some(next_id) = next else { return };
@@ -364,6 +365,7 @@ fn push_rotation(
     selection: &Selection,
     req: &SnapRequest<'_>,
     item: &Item,
+    ancestor: Affine,
     skipped: bool,
     depth: usize,
     seen: &mut HashSet<ItemId>,
@@ -373,32 +375,36 @@ fn push_rotation(
     if depth >= ALIGN_GROUP_DEPTH || !seen.insert(item.id) || item.hidden {
         return;
     }
+    let abs = ancestor * item.xf;
     let skip = skipped || align_skips_item(selection, req, item.id);
-    if !skip && let Some(angle) = own_rotation(item) {
+    if !skip && let Some(angle) = rotation_of(abs) {
         let dist = angular_distance(proposed, angle);
         if dist.is_finite() && dist <= tol && best.is_none_or(|(have, _)| dist < have) {
             *best = Some((dist, angle));
         }
     }
+    if !xf_finite(abs) {
+        return;
+    }
     for child in item.children() {
-        push_rotation(best, selection, req, child, skip, depth + 1, seen, proposed, tol);
+        push_rotation(best, selection, req, child, abs, skip, depth + 1, seen, proposed, tol);
     }
 }
 
-/// `item.xf` alone. A non-finite transform contributes nothing, and identity contributes 0.
-fn own_rotation(item: &Item) -> Option<f64> {
-    if !xf_finite(item.xf) {
+/// Decompose rotation of an absolute transform. A non-finite matrix contributes nothing.
+fn rotation_of(xf: Affine) -> Option<f64> {
+    if !xf_finite(xf) {
         return None;
     }
-    let rotation = designcraft_geom::decompose::decompose(item.xf).rotation;
+    let rotation = designcraft_geom::decompose::decompose(xf).rotation;
     rotation.is_finite().then_some(rotation)
 }
 
-/// Decompose rotation of the first selected item, captured before a preview changes `xf`.
-/// None when nothing is selected.
+/// Decompose rotation of the first selected item's own `xf`, captured before a preview changes it.
+/// None when nothing is selected. The command composes onto that `xf`, so ancestors stay out.
 pub(crate) fn reference_rotation(cx: &ToolContext) -> Option<f64> {
     let id = *cx.selection.items.first()?;
-    own_rotation(cx.doc.item(id)?)
+    rotation_of(cx.doc.item(id)?.xf)
 }
 
 /// Degrees folded into the range `decompose` reports, `(-180, 180]`.
@@ -961,6 +967,38 @@ pub(crate) fn lay_dimension_guides(
     }
 }
 
+/// Move a line's dimension tick onto the committed segment.
+///
+/// The dimensions pass draws a short horizontal tick at the proposed endpoint because the
+/// length is carried on x. The guide that remains is the segment from the anchor to the
+/// endpoint the gesture commits.
+pub(crate) fn lay_line_dimension(guides: &mut Vec<Overlay>, xf: Affine, anchor: Point, proposed: Point, committed: Point, diff: f64) {
+    if !diff.is_finite() {
+        return;
+    }
+    let rect = Rect::from_points(proposed, proposed);
+    let Some((old_a, old_b)) = dimension_segment(rect, Axis::X, [true, true, true], diff) else { return };
+    let (oa, ob) = (xf * old_a, xf * old_b);
+    let (na, nb) = (xf * anchor, xf * committed);
+    if !point_finite(na) || !point_finite(nb) {
+        return;
+    }
+    let mut found = false;
+    for g in guides.iter_mut() {
+        if let Overlay::Guide { a, b } = g
+            && segment_same(*a, *b, oa, ob)
+        {
+            *a = na;
+            *b = nb;
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        guides.push(Overlay::Guide { a: na, b: nb });
+    }
+}
+
 fn segment_same(a0: Point, b0: Point, a1: Point, b1: Point) -> bool {
     let close = |p: Point, q: Point| (p.x - q.x).abs() <= 1e-6 && (p.y - q.y).abs() <= 1e-6;
     (close(a0, a1) && close(b0, b1)) || (close(a0, b1) && close(b0, a1))
@@ -1172,8 +1210,9 @@ const ALIGN_GROUP_DEPTH: usize = 32;
 /// `align_centers` is on, and only when the request's middle flag is set. Hidden items are
 /// skipped. Without copying, excluded items are skipped. With copying, that list is the
 /// drag-start set and stays a target. Live selection items outside that set are preview
-/// copies and are skipped. A group with children uses the union of those children's visible
-/// bounds in group space, then the group's transform. It does not use the group's own stroke.
+/// copies and are skipped. A group with children uses the union of each child's visible bounds
+/// after that child's transform, then the group's transform. Transform each child, then union.
+/// It does not rotate the local union as one rectangle, and it does not use the group's own stroke.
 /// Parent items are added for a document page that shows them, in document spread space.
 /// A layout built for parent editing already has those items on the spread, so they are not
 /// added again.
@@ -1221,18 +1260,42 @@ fn item_target_rect(selection: &Selection, req: &SnapRequest<'_>, item: &Item) -
     rect_finite(bounds).then_some(bounds)
 }
 
-/// Union of children's visible bounds in this group's space, then `item.xf`.
+/// Union of each child's visible bounds transformed by `item.xf`.
+///
+/// Transform each child, then union. Rotating the local union as one rectangle is larger when
+/// a rotated group's children do not fill that rectangle. Hidden and excluded children stay out.
+/// Nested groups use the same rule. A child's stroke is part of that child's visible bounds.
+/// The group's own stroke is not added.
 fn group_target_rect(selection: &Selection, req: &SnapRequest<'_>, item: &Item, seen: &mut HashSet<ItemId>, depth: usize) -> Option<Rect> {
+    group_box(item, seen, depth, Some((selection, req)))
+}
+
+/// Visible box of an item being moved. Groups use the same box as alignment, with no exclude list.
+pub(crate) fn moving_bounds(item: &Item) -> Option<Rect> {
+    if item.is_group() && !item.children().is_empty() {
+        let mut seen = HashSet::new();
+        return group_box(item, &mut seen, 0, None);
+    }
+    let bounds = item.visible_bounds();
+    rect_finite(bounds).then_some(bounds)
+}
+
+fn group_box(item: &Item, seen: &mut HashSet<ItemId>, depth: usize, filter: Option<(&Selection, &SnapRequest<'_>)>) -> Option<Rect> {
     if depth >= ALIGN_GROUP_DEPTH || !seen.insert(item.id) {
         return None;
     }
     let mut acc: Option<Rect> = None;
     for child in item.children() {
-        if child.hidden || align_skips_item(selection, req, child.id) {
+        if child.hidden {
+            continue;
+        }
+        if let Some((selection, req)) = filter
+            && align_skips_item(selection, req, child.id)
+        {
             continue;
         }
         let local = if child.is_group() && !child.children().is_empty() {
-            group_target_rect(selection, req, child, seen, depth + 1)
+            group_box(child, seen, depth + 1, filter)
         } else {
             let bounds = child.visible_bounds();
             rect_finite(bounds).then_some(bounds)
@@ -1241,9 +1304,16 @@ fn group_target_rect(selection: &Selection, req: &SnapRequest<'_>, item: &Item, 
         if !rect_finite(local) {
             continue;
         }
-        acc = Some(acc.map_or(local, |have| have.union(local)));
+        let placed = item.xf.transform_rect_bbox(local);
+        if !rect_finite(placed) {
+            continue;
+        }
+        acc = Some(match acc {
+            Some(have) => have.union(placed),
+            None => placed,
+        });
     }
-    acc.map(|r| item.xf.transform_rect_bbox(r)).filter(|r| rect_finite(*r))
+    acc.filter(|r| rect_finite(*r))
 }
 
 /// Parent items shown on the document spread, shifted into that spread's space.
@@ -1991,5 +2061,81 @@ mod tests {
         );
         let angle = hit.angle.expect("parent rotation hit");
         assert!((angle - 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn rotated_group_uses_the_per_child_union() {
+        // Two children do not fill their local union. Rotating that union as one rectangle
+        // swings the empty corners out. The snap target is each child's visible box, transformed, then united.
+        let mut doc = Document::new(&NewDocument::default());
+        let layer = doc.default_layer();
+        let mut child_a = Item::new(ItemId(doc.alloc()), layer, Shape::Rectangle, shapes::rectangle(Rect::new(0.0, 0.0, 10.0, 10.0)));
+        child_a.stroke = Stroke { weight: 2.0, ..Stroke::default() };
+        let child_b = Item::new(ItemId(doc.alloc()), layer, Shape::Rectangle, shapes::rectangle(Rect::new(40.0, 30.0, 50.0, 40.0)));
+        let mut group = Item::new(ItemId(doc.alloc()), layer, Shape::Group, designcraft_geom::PathData::default());
+        let xf = Affine::translate((300.0, 400.0)) * Affine::rotate((-45.0_f64).to_radians());
+        group.xf = xf;
+        group.content = designcraft_doc::Content::Group { items: vec![Arc::new(child_a), Arc::new(child_b)] };
+        doc.insert_item(SpreadRef::Doc(0), group, None).unwrap();
+        let a_vis = Rect::new(-1.0, -1.0, 11.0, 11.0);
+        let b_vis = Rect::new(40.0, 30.0, 50.0, 40.0);
+        let per_child = xf.transform_rect_bbox(a_vis).union(xf.transform_rect_bbox(b_vis));
+        let rotated_union = xf.transform_rect_bbox(a_vis.union(b_vis));
+        // At 45 degrees the empty corners move y, not x. The two boxes share x0.
+        assert!((per_child.y0 - rotated_union.y0).abs() > 1.0, "fixture does not separate the two boxes");
+        let gap = 2.0;
+        // A short rect just above the per-child top. Its other edges stay outside the zone of the rotated union.
+        let moving = Rect::new(per_child.x0, per_child.y0 - gap - 4.0, per_child.x0 + 20.0, per_child.y0 - gap);
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_guides = false;
+        cx.snap.snap_to_document_grid = false;
+        let hit = snap(&cx, y_req(moving));
+        assert!((hit.delta.y - gap).abs() < 1e-4, "delta.y {}, want {gap} onto {}", hit.delta.y, per_child.y0);
+        let wrong = rotated_union.y0 - moving.y1;
+        assert!((hit.delta.y - wrong).abs() > 1.0, "delta matched the rotated local union");
+    }
+
+    #[test]
+    fn rotated_group_child_does_not_offer_local_zero() {
+        // The group is at 30 degrees. Its child stays at local 0, so the absolute angle is 30.
+        // 2 degrees is inside the zone of 0 and far from 30. Local 0 must not win.
+        let mut doc = Document::new(&NewDocument::default());
+        let layer = doc.default_layer();
+        let child = Item::new(ItemId(doc.alloc()), layer, Shape::Rectangle, shapes::rectangle(Rect::new(0.0, 0.0, 40.0, 20.0)));
+        let mut group = Item::new(ItemId(doc.alloc()), layer, Shape::Group, designcraft_geom::PathData::default());
+        group.xf = Affine::rotate((-30.0_f64).to_radians());
+        group.content = designcraft_doc::Content::Group { items: vec![Arc::new(child)] };
+        doc.insert_item(SpreadRef::Doc(0), group, None).unwrap();
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_guides = false;
+        let ask = |angle: f64| {
+            snap(
+                &cx,
+                SnapRequest {
+                    spread: SpreadRef::Doc(0),
+                    gesture: Gesture::Rotate,
+                    rect: Rect::new(100.0, 100.0, 160.0, 140.0),
+                    x_edges: [false, false, false],
+                    y_edges: [false, false, false],
+                    exclude: &[],
+                    copying: false,
+                    lengths: [None, None],
+                    angle: Some(angle),
+                    radius: 80.0,
+                    pointer: Point::new(180.0, 120.0),
+                },
+            )
+        };
+        let near_zero = ask(2.0);
+        assert!(near_zero.angle.is_none(), "local 0 was a target: {:?}", near_zero.angle);
+        let near_group = ask(28.0);
+        let angle = near_group.angle.expect("absolute 30");
+        assert!((angle - 30.0).abs() < 1e-6, "angle {angle}");
     }
 }
