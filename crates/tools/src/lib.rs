@@ -302,6 +302,9 @@ pub struct Snap {
     pub delta: Vec2,
     pub angle: Option<f64>,
     pub guides: Vec<Overlay>,
+    /// Set when the dimensions pass won that axis. The value is the matched length minus the
+    /// proposed length (positive grows the size). `delta` on that axis is the moving edge's shift.
+    pub length_delta: [Option<f64>; 2],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

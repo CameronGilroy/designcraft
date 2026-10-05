@@ -2,20 +2,53 @@
 //! the reference point elsewhere in a later iteration); Eyedropper (I): click an object to apply
 //! its attributes to the selection.
 
-use designcraft_geom::Point;
+use designcraft_doc::SpreadRef;
+use designcraft_geom::{Point, Rect};
 use serde_json::json;
 
-use crate::{Action, Cursor, Mods, PointerEvent, PointerKind, Tool, ToolContext};
+use crate::{Action, Cursor, Gesture, Mods, Overlay, PointerEvent, PointerKind, SnapRequest, Tool, ToolContext};
 
 pub struct XformTool {
     id: &'static str,
     drag: Option<(Point, Point)>,
+    guides: Vec<Overlay>,
 }
 
 impl XformTool {
     pub fn new(id: &'static str) -> Self {
-        Self { id, drag: None }
+        Self { id, drag: None, guides: Vec::new() }
     }
+}
+
+/// Top-level selection on one spread, in that spread's coordinates.
+fn selection_spread_bounds(cx: &ToolContext) -> Option<(SpreadRef, Rect)> {
+    let mut spread = None;
+    let mut rect: Option<Rect> = None;
+    for id in &cx.selection.items {
+        let loc = cx.doc.find(*id)?;
+        if loc.path.len() != 1 {
+            return None;
+        }
+        if let Some(have) = spread
+            && have != loc.spread
+        {
+            return None;
+        }
+        spread = Some(loc.spread);
+        let b = cx.doc.item(*id)?.bounds();
+        if !(b.x0.is_finite() && b.y0.is_finite() && b.x1.is_finite() && b.y1.is_finite()) {
+            return None;
+        }
+        rect = Some(match rect {
+            Some(r) => r.union(b),
+            None => b,
+        });
+    }
+    Some((spread?, rect?))
+}
+
+fn edge_toward(pointer: f64, center: f64) -> [bool; 3] {
+    if pointer >= center { [false, false, true] } else { [true, false, false] }
 }
 
 impl Tool for XformTool {
@@ -25,6 +58,7 @@ impl Tool for XformTool {
     fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
         match ev.kind {
             PointerKind::Down => {
+                self.guides.clear();
                 let Some(b) = cx.selection_bounds() else { return vec![] };
                 self.drag = Some((b.center(), ev.pos));
                 vec![Action::Begin(match self.id {
@@ -36,6 +70,7 @@ impl Tool for XformTool {
             PointerKind::Drag => {
                 let Some((c, start)) = self.drag else { return vec![] };
                 let (v0, v1) = (start - c, ev.pos - c);
+                self.guides.clear();
                 match self.id {
                     "rotate" => {
                         let mut a = (v1.atan2() - v0.atan2()).to_degrees();
@@ -45,11 +80,73 @@ impl Tool for XformTool {
                         vec![Action::Preview("transform.rotate".into(), json!({"angle": -a}))]
                     }
                     "scale" => {
-                        let (mut sx, mut sy) = (v1.x / v0.x.abs().max(1e-6) * v0.x.signum(), v1.y / v0.y.abs().max(1e-6) * v0.y.signum());
+                        let (sx0, sy0) = (v1.x / v0.x.abs().max(1e-6) * v0.x.signum(), v1.y / v0.y.abs().max(1e-6) * v0.y.signum());
+                        let x_drives = !ev.mods.shift || sx0.abs() >= sy0.abs();
+                        let (mut sx, mut sy) = (sx0, sy0);
                         if ev.mods.shift {
                             let s = sx.abs().max(sy.abs());
                             sx = s;
                             sy = s;
+                        }
+                        if cx.snap.any()
+                            && sx.is_finite()
+                            && sy.is_finite()
+                            && let Some((spread, from)) = selection_spread_bounds(cx)
+                        {
+                            let (sign_x, sign_y) = (if sx < 0.0 { -1.0 } else { 1.0 }, if sy < 0.0 { -1.0 } else { 1.0 });
+                            let (w0, h0) = (from.width().abs(), from.height().abs());
+                            if w0 > 1e-9 && h0 > 1e-9 {
+                                let center = from.center();
+                                let (mut w, mut h) = (w0 * sx.abs(), h0 * sy.abs());
+                                let to = Rect::new(center.x - w / 2.0, center.y - h / 2.0, center.x + w / 2.0, center.y + h / 2.0);
+                                let pointer = cx.layout.to_spread(spread, ev.pos);
+                                let x_edges = if x_drives { edge_toward(pointer.x, center.x) } else { [false, false, false] };
+                                let y_edges = if x_drives && ev.mods.shift { [false, false, false] } else { edge_toward(pointer.y, center.y) };
+                                let exclude = cx.selection.items.clone();
+                                let (pad_x, pad_y) = scale_stroke_pad(cx);
+                                let hit = crate::snap::snap(
+                                    cx,
+                                    SnapRequest {
+                                        spread,
+                                        gesture: Gesture::Resize,
+                                        rect: to,
+                                        x_edges,
+                                        y_edges,
+                                        exclude: &exclude,
+                                        copying: false,
+                                        lengths: [length_on(x_edges, w, pad_x), length_on(y_edges, h, pad_y)],
+                                        angle: None,
+                                        radius: 0.0,
+                                        pointer,
+                                    },
+                                );
+                                if let Some(diff) = hit.length_delta[0] {
+                                    w += diff;
+                                } else if x_edges[2] {
+                                    w += 2.0 * hit.delta.x;
+                                } else if x_edges[0] {
+                                    w -= 2.0 * hit.delta.x;
+                                }
+                                if let Some(diff) = hit.length_delta[1] {
+                                    h += diff;
+                                } else if y_edges[2] {
+                                    h += 2.0 * hit.delta.y;
+                                } else if y_edges[0] {
+                                    h -= 2.0 * hit.delta.y;
+                                }
+                                if ev.mods.shift {
+                                    if x_drives {
+                                        h = h0 * (w / w0);
+                                    } else {
+                                        w = w0 * (h / h0);
+                                    }
+                                }
+                                if w.is_finite() && h.is_finite() && w.abs() > 1e-9 && h.abs() > 1e-9 {
+                                    sx = (w / w0) * sign_x;
+                                    sy = (h / h0) * sign_y;
+                                }
+                                self.guides = hit.guides;
+                            }
                         }
                         vec![Action::Preview("transform.scale".into(), json!({"sx": sx, "sy": sy}))]
                     }
@@ -60,14 +157,14 @@ impl Tool for XformTool {
                 }
             }
             PointerKind::Up => {
-                if self.drag.take().is_some() {
-                    vec![Action::Commit]
-                } else {
-                    vec![]
-                }
+                self.guides.clear();
+                if self.drag.take().is_some() { vec![Action::Commit] } else { vec![] }
             }
             _ => vec![],
         }
+    }
+    fn overlays(&self, _cx: &ToolContext) -> Vec<Overlay> {
+        self.guides.clone()
     }
     fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
         if self.id == "rotate" { Cursor::Rotate } else { Cursor::Crosshair }
@@ -75,6 +172,29 @@ impl Tool for XformTool {
     fn busy(&self) -> bool {
         self.drag.is_some()
     }
+}
+
+fn length_on(edges: [bool; 3], size: f64, pad: f64) -> Option<f64> {
+    if edges == [false, false, false] {
+        return None;
+    }
+    let len = size.abs() + pad;
+    len.is_finite().then_some(len)
+}
+
+fn scale_stroke_pad(cx: &ToolContext) -> (f64, f64) {
+    if cx.selection.items.len() != 1 {
+        return (0.0, 0.0);
+    }
+    let Some(id) = cx.selection.items.first() else { return (0.0, 0.0) };
+    let Some(it) = cx.doc.item(*id) else { return (0.0, 0.0) };
+    let path = it.bounds();
+    let vis = it.visible_bounds();
+    (positive_pad(vis.width() - path.width()), positive_pad(vis.height() - path.height()))
+}
+
+fn positive_pad(v: f64) -> f64 {
+    if v.is_finite() && v > 0.0 { v } else { 0.0 }
 }
 
 #[derive(Default)]
