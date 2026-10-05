@@ -445,7 +445,7 @@ impl Tool for SelectionTool {
                     if hit && !cx.selection.items.is_empty() {
                         let sr = cx.selection.items.first().and_then(|i| cx.doc.find(*i)).map(|l| l.spread).unwrap_or(SpreadRef::Doc(0));
                         let exclude = cx.selection.items.clone();
-                        self.drag = Drag::Move { start, origin_spread: sr, bounds0: cx.selection_bounds(), exclude };
+                        self.drag = Drag::Move { start, origin_spread: sr, bounds0: cx.selection_visible_bounds(), exclude };
                         let label = if ev.mods.alt { "Duplicate" } else { "Move" };
                         let mut v = vec![Action::Begin(label.into())];
                         v.extend(self.pointer(cx, ev));
@@ -468,27 +468,38 @@ impl Tool for SelectionTool {
                             screen_x_locked = true;
                         }
                     }
+                    // Snap on the spread under the pointer. Shift uses that spread's view rotation.
+                    let target = cx.layout.spread_at(p).map(|(s, _)| s).unwrap_or(origin_spread);
                     // 180 degrees keeps the screen axis. 90 and 270 swap it into the other spread axis.
-                    let odd_turn = cx.layout.slot(origin_spread).is_some_and(|slot| slot.rotation % 2 == 1);
+                    let odd_turn = cx.layout.slot(target).is_some_and(|slot| slot.rotation % 2 == 1);
                     let spread_x_locked = if odd_turn { screen_y_locked } else { screen_x_locked };
                     let spread_y_locked = if odd_turn { screen_x_locked } else { screen_y_locked };
                     let x_edges = if spread_x_locked { [false; 3] } else { [true; 3] };
                     let y_edges = if spread_y_locked { [false; 3] } else { [true; 3] };
                     self.guides.clear();
-                    // The movement in the spread's own coordinates (its view may be turned).
+                    // The movement in the origin spread's coordinates (its view may be turned).
                     let mut ds = cx.layout.delta_to_spread(origin_spread, d);
                     let b0s = bounds0.map(|b| cx.layout.xf(origin_spread).inverse().transform_rect_bbox(b));
+                    let q0 = b0s.map_or(Point::ORIGIN, |b| Point::new(b.x0, b.y0));
+                    // Same corner conversion transform.move already uses when the spread changes.
+                    let mut landed = cx.layout.to_spread(target, cx.layout.to_canvas(origin_spread, q0 + ds));
                     // Command suspends snapping. A Shift-locked spread axis is not offered.
                     if !ev.mods.cmd
                         && cx.snap.any()
                         && let Some(b0) = b0s
                     {
+                        let proposed = if target == origin_spread {
+                            b0 + ds
+                        } else {
+                            let shift = landed - q0;
+                            Rect::new(b0.x0 + shift.x, b0.y0 + shift.y, b0.x1 + shift.x, b0.y1 + shift.y)
+                        };
                         let hit = crate::snap::snap(
                             cx,
                             SnapRequest {
-                                spread: origin_spread,
+                                spread: target,
                                 gesture: Gesture::Move,
-                                rect: b0 + ds,
+                                rect: proposed,
                                 x_edges,
                                 y_edges,
                                 exclude: &exclude,
@@ -496,26 +507,37 @@ impl Tool for SelectionTool {
                                 lengths: [None, None],
                                 angle: None,
                                 radius: 0.0,
-                                pointer: cx.layout.to_spread(origin_spread, p),
+                                pointer: cx.layout.to_spread(target, p),
                             },
                         );
-                        if x_edges != [false, false, false] {
-                            ds.x += hit.delta.x;
-                        }
-                        if y_edges != [false, false, false] {
-                            ds.y += hit.delta.y;
+                        if target == origin_spread {
+                            if x_edges != [false, false, false] && hit.delta.x.is_finite() {
+                                ds.x += hit.delta.x;
+                            }
+                            if y_edges != [false, false, false] && hit.delta.y.is_finite() {
+                                ds.y += hit.delta.y;
+                            }
+                        } else {
+                            if x_edges != [false, false, false] && hit.delta.x.is_finite() {
+                                landed.x += hit.delta.x;
+                            }
+                            if y_edges != [false, false, false] && hit.delta.y.is_finite() {
+                                landed.y += hit.delta.y;
+                            }
                         }
                         self.guides = hit.guides;
                     }
-                    // Dragging to another spread moves the items there.
-                    let target = cx.layout.spread_at(p).map(|(s, _)| s).unwrap_or(origin_spread);
-                    let mut params = json!({"dx": ds.x, "dy": ds.y, "copy": ev.mods.alt});
-                    if target != origin_spread {
-                        // Where the selection's corner lands, in the target spread.
-                        let q0 = b0s.map_or(Point::ORIGIN, |b| Point::new(b.x0, b.y0));
-                        let landed = cx.layout.to_spread(target, cx.layout.to_canvas(origin_spread, q0 + ds));
+                    // Same spread: dx, dy are the origin spread translation. Crossing: the corner
+                    // conversion, so the reparented item lands on the snapped target point.
+                    let (dx, dy) = if target == origin_spread {
+                        (ds.x, ds.y)
+                    } else {
                         let dt = landed - q0;
-                        params = json!({"dx": dt.x, "dy": dt.y, "copy": ev.mods.alt, "toSpread": spread_json(target)});
+                        (dt.x, dt.y)
+                    };
+                    let mut params = json!({"dx": dx, "dy": dy, "copy": ev.mods.alt});
+                    if target != origin_spread {
+                        params = json!({"dx": dx, "dy": dy, "copy": ev.mods.alt, "toSpread": spread_json(target)});
                     }
                     vec![Action::Preview("transform.move".into(), params)]
                 }

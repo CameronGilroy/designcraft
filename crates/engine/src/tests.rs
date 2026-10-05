@@ -69,7 +69,10 @@ fn tool_gesture_creates_one_undo_step() {
     s.pointer(&PointerEvent::new(PointerKind::Down, 60.0, 30.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Drag, 48.0, 30.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Up, 48.0, 30.0), v).unwrap();
-    assert_eq!(s.doc().unwrap().doc.spreads[0].items[0].bounds().x0, 36.0);
+    // The rectangle tool's 1 pt centered stroke sits half a point outside the path.
+    // The visible edge lands on the 36 pt margin.
+    let it = &s.doc().unwrap().doc.spreads[0].items[0];
+    assert!((it.visible_bounds().x0 - 36.0).abs() < 1e-6, "visible {:?} path {:?}", it.visible_bounds(), it.bounds());
 }
 
 #[test]

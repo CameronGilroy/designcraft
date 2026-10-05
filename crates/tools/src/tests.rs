@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use designcraft_compose::Cache;
 use designcraft_doc::build::NewDocument;
-use designcraft_doc::{Document, Guide, Item, ItemId, Orientation, ParaFormat, Selection, Shape, SpreadRef};
+use designcraft_doc::{Document, Guide, Item, ItemId, Orientation, ParaFormat, Selection, Shape, SpreadRef, Stroke};
 use designcraft_geom::shapes;
 use designcraft_geom::{Point, Rect, Unit};
 
@@ -399,9 +399,162 @@ fn line_length_keeps_the_crossed_guide() {
     let end = params["b"].as_array().unwrap();
     let (bx, by) = (end[0].as_f64().unwrap(), end[1].as_f64().unwrap());
     let len = 80.0_f64.hypot(40.0);
-    let expect_x = 180.0 + (92.0 - len);
+    let target = 92.0_f64;
+    let dy = 142.0 - 100.0;
+    // Y stays on the guide. X is solved so the segment length is 92, not by adding the difference to x.
+    let remain = target * target - dy * dy;
+    let expect_x = 100.0 + remain.sqrt();
     assert!((by - 142.0).abs() < 1e-4, "endpoint y {by} left the guide at 142 (x {bx})");
-    assert!((bx - expect_x).abs() < 1e-4, "endpoint x {bx}, want {expect_x} from the length delta on X only");
+    assert!((bx - expect_x).abs() < 1e-4, "endpoint x {bx}, want {expect_x}");
+    let got = (bx - 100.0).hypot(by - 100.0);
+    assert!((got - target).abs() < 1e-4, "length {got}, raw was {len}");
+    assert!((bx - (180.0 + (target - len))).abs() > 0.1, "x still took the raw length difference");
+}
+
+#[test]
+fn stroked_move_aligns_visible_edges() {
+    // 2 pt centered strokes. The other path ends at 70, so its visible edge is 71.
+    // A geometric move would land the path on 71. The visible edge must land there instead.
+    let mut doc = Document::new(&NewDocument::default());
+    let layer = doc.default_layer();
+    let stroke = Stroke { weight: 2.0, ..Stroke::default() };
+    let make = |doc: &mut Document, rect: Rect| {
+        let id = ItemId(doc.alloc());
+        let mut item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(rect));
+        item.stroke = stroke.clone();
+        doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
+        id
+    };
+    let _other = make(&mut doc, Rect::new(40.0, 100.0, 70.0, 140.0));
+    let moving = make(&mut doc, Rect::new(100.0, 100.0, 160.0, 140.0));
+    let sel = Selection::items(vec![moving]);
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    let cx = dims_ctx(&doc, &sel, &cache, &layout, true);
+    let mut t = create("selection");
+    let down = spread_pt(&layout, 130.0, 120.0);
+    let drag = spread_pt(&layout, 103.0, 120.0);
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, down.x, down.y));
+    let actions = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, drag.x, drag.y));
+    let dx = match actions.last() {
+        Some(Action::Preview(cmd, p)) => {
+            assert_eq!(cmd, "transform.move");
+            p["dx"].as_f64().unwrap()
+        }
+        other => panic!("{other:?}"),
+    };
+    assert!((dx - -28.0).abs() < 1e-4, "dx {dx}, want -28 so the visible edge meets 71");
+}
+
+#[test]
+fn vertical_line_length_matches_along_the_segment() {
+    // Vertical, length 80, near a 84 side. The match must move y, not add 4 to x.
+    let mut doc = Document::new(&NewDocument::default());
+    add_rect(&mut doc, Rect::new(400.0, 400.0, 450.0, 484.0));
+    let sel = Selection::default();
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    let cx = dims_ctx(&doc, &sel, &cache, &layout, false);
+    let mut t = create("line");
+    let a = spread_pt(&layout, 100.0, 100.0);
+    let b = spread_pt(&layout, 100.0, 180.0);
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, a.x, a.y));
+    let actions = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, b.x, b.y));
+    let params = actions
+        .iter()
+        .find_map(|act| match act {
+            Action::Preview(cmd, p) if cmd == "line.create" => Some(p),
+            _ => None,
+        })
+        .unwrap();
+    let end = params["b"].as_array().unwrap();
+    let (bx, by) = (end[0].as_f64().unwrap(), end[1].as_f64().unwrap());
+    assert!((bx - 100.0).abs() < 1e-4, "x moved to {bx}");
+    assert!((by - 184.0).abs() < 1e-4, "y {by}, want 184");
+    let xf = layout.xf(SpreadRef::Doc(0));
+    let seg = (xf * Point::new(100.0, 100.0), xf * Point::new(100.0, 184.0));
+    let overlays = t.overlays(&cx);
+    assert!(guide_matches(&overlays, seg.0, seg.1), "guide is not the segment [{}]", guide_list(&overlays));
+}
+
+#[test]
+fn shift_frame_stays_square_on_the_driving_guide() {
+    // Pointer dx is larger, so x drives. The square's right edge is 3 pt from the guide at 203.
+    // Y must follow that snapped size, not stay at the unconstrained square.
+    let mut doc = Document::new(&NewDocument::default());
+    doc.settings.baseline_grid.increment = 0.0;
+    Arc::make_mut(&mut doc.spreads[0]).pages[0].guides.push(Guide {
+        orientation: Orientation::Vertical,
+        position: 203.0,
+        spread: true,
+        locked: false,
+        layer: None,
+        liquid: false,
+    });
+    let sel = Selection::default();
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    let mut cx = ctx(&doc, &sel, &cache, &layout);
+    cx.snap = SnapView::FACTORY;
+    cx.snap.snap_to_document_grid = false;
+    cx.snap.smart_dimensions = false;
+    let mut t = create("rectangle");
+    let mods = Mods { shift: true, ..Mods::default() };
+    let a = spread_pt(&layout, 120.0, 120.0);
+    let b = spread_pt(&layout, 200.0, 150.0);
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, a.x, a.y).with_mods(mods));
+    let actions = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, b.x, b.y).with_mods(mods));
+    let rect = actions
+        .iter()
+        .find_map(|act| match act {
+            Action::Preview(cmd, p) if cmd == "frame.create" => p["rect"].as_array(),
+            _ => None,
+        })
+        .unwrap();
+    let (x0, y0, x1, y1) = (rect[0].as_f64().unwrap(), rect[1].as_f64().unwrap(), rect[2].as_f64().unwrap(), rect[3].as_f64().unwrap());
+    assert!((x1 - 203.0).abs() < 1e-4, "driving edge {x1} left the guide");
+    assert!((y1 - y0 - (x1 - x0)).abs() < 1e-4, "not square: {x0} {y0} {x1} {y1}");
+    assert!((y1 - 203.0).abs() < 1e-4, "other edge {y1} did not follow the snapped size");
+}
+
+#[test]
+fn drag_onto_the_next_spread_snaps_to_that_guide() {
+    // The origin spread has a guide 4 pt from the unsnapped top. The destination guide is 2 pt away.
+    // Snapping on the origin would move by 4. Snapping under the pointer moves by 2.
+    let mut doc = Document::new(&NewDocument { pages: 2, facing_pages: false, ..NewDocument::default() });
+    doc.settings.baseline_grid.increment = 0.0;
+    let id = add_rect(&mut doc, Rect::new(100.0, 100.0, 160.0, 140.0));
+    let guide = |position: f64| Guide { orientation: Orientation::Horizontal, position, spread: true, locked: false, layer: None, liquid: false };
+    Arc::make_mut(&mut doc.spreads[1]).pages[0].guides.push(guide(52.0));
+    let sel = Selection::items(vec![id]);
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    assert_eq!(layout.slots.len(), 2);
+    let item = Rect::new(100.0, 100.0, 160.0, 140.0);
+    let raw_top = 50.0;
+    let corner0 = layout.to_canvas(SpreadRef::Doc(0), Point::new(item.x0, item.y0));
+    let corner_raw = layout.to_canvas(SpreadRef::Doc(1), Point::new(item.x0, raw_top));
+    let travel = designcraft_geom::Vec2::new(corner_raw.x - corner0.x, corner_raw.y - corner0.y);
+    let origin_top = item.y0 + layout.delta_to_spread(SpreadRef::Doc(0), travel).y;
+    Arc::make_mut(&mut doc.spreads[0]).pages[0].guides.push(guide(origin_top - 4.0));
+    let mut cx = ctx(&doc, &sel, &cache, &layout);
+    cx.snap = SnapView::FACTORY;
+    cx.snap.snap_to_document_grid = false;
+    let down = layout.to_canvas(SpreadRef::Doc(0), item.center());
+    let drag_at = Point::new(down.x + (corner_raw.x - corner0.x), down.y + (corner_raw.y - corner0.y));
+    let mut t = create("selection");
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, down.x, down.y));
+    let actions = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, drag_at.x, drag_at.y));
+    let params = match actions.last() {
+        Some(Action::Preview(cmd, p)) => {
+            assert_eq!(cmd, "transform.move");
+            p
+        }
+        other => panic!("{other:?}"),
+    };
+    let dy = params["dy"].as_f64().unwrap();
+    assert_eq!(params["toSpread"], spread_json(SpreadRef::Doc(1)));
+    assert!((dy - (52.0 - item.y0)).abs() < 1e-3, "dy {dy}, origin snap would not land on 52");
 }
 
 #[test]
