@@ -1,6 +1,7 @@
 //! Text editing (Type tool) and character/paragraph formatting.
 
 use designcraft_compose as compose;
+use designcraft_doc::story::floor_char_boundary;
 use designcraft_doc::{CellAddr, CharAttrs, Content, ItemId, ParaAttrs, Selection, StoryId, TextSel};
 use designcraft_geom::Point;
 use serde_json::{Value, json};
@@ -33,9 +34,9 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "text.select", "Select Text", [], None, "{story, anchor, focus}", has_doc, |s, p| {
             let sid = StoryId(p.get("story").and_then(Value::as_u64).unwrap_or(0));
             let st = s.doc_mut()?;
-            let len = st.doc.story(sid).ok_or_else(|| bad("text.select", "no such story"))?.len();
-            let a = (p.get("anchor").and_then(Value::as_u64).unwrap_or(0) as usize).min(len);
-            let f = (p.get("focus").and_then(Value::as_u64).map(|v| v as usize).unwrap_or(a)).min(len);
+            let text = &st.doc.story(sid).ok_or_else(|| bad("text.select", "no such story"))?.text;
+            let a = floor_char_boundary(text, p.get("anchor").and_then(Value::as_u64).unwrap_or(0) as usize);
+            let f = floor_char_boundary(text, p.get("focus").and_then(Value::as_u64).map(|v| v as usize).unwrap_or(a));
             st.selection = Selection::text(TextSel { story: sid, anchor: a, focus: f, frame: None, cell: None });
             st.revision += 1;
             ok()
@@ -59,8 +60,8 @@ pub fn specs() -> Vec<CommandSpec> {
             s.edit(|d, sel| {
                 d.set_story_text(sid, &text)?;
                 if let Some(t) = sel.text.as_mut().filter(|t| t.story == sid) {
-                    t.anchor = t.anchor.min(text.len());
-                    t.focus = t.focus.min(text.len());
+                    t.anchor = floor_char_boundary(&text, t.anchor);
+                    t.focus = floor_char_boundary(&text, t.focus);
                 }
                 ok()
             })
@@ -951,6 +952,26 @@ mod open_type_tests {
     use serde_json::json;
 
     use crate::Session;
+
+    #[test]
+    fn text_selection_stays_on_utf8_boundaries() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [0, 0, 200, 100], "content": "text", "text": "é漢🙂x"})).unwrap();
+        let sid = r["story"].clone();
+        s.execute("text.select", &json!({"story": sid, "anchor": 1, "focus": 4})).unwrap();
+        let t = s.doc().unwrap().selection.text.unwrap();
+        assert_eq!((t.anchor, t.focus), (0, 2));
+        s.execute("text.select", &json!({"story": sid, "anchor": 4})).unwrap();
+        s.execute("text.delete", &json!({"forward": true})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.story(t.story).unwrap().text, "é🙂x");
+        s.execute("text.select", &json!({"story": sid, "anchor": 2})).unwrap();
+        s.execute("story.setText", &json!({"story": sid, "text": "漢字"})).unwrap();
+        let t = s.doc().unwrap().selection.text.unwrap();
+        assert_eq!((t.anchor, t.focus), (0, 0));
+        s.execute("text.move", &json!({"dir": "right"})).unwrap();
+        assert_eq!(s.doc().unwrap().selection.text.unwrap().focus, 3);
+    }
 
     #[test]
     fn open_type_toggles_reach_the_text() {
