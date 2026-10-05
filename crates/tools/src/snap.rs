@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use designcraft_doc::{Item, ItemId, Orientation, PageSide, Selection, SpreadId, SpreadRef, StrokeAlign};
 use designcraft_geom::snap::snap_to_grid;
-use designcraft_geom::{Point, Rect, Vec2, format_measure};
+use designcraft_geom::{Affine, Point, Rect, Vec2, format_measure};
 
 pub use crate::{Gesture, Snap, SnapRequest, SnapView};
 
@@ -384,10 +384,11 @@ fn pass_spacing(_cx: &ToolContext, _req: &SnapRequest<'_>, _axis: Axis, _tol: f6
 /// Other items' own side lengths, on resize and create.
 ///
 /// Own size is the path box in item space, inflated the way [`Item::visible_bounds`] inflates,
-/// then multiplied by the absolute scale (ancestors included, rotation dropped). Width and height
-/// are both candidates for whichever length is set. The closest length inside the zone wins.
-/// Delta is the length difference applied from the moving edge. A rotated rectangle contributes
-/// its side lengths, not the axis-aligned box.
+/// then scaled by the absolute transform. That transform is the parent chain composed with the
+/// item and decomposed once, so a rotated child inside a non-uniform group keeps the spread-space
+/// sides. Rotation is dropped. Width and height are both candidates for whichever length is set.
+/// The closest length inside the zone wins. Delta is the length difference applied from the moving
+/// edge. A rotated rectangle contributes its side lengths, not the axis-aligned box.
 fn pass_dimensions(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> Option<AxisHit> {
     if !matches!(req.gesture, Gesture::Resize | Gesture::Create) || !cx.snap.smart_guides || !cx.snap.smart_dimensions {
         return None;
@@ -441,8 +442,15 @@ fn length_edge_delta(flags: [bool; 3], diff: f64) -> f64 {
 
 /// Guide along the side whose length matched, after the edge has moved.
 fn dimension_mark(req: &SnapRequest<'_>, axis: Axis, diff: f64, text: String) -> DimMark {
-    let rect = req.rect;
-    let flags = axis_flags(req, axis);
+    let (a, b) = dimension_segment(req.rect, axis, axis_flags(req, axis), diff).unwrap_or((Point::ORIGIN, Point::ORIGIN));
+    DimMark { a, b, text }
+}
+
+/// Spread-space segment along the matched side. `diff` 0 is the side of `rect` itself.
+fn dimension_segment(rect: Rect, axis: Axis, flags: [bool; 3], diff: f64) -> Option<(Point, Point)> {
+    if !diff.is_finite() || !rect_finite(rect) {
+        return None;
+    }
     let (a, b) = match axis {
         Axis::X => {
             let (x0, x1) = grown_span(rect.x0, rect.x1, flags, diff);
@@ -455,7 +463,59 @@ fn dimension_mark(req: &SnapRequest<'_>, axis: Axis, diff: f64, text: String) ->
             (Point::new(x, y0), Point::new(x, y1))
         }
     };
-    DimMark { a, b, text }
+    (point_finite(a) && point_finite(b)).then_some((a, b))
+}
+
+fn point_finite(p: Point) -> bool {
+    p.x.is_finite() && p.y.is_finite()
+}
+
+/// Move dimension guides onto the rect the gesture commits.
+///
+/// Snap draws the guide on `pre` plus the length difference along the flagged edge. Aspect re-lock
+/// and a centered scale move that side afterwards. The guide then follows the committed side.
+pub(crate) fn lay_dimension_guides(
+    guides: &mut Vec<Overlay>,
+    xf: Affine,
+    pre: Rect,
+    committed: Rect,
+    x_edges: [bool; 3],
+    y_edges: [bool; 3],
+    length_delta: [Option<f64>; 2],
+) {
+    if !rect_finite(committed) {
+        return;
+    }
+    let axes = [(Axis::X, x_edges, length_delta[0]), (Axis::Y, y_edges, length_delta[1])];
+    for (axis, edges, diff) in axes {
+        let Some(diff) = diff else { continue };
+        let Some((old_a, old_b)) = dimension_segment(pre, axis, edges, diff) else { continue };
+        let Some((new_a, new_b)) = dimension_segment(committed, axis, edges, 0.0) else { continue };
+        let (oa, ob) = (xf * old_a, xf * old_b);
+        let (na, nb) = (xf * new_a, xf * new_b);
+        if !point_finite(na) || !point_finite(nb) {
+            continue;
+        }
+        let mut found = false;
+        for g in guides.iter_mut() {
+            if let Overlay::Guide { a, b } = g
+                && segment_same(*a, *b, oa, ob)
+            {
+                *a = na;
+                *b = nb;
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            guides.push(Overlay::Guide { a: na, b: nb });
+        }
+    }
+}
+
+fn segment_same(a0: Point, b0: Point, a1: Point, b1: Point) -> bool {
+    let close = |p: Point, q: Point| (p.x - q.x).abs() <= 1e-6 && (p.y - q.y).abs() <= 1e-6;
+    (close(a0, a1) && close(b0, b1)) || (close(a0, b1) && close(b0, a1))
 }
 
 fn grown_span(a0: f64, a1: f64, flags: [bool; 3], diff: f64) -> (f64, f64) {
@@ -477,7 +537,7 @@ fn dimension_lengths(cx: &ToolContext, req: &SnapRequest<'_>) -> Vec<f64> {
     let mut seen = HashSet::new();
     if let Some(sp) = cx.doc.spread(req.spread) {
         for item in &sp.items {
-            push_own_lengths(&mut out, cx.selection, req, item, 1.0, 1.0, false, 0, &mut seen);
+            push_own_lengths(&mut out, cx.selection, req, item, Affine::IDENTITY, false, 0, &mut seen);
         }
     }
     if !layout_edits_parents(cx) {
@@ -491,8 +551,7 @@ fn push_own_lengths(
     selection: &Selection,
     req: &SnapRequest<'_>,
     item: &Item,
-    ancestor_sx: f64,
-    ancestor_sy: f64,
+    ancestor: Affine,
     skipped: bool,
     depth: usize,
     seen: &mut HashSet<ItemId>,
@@ -500,29 +559,32 @@ fn push_own_lengths(
     if depth >= ALIGN_GROUP_DEPTH || !seen.insert(item.id) || item.hidden {
         return;
     }
+    let abs = ancestor * item.xf;
+    if !xf_finite(abs) {
+        return;
+    }
     let skip = skipped || align_skips_item(selection, req, item.id);
     if item.is_group() && !item.children().is_empty() {
-        let decomposed = designcraft_geom::decompose::decompose(item.xf);
-        let sx = ancestor_sx * decomposed.scale_x.abs();
-        let sy = ancestor_sy * decomposed.scale_y.abs();
-        if !sx.is_finite() || !sy.is_finite() {
-            return;
-        }
         for child in item.children() {
-            push_own_lengths(out, selection, req, child, sx, sy, skip, depth + 1, seen);
+            push_own_lengths(out, selection, req, child, abs, skip, depth + 1, seen);
         }
         return;
     }
     if skip {
         return;
     }
-    let Some((w, h)) = leaf_own_size(item, ancestor_sx, ancestor_sy) else { return };
+    let Some((w, h)) = leaf_own_size(item, abs) else { return };
     out.push(w);
     out.push(h);
 }
 
-/// Path bounds in item space, stroke outset, then absolute scale. Rotation is not applied.
-fn leaf_own_size(item: &Item, ancestor_sx: f64, ancestor_sy: f64) -> Option<(f64, f64)> {
+fn xf_finite(m: Affine) -> bool {
+    m.as_coeffs().iter().all(|c| c.is_finite())
+}
+
+/// Path bounds in item space, stroke outset, then one decompose of the absolute transform.
+/// Rotation is not applied to the side lengths.
+fn leaf_own_size(item: &Item, abs: Affine) -> Option<(f64, f64)> {
     let local = item.path.bounds()?;
     if !rect_finite(local) {
         return None;
@@ -535,9 +597,9 @@ fn leaf_own_size(item: &Item, ancestor_sx: f64, ancestor_sy: f64) -> Option<(f64
     if !rect_finite(local) {
         return None;
     }
-    let decomposed = designcraft_geom::decompose::decompose(item.xf);
-    let sx = ancestor_sx * decomposed.scale_x.abs();
-    let sy = ancestor_sy * decomposed.scale_y.abs();
+    let decomposed = designcraft_geom::decompose::decompose(abs);
+    let sx = decomposed.scale_x.abs();
+    let sy = decomposed.scale_y.abs();
     if !sx.is_finite() || !sy.is_finite() {
         return None;
     }
@@ -601,7 +663,7 @@ fn push_parent_length_chain(
             if parent.pages.len() > 1 && parent.page_at_x(item.bounds().center().x) != Some(page_idx) {
                 continue;
             }
-            push_own_lengths(out, cx.selection, req, item, 1.0, 1.0, false, 0, seen_items);
+            push_own_lengths(out, cx.selection, req, item, Affine::IDENTITY, false, 0, seen_items);
         }
     }
     let Some(next_id) = next else { return };
@@ -1277,5 +1339,47 @@ mod tests {
         );
         assert!((hit.delta.x - 3.0).abs() < 1e-6);
         assert!(matches!(hit.guides.last(), Some(Overlay::Measure { text, .. }) if text.contains("200")));
+    }
+
+    #[test]
+    fn grouped_child_matches_spread_side() {
+        // Group scale 2 on X and 1 on Y. Child rotated -90 degrees (decompose reports +90).
+        // Spread-space sides are local width times 1 (100) and local height times 2 (80).
+        // 82 is 2 pt from 80 and far from 200, which is what per-node scales would offer.
+        let mut doc = Document::new(&NewDocument::default());
+        let layer = doc.default_layer();
+        let child_id = ItemId(doc.alloc());
+        let mut child = Item::new(child_id, layer, Shape::Rectangle, shapes::rectangle(Rect::new(0.0, 0.0, 100.0, 40.0)));
+        child.xf = Affine::rotate((-90.0_f64).to_radians());
+        let group_id = ItemId(doc.alloc());
+        let mut group = Item::new(group_id, layer, Shape::Group, designcraft_geom::PathData::default());
+        group.xf = Affine::scale_non_uniform(2.0, 1.0);
+        group.content = designcraft_doc::Content::Group { items: vec![std::sync::Arc::new(child)] };
+        doc.insert_item(SpreadRef::Doc(0), group, None).unwrap();
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_guides = false;
+        cx.snap.snap_to_document_grid = false;
+        cx.snap.align_edges = false;
+        cx.snap.align_centers = false;
+        let hit = snap(
+            &cx,
+            SnapRequest {
+                spread: SpreadRef::Doc(0),
+                gesture: Gesture::Resize,
+                rect: Rect::new(200.0, 200.0, 282.0, 240.0),
+                x_edges: [false, false, true],
+                y_edges: [false, false, false],
+                exclude: &[],
+                copying: false,
+                lengths: [Some(82.0), None],
+                angle: None,
+                radius: 0.0,
+                pointer: Point::new(282.0, 220.0),
+            },
+        );
+        assert!((hit.delta.x - -2.0).abs() < 1e-6, "delta.x = {}, want -2 toward local height times 2", hit.delta.x);
     }
 }

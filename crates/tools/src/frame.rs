@@ -170,23 +170,12 @@ impl Tool for FrameTool {
                                 pointer: b,
                             },
                         );
-                        if hit.length_delta[1].is_none() {
-                            b.y += hit.delta.y;
-                        }
-                        if hit.length_delta[0].is_none() {
+                        // Position and length both land on the endpoint. Rescaling the segment would leave the other axis.
+                        if hit.delta.x.is_finite() {
                             b.x += hit.delta.x;
                         }
-                        if let Some(diff) = hit.length_delta[0]
-                            && diff.is_finite()
-                        {
-                            let v = b - sa;
-                            let cur = v.hypot();
-                            if cur > 1e-9 {
-                                let next = cur + diff;
-                                if next.is_finite() {
-                                    b = sa + v * (next / cur);
-                                }
-                            }
+                        if hit.delta.y.is_finite() {
+                            b.y += hit.delta.y;
                         }
                         self.guides = hit.guides;
                     }
