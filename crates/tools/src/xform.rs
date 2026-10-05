@@ -75,7 +75,33 @@ impl Tool for XformTool {
                     "rotate" => {
                         let mut a = (v1.atan2() - v0.atan2()).to_degrees();
                         if ev.mods.shift {
+                            // 45 degree steps. The rotation pass does not run while Shift is held.
                             a = (a / 45.0).round() * 45.0;
+                        } else {
+                            let spread =
+                                cx.selection.items.first().and_then(|id| cx.doc.find(*id)).map(|loc| loc.spread).unwrap_or(SpreadRef::Doc(0));
+                            let exclude = cx.selection.items.clone();
+                            // The rect is unused by the angle pass. It only has to be finite.
+                            let hit = crate::snap::snap(
+                                cx,
+                                SnapRequest {
+                                    spread,
+                                    gesture: Gesture::Rotate,
+                                    rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+                                    x_edges: [false, false, false],
+                                    y_edges: [false, false, false],
+                                    exclude: &exclude,
+                                    copying: false,
+                                    lengths: [None, None],
+                                    angle: Some(-a),
+                                    radius: (ev.pos - c).hypot(),
+                                    pointer: cx.layout.to_spread(spread, ev.pos),
+                                },
+                            );
+                            if let Some(snapped) = hit.angle {
+                                a = -snapped;
+                            }
+                            self.guides = hit.guides;
                         }
                         vec![Action::Preview("transform.rotate".into(), json!({"angle": -a}))]
                     }

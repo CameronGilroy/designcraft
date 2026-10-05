@@ -527,8 +527,34 @@ impl Tool for SelectionTool {
                 }
                 Drag::Rotate { center, start_angle } => {
                     let mut a = ((p - center).atan2() - start_angle).to_degrees();
+                    self.guides.clear();
                     if ev.mods.shift {
+                        // 45 degree steps. The rotation pass does not run while Shift is held.
                         a = (a / 45.0).round() * 45.0;
+                    } else {
+                        let spread = cx.selection.items.first().and_then(|id| cx.doc.find(*id)).map(|loc| loc.spread).unwrap_or(SpreadRef::Doc(0));
+                        let exclude = cx.selection.items.clone();
+                        // The rect is unused by the angle pass. It only has to be finite.
+                        let hit = crate::snap::snap(
+                            cx,
+                            SnapRequest {
+                                spread,
+                                gesture: Gesture::Rotate,
+                                rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+                                x_edges: [false, false, false],
+                                y_edges: [false, false, false],
+                                exclude: &exclude,
+                                copying: false,
+                                lengths: [None, None],
+                                angle: Some(-a),
+                                radius: (p - center).hypot(),
+                                pointer: cx.layout.to_spread(spread, p),
+                            },
+                        );
+                        if let Some(snapped) = hit.angle {
+                            a = -snapped;
+                        }
+                        self.guides = hit.guides;
                     }
                     // Screen y points down: a positive screen angle is clockwise.
                     vec![Action::Preview("transform.rotate".into(), json!({"angle": -a}))]
@@ -608,7 +634,7 @@ impl Tool for SelectionTool {
     fn overlays(&self, _cx: &ToolContext) -> Vec<Overlay> {
         match &self.drag {
             Drag::Marquee { start, cur } => vec![Overlay::Marquee(Rect::from_points(*start, *cur))],
-            Drag::Move { .. } | Drag::Resize { .. } => self.guides.clone(),
+            Drag::Move { .. } | Drag::Resize { .. } | Drag::Rotate { .. } => self.guides.clone(),
             _ => vec![],
         }
     }

@@ -3,7 +3,8 @@
 //! [`snap`] tries each pass on a free axis and keeps the first hit inside the snap zone.
 //! Ruler guides, margins, and columns draw nothing. Alignment draws [`Overlay::Guide`] in
 //! canvas coordinates. Equal spacing draws [`Overlay::Gap`] the same way, through one
-//! spread-to-canvas transform. [`snap_rect`] is the older closest-target helper.
+//! spread-to-canvas transform. A rotation match draws [`Overlay::Measure`] at the pointer
+//! the same way. [`snap_rect`] is the older closest-target helper.
 
 use std::collections::HashSet;
 
@@ -135,6 +136,7 @@ fn rect_finite(r: Rect) -> bool {
 /// A non-finite rect, or no snap category, returns no correction. An axis whose three edge
 /// flags are all false stays at 0 and draws nothing. The zone is [`SnapView::zone_px`] screen
 /// pixels, converted with [`ToolContext::tol`]. A zone of 0 or less is no hit.
+/// Rotate does not run the position passes, so a locked axis still leaves room for [`Snap::angle`].
 pub fn snap(cx: &ToolContext, req: SnapRequest<'_>) -> Snap {
     if !rect_finite(req.rect) || !cx.snap.any() {
         return Snap::default();
@@ -142,6 +144,11 @@ pub fn snap(cx: &ToolContext, req: SnapRequest<'_>) -> Snap {
     let Some(tol) = zone_tol(cx) else {
         return Snap::default();
     };
+    // Position passes would ignore a rotate whose edge flags are all false, and a stray
+    // edge flag must not move the object. Only the angle match runs.
+    if matches!(req.gesture, Gesture::Rotate) {
+        return rotation_snap(cx, &req, tol);
+    }
     // Three false flags lock the axis: do not move it and do not draw a guide for it.
     let x_free = req.x_edges != [false; 3];
     let y_free = req.y_edges != [false; 3];
@@ -240,6 +247,101 @@ fn zone_tol(cx: &ToolContext) -> Option<f64> {
     }
     let tol = cx.tol(zone);
     if tol.is_finite() && tol > 0.0 { Some(tol) } else { None }
+}
+
+/// Matched rotation, in the same degrees `transform.rotate` receives.
+///
+/// Runs only for [`Gesture::Rotate`], and only when Smart Guides and Smart Dimensions are on.
+/// `angle` is compared with `decompose(item.xf).rotation` in the same sign. The tolerance is
+/// the zone length subtended at `radius` (`atan(zone / radius)` in degrees). A radius below
+/// 1 pt, or a non-finite angle, radius, or zone, does not hit. Candidates are visible items
+/// on the requested spread, including children of a group. Each candidate is that item's own
+/// transform, not an ancestor composed in. Hidden items and the shared exclude list are
+/// skipped. An unrotated item contributes 0. Parent pages are not walked. The closest angle
+/// wins, folding whole turns so a few degrees across 0 still match. The measure is the angle
+/// in degrees and there is no guide line.
+fn rotation_snap(cx: &ToolContext, req: &SnapRequest<'_>, zone_length: f64) -> Snap {
+    let Some(angle) = match_rotation(cx, req, zone_length) else {
+        return Snap::default();
+    };
+    let mut guides = Vec::new();
+    let p = cx.layout.xf(req.spread) * req.pointer;
+    if point_finite(p) {
+        guides.push(Overlay::Measure { p, text: format_angle(angle) });
+    }
+    Snap { angle: Some(angle), guides, ..Snap::default() }
+}
+
+fn match_rotation(cx: &ToolContext, req: &SnapRequest<'_>, zone_length: f64) -> Option<f64> {
+    if !matches!(req.gesture, Gesture::Rotate) || !cx.snap.smart_guides || !cx.snap.smart_dimensions {
+        return None;
+    }
+    let proposed = req.angle?;
+    if !proposed.is_finite() || !req.radius.is_finite() || req.radius < 1.0 || !zone_length.is_finite() || zone_length <= 0.0 {
+        return None;
+    }
+    let tol = (zone_length / req.radius).atan().to_degrees();
+    if !tol.is_finite() {
+        return None;
+    }
+    let mut best: Option<(f64, f64)> = None;
+    let mut seen = HashSet::new();
+    if let Some(spread) = cx.doc.spread(req.spread) {
+        for item in &spread.items {
+            push_rotation(&mut best, cx.selection, req, item, false, 0, &mut seen, proposed, tol);
+        }
+    }
+    best.map(|(_, angle)| angle)
+}
+
+fn push_rotation(
+    best: &mut Option<(f64, f64)>,
+    selection: &Selection,
+    req: &SnapRequest<'_>,
+    item: &Item,
+    skipped: bool,
+    depth: usize,
+    seen: &mut HashSet<ItemId>,
+    proposed: f64,
+    tol: f64,
+) {
+    if depth >= ALIGN_GROUP_DEPTH || !seen.insert(item.id) || item.hidden {
+        return;
+    }
+    let skip = skipped || align_skips_item(selection, req, item.id);
+    if !skip && let Some(angle) = own_rotation(item) {
+        let dist = angular_distance(proposed, angle);
+        if dist.is_finite() && dist <= tol && best.is_none_or(|(have, _)| dist < have) {
+            *best = Some((dist, angle));
+        }
+    }
+    for child in item.children() {
+        push_rotation(best, selection, req, child, skip, depth + 1, seen, proposed, tol);
+    }
+}
+
+/// `item.xf` alone. A non-finite transform contributes nothing, and identity contributes 0.
+fn own_rotation(item: &Item) -> Option<f64> {
+    if !xf_finite(item.xf) {
+        return None;
+    }
+    let rotation = designcraft_geom::decompose::decompose(item.xf).rotation;
+    rotation.is_finite().then_some(rotation)
+}
+
+/// Smallest absolute difference in degrees, folded into `0..=180`.
+fn angular_distance(a: f64, b: f64) -> f64 {
+    let d = (a - b).rem_euclid(360.0);
+    if !d.is_finite() {
+        return f64::NAN;
+    }
+    d.min(360.0 - d)
+}
+
+/// Whole degrees have no decimal. Anything else prints one decimal place.
+fn format_angle(deg: f64) -> String {
+    let nearest = deg.round();
+    if nearest.is_finite() && (deg - nearest).abs() < 1e-6 { format!("{nearest:.0}") } else { format!("{deg:.1}") }
 }
 
 fn first_on_axis(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> Option<AxisHit> {
@@ -1702,5 +1804,39 @@ mod tests {
             },
         );
         assert!((hit.delta.x).abs() < 1e-6);
+    }
+
+    #[test]
+    fn rotation_matches_another_items_angle() {
+        let mut doc = Document::new(&NewDocument::default());
+        let layer = doc.default_layer();
+        let id = ItemId(doc.alloc());
+        let mut item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(Rect::new(0.0, 0.0, 80.0, 40.0)));
+        item.xf = Affine::rotate((-30.0_f64).to_radians());
+        doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_guides = false;
+        let hit = snap(
+            &cx,
+            SnapRequest {
+                spread: SpreadRef::Doc(0),
+                gesture: Gesture::Rotate,
+                rect: Rect::new(100.0, 100.0, 160.0, 140.0),
+                x_edges: [false, false, false],
+                y_edges: [false, false, false],
+                exclude: &[],
+                copying: false,
+                lengths: [None, None],
+                angle: Some(28.0),
+                radius: 80.0,
+                pointer: Point::new(180.0, 120.0),
+            },
+        );
+        let angle = hit.angle.expect("rotation hit");
+        assert!((angle - 30.0).abs() < 1e-6);
+        assert!(matches!(hit.guides.first(), Some(Overlay::Measure { .. })));
     }
 }
