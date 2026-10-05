@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use designcraft_compose::Cache;
 use designcraft_doc::build::NewDocument;
-use designcraft_doc::{Document, Item, ItemId, ParaFormat, Selection, Shape, SpreadRef};
+use designcraft_doc::{Document, Guide, Item, ItemId, Orientation, ParaFormat, Selection, Shape, SpreadRef};
 use designcraft_geom::shapes;
 use designcraft_geom::{Point, Rect, Unit};
 
@@ -520,4 +522,33 @@ fn add_rotated(doc: &mut Document, rect: Rect, degrees: f64) -> ItemId {
     item.xf = designcraft_geom::Affine::rotate((-degrees).to_radians());
     doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
     id
+}
+
+#[test]
+fn pen_click_snaps_to_a_guide() {
+    let mut d = Document::new(&NewDocument::default());
+    Arc::make_mut(&mut d.spreads[0]).pages[0].guides.push(Guide {
+        orientation: Orientation::Vertical,
+        position: 100.0,
+        spread: true,
+        locked: false,
+        layer: None,
+        liquid: false,
+    });
+    let (s, c, l) = (Selection::default(), Cache::new(), CanvasLayout::new(&d, false));
+    let mut cx = ctx(&d, &s, &c, &l);
+    cx.snap = SnapView::FACTORY;
+    let mut t = create("pen");
+    let click = |t: &mut Box<dyn Tool>, cx: &ToolContext, x: f64, y: f64| {
+        t.pointer(cx, &PointerEvent::new(PointerKind::Down, x, y));
+        t.pointer(cx, &PointerEvent::new(PointerKind::Up, x, y))
+    };
+    assert!(click(&mut t, &cx, 102.0, 80.0).is_empty());
+    let up = click(&mut t, &cx, 180.0, 80.0);
+    let Action::Exec(cmd, p) = &up[0] else {
+        panic!("expected path.create, got {up:?}");
+    };
+    assert_eq!(cmd, "path.create");
+    let x = p["anchors"][0]["p"][0].as_f64().unwrap();
+    assert!((x - 100.0).abs() < 1e-6, "anchor x {x}");
 }

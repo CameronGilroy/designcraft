@@ -5,7 +5,7 @@
 //! empty-canvas drags make a marquee, double-clicking a text frame switches to the Type tool.
 
 use designcraft_doc::{ItemId, SpreadRef};
-use designcraft_geom::{Point, Rect, Vec2};
+use designcraft_geom::{Affine, Point, Rect, Vec2};
 use serde_json::{Value, json};
 
 use crate::{Action, Cursor, Gesture, Mods, Overlay, PointerEvent, PointerKind, SnapRequest, Tool, ToolContext, ToolKey, rect_json, spread_json};
@@ -13,12 +13,42 @@ use crate::{Action, Cursor, Gesture, Mods, Overlay, PointerEvent, PointerKind, S
 #[derive(Clone, Debug)]
 enum Drag {
     None,
-    Pending { start: Point, hit: bool },
-    Move { start: Point, origin_spread: SpreadRef, bounds0: Option<Rect>, exclude: Vec<ItemId> },
-    Resize { handle: usize, start: Point, from: Rect, spread: SpreadRef },
-    Rotate { center: Point, start_angle: f64, start_rotation: Option<f64> },
-    Marquee { start: Point, cur: Point },
-    Anchor { id: u64, si: usize, ai: usize, handle: Option<&'static str>, start: Point },
+    Pending {
+        start: Point,
+        hit: bool,
+    },
+    Move {
+        start: Point,
+        origin_spread: SpreadRef,
+        bounds0: Option<Rect>,
+        exclude: Vec<ItemId>,
+    },
+    Resize {
+        handle: usize,
+        start: Point,
+        from: Rect,
+        spread: SpreadRef,
+    },
+    Rotate {
+        center: Point,
+        start_angle: f64,
+        start_rotation: Option<f64>,
+    },
+    Marquee {
+        start: Point,
+        cur: Point,
+    },
+    Anchor {
+        id: u64,
+        si: usize,
+        ai: usize,
+        handle: Option<&'static str>,
+        start: Point,
+        /// Spread and the anchor's spread position at pointer down.
+        /// None when that point could not be read. The live document during a drag is the
+        /// previous preview, so the snap must not read the anchor from it again.
+        at: Option<(SpreadRef, Point)>,
+    },
 }
 
 /// Anchor or handle of a selected item under `p` (canvas): (item, subpath, anchor, handle).
@@ -47,6 +77,20 @@ pub fn anchor_at_in(cx: &ToolContext, ids: &[designcraft_doc::ItemId], p: Point)
         }
     }
     None
+}
+
+/// Spread holding the anchor, and the anchor in that spread's coordinates.
+fn anchor_spread_point(cx: &ToolContext, id: u64, si: usize, ai: usize) -> Option<(SpreadRef, Point)> {
+    let item_id = ItemId(id);
+    let loc = cx.doc.find(item_id)?;
+    let it = cx.doc.item(item_id)?;
+    let local = it.path.subpaths.get(si)?.anchors.get(ai)?.p;
+    Some((loc.spread, (cx.doc.parent_xf(&loc) * it.xf) * local))
+}
+
+/// Spread-space correction as a canvas delta. Translation cancels, leaving the linear part of `xf`.
+fn spread_delta_to_canvas(xf: Affine, d: Vec2) -> Vec2 {
+    (xf * Point::new(d.x, d.y)) - (xf * Point::ORIGIN)
 }
 
 pub struct SelectionTool {
@@ -337,7 +381,8 @@ impl Tool for SelectionTool {
                 if self.direct
                     && let Some((id, si, ai, handle)) = anchor_at(cx, p)
                 {
-                    self.drag = Drag::Anchor { id, si, ai, handle, start: p };
+                    let at = anchor_spread_point(cx, id, si, ai);
+                    self.drag = Drag::Anchor { id, si, ai, handle, start: p, at };
                     return vec![Action::Begin(if handle.is_some() { "Move Direction Handle".into() } else { "Move Anchor".into() })];
                 }
                 if !self.direct
@@ -565,9 +610,44 @@ impl Tool for SelectionTool {
                     // Screen y points down: a positive screen angle is clockwise.
                     vec![Action::Preview("transform.rotate".into(), json!({"angle": -a}))]
                 }
-                Drag::Anchor { id, si, ai, handle, start } => {
+                Drag::Anchor { id, si, ai, handle, start, at } => {
                     let d = p - start;
-                    let mut params = json!({"id": id, "anchors": [[si, ai]], "dx": d.x, "dy": d.y});
+                    let mut dx = d.x;
+                    let mut dy = d.y;
+                    self.guides.clear();
+                    // Direction handles do not snap. An anchor excludes the path it is on.
+                    if handle.is_none()
+                        && let Some((spread, origin)) = at
+                    {
+                        let proposed = origin + cx.layout.delta_to_spread(spread, d);
+                        let exclude = [ItemId(id)];
+                        let hit = crate::snap::snap(
+                            cx,
+                            SnapRequest {
+                                spread,
+                                gesture: Gesture::Point,
+                                rect: Rect::from_points(proposed, proposed),
+                                x_edges: [true, true, true],
+                                y_edges: [true, true, true],
+                                exclude: &exclude,
+                                copying: false,
+                                lengths: [None, None],
+                                angle: None,
+                                radius: 0.0,
+                                pointer: proposed,
+                            },
+                        );
+                        // dx and dy stay in canvas space. Snap.delta is spread space.
+                        let corr = spread_delta_to_canvas(cx.layout.xf(spread), hit.delta);
+                        if corr.x.is_finite() {
+                            dx += corr.x;
+                        }
+                        if corr.y.is_finite() {
+                            dy += corr.y;
+                        }
+                        self.guides = hit.guides;
+                    }
+                    let mut params = json!({"id": id, "anchors": [[si, ai]], "dx": dx, "dy": dy});
                     if let Some(h) = handle {
                         params["handle"] = json!(h);
                     }
@@ -640,7 +720,7 @@ impl Tool for SelectionTool {
     fn overlays(&self, _cx: &ToolContext) -> Vec<Overlay> {
         match &self.drag {
             Drag::Marquee { start, cur } => vec![Overlay::Marquee(Rect::from_points(*start, *cur))],
-            Drag::Move { .. } | Drag::Resize { .. } | Drag::Rotate { .. } => self.guides.clone(),
+            Drag::Move { .. } | Drag::Resize { .. } | Drag::Rotate { .. } | Drag::Anchor { .. } => self.guides.clone(),
             _ => vec![],
         }
     }

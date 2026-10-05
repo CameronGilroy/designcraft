@@ -237,7 +237,9 @@ fn pen_draws_and_direct_selection_edits() {
     s.pointer(&PointerEvent::new(PointerKind::Drag, 90.0, 80.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Up, 90.0, 80.0), v).unwrap();
     let a = s.doc().unwrap().doc.item(id).unwrap().path.subpaths[0].anchors[0].p;
-    assert_eq!(a, designcraft_geom::Point::new(90.0, 80.0));
+    // The pen placed this anchor on the baseline at y 96. Dragging toward (90, 80)
+    // proposes y 76, and the baseline at 72 is inside the zone, so the anchor lands at (90, 72).
+    assert_eq!(a, designcraft_geom::Point::new(90.0, 72.0));
 }
 
 #[test]
