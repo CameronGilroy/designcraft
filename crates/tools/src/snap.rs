@@ -5,6 +5,7 @@
 //! canvas coordinates. [`snap_rect`] is the older closest-target helper.
 
 use designcraft_doc::{ItemId, Orientation, SpreadRef};
+use designcraft_geom::snap::snap_to_grid;
 use designcraft_geom::{Point, Rect};
 
 pub use crate::{Gesture, Snap, SnapRequest, SnapView};
@@ -199,12 +200,141 @@ fn first_on_axis(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) 
         .or_else(|| pass_dimensions(cx, req, axis, tol))
 }
 
-fn pass_grid(_cx: &ToolContext, _req: &SnapRequest<'_>, _axis: Axis, _tol: f64) -> Option<AxisHit> {
-    None
+/// Document grid. No overlay.
+///
+/// The interval is the major spacing divided by the subdivision count. A count below 1 counts
+/// as 1. `grid.vertical` spaces the vertical lines (x). `grid.horizontal` spaces the horizontal
+/// lines (y). A spacing of 0 or less skips that axis. The origin is the page-bounds origin of
+/// the page under the rect center. Whether the grid is shown is not read.
+fn pass_grid(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> Option<AxisHit> {
+    if !cx.snap.snap_to_document_grid {
+        return None;
+    }
+    let spacing = grid_interval(cx, axis)?;
+    let origin = grid_origin(cx, req, axis)?;
+    let mut best: Option<Best> = None;
+    offer_enabled(&mut best, req.rect, axis_flags(req, axis), axis, tol, |v| Some(snap_to_grid(v, spacing, origin)));
+    best.map(|b| b.hit)
 }
 
-fn pass_baseline(_cx: &ToolContext, _req: &SnapRequest<'_>, _axis: Axis, _tol: f64) -> Option<AxisHit> {
-    None
+/// Major spacing divided by the subdivision count. Non-finite or non-positive spacing is no hit.
+fn grid_interval(cx: &ToolContext, axis: Axis) -> Option<f64> {
+    let grid = &cx.doc.settings.grid;
+    let major = match axis {
+        Axis::X => grid.vertical,
+        Axis::Y => grid.horizontal,
+    };
+    if !major.is_finite() || major <= 0.0 {
+        return None;
+    }
+    let interval = major / f64::from(grid.subdivisions.max(1));
+    (interval.is_finite() && interval > 0.0).then_some(interval)
+}
+
+/// Page-bounds origin on `axis` for the page under the rect center.
+fn grid_origin(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis) -> Option<f64> {
+    let spread = cx.doc.spread(req.spread)?;
+    let bounds = spread.pages.get(spread.page_at_x(req.rect.center().x)?)?.bounds();
+    let origin = match axis {
+        Axis::X => bounds.x0,
+        Axis::Y => bounds.y0,
+    };
+    origin.is_finite().then_some(origin)
+}
+
+/// Baseline grid. No overlay.
+///
+/// Lines are `page.y0 + start + n * increment` for n >= 0 while the line is inside the page
+/// (the bottom edge is not a line, matching the canvas). An increment of 0 or less skips the
+/// pass. `relative_to` and `view_threshold` are not read, and hiding the baseline grid does not
+/// turn this off. Only a page the rect crosses on x contributes.
+fn pass_baseline(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> Option<AxisHit> {
+    if !matches!(axis, Axis::Y) || !cx.snap.snap_to_guides {
+        return None;
+    }
+    let baseline = &cx.doc.settings.baseline_grid;
+    let increment = baseline.increment;
+    if !increment.is_finite() || increment <= 0.0 || !baseline.start.is_finite() {
+        return None;
+    }
+    let spread = cx.doc.spread(req.spread)?;
+    let flags = axis_flags(req, axis);
+    let (moving_lo, moving_hi) = perp_ends(req.rect, axis);
+    let mut best: Option<Best> = None;
+    for page in &spread.pages {
+        let bounds = page.bounds();
+        let (lo, hi) = perp_ends(bounds, axis);
+        if !ranges_overlap(moving_lo, moving_hi, lo, hi) {
+            continue;
+        }
+        let origin = bounds.y0 + baseline.start;
+        offer_enabled(&mut best, req.rect, flags, axis, tol, |v| nearest_baseline(v, origin, increment, bounds.y0, bounds.y1));
+    }
+    best.map(|b| b.hit)
+}
+
+/// Nearest baseline at or after `origin`, strictly inside `[y0, y1)`.
+fn nearest_baseline(v: f64, origin: f64, increment: f64, y0: f64, y1: f64) -> Option<f64> {
+    let (n_min, n_max) = baseline_n_range(origin, increment, y0, y1)?;
+    let snapped = snap_to_grid(v, increment, origin);
+    if baseline_line_ok(snapped, origin, increment, y0, y1) {
+        return Some(snapped);
+    }
+    let n = ((snapped - origin) / increment).round();
+    if !n.is_finite() {
+        return None;
+    }
+    let n = if n < n_min {
+        n_min
+    } else if n > n_max {
+        n_max
+    } else {
+        n
+    };
+    let line = origin + n * increment;
+    baseline_line_ok(line, origin, increment, y0, y1).then_some(line)
+}
+
+fn baseline_n_range(origin: f64, increment: f64, y0: f64, y1: f64) -> Option<(f64, f64)> {
+    if !origin.is_finite() || !increment.is_finite() || increment <= 0.0 || !y0.is_finite() || !y1.is_finite() || y0 >= y1 {
+        return None;
+    }
+    let mut n_min = if origin < y0 { ((y0 - origin) / increment).ceil() } else { 0.0 };
+    if !n_min.is_finite() || n_min < 0.0 {
+        return None;
+    }
+    if origin + n_min * increment < y0 {
+        n_min += 1.0;
+    }
+    let mut n_max = ((y1 - origin) / increment).floor();
+    if !n_max.is_finite() {
+        return None;
+    }
+    if origin + n_max * increment >= y1 {
+        n_max -= 1.0;
+    }
+    (n_max >= n_min).then_some((n_min, n_max))
+}
+
+fn baseline_line_ok(line: f64, origin: f64, increment: f64, y0: f64, y1: f64) -> bool {
+    if !line.is_finite() || !increment.is_finite() || increment <= 0.0 || line < y0 || line >= y1 {
+        return false;
+    }
+    let n = ((line - origin) / increment).round();
+    n.is_finite() && n >= 0.0
+}
+
+/// Each edge whose flag is set, against its own target. Nothing is drawn.
+fn offer_enabled(best: &mut Option<Best>, moving: Rect, flags: [bool; 3], axis: Axis, tol: f64, mut target_at: impl FnMut(f64) -> Option<f64>) {
+    let (left, mid, right) = axis_triple(moving, axis);
+    let [use_left, use_mid, use_right] = flags;
+    for (on, v) in [(use_left, left), (use_mid, mid), (use_right, right)] {
+        if !on {
+            continue;
+        }
+        let Some(target) = target_at(v) else { continue };
+        offer(best, v, target, tol, None);
+    }
 }
 
 fn pass_spacing(_cx: &ToolContext, _req: &SnapRequest<'_>, _axis: Axis, _tol: f64) -> Option<AxisHit> {
@@ -442,6 +572,38 @@ mod tests {
         ToolContext { doc, selection: sel, cache, layout, zoom: 1.0, layer: doc.default_layer(), snap: SnapView::FACTORY, unit: Unit::Points }
     }
 
+    fn y_req(rect: Rect) -> SnapRequest<'static> {
+        SnapRequest {
+            spread: SpreadRef::Doc(0),
+            gesture: Gesture::Move,
+            rect,
+            x_edges: [false, false, false],
+            y_edges: [true, true, true],
+            exclude: &[],
+            copying: false,
+            lengths: [None, None],
+            angle: None,
+            radius: 0.0,
+            pointer: Point::new(0.0, 0.0),
+        }
+    }
+
+    fn move_req<'a>(rect: Rect, exclude: &'a [ItemId]) -> SnapRequest<'a> {
+        SnapRequest {
+            spread: SpreadRef::Doc(0),
+            gesture: Gesture::Move,
+            rect,
+            x_edges: [true, true, true],
+            y_edges: [false, false, false],
+            exclude,
+            copying: false,
+            lengths: [None, None],
+            angle: None,
+            radius: 0.0,
+            pointer: Point::new(0.0, 0.0),
+        }
+    }
+
     #[test]
     fn guide_beats_a_closer_object_edge() {
         // Right edge at 100.5. Object edge at 100 (0.5 away). Guide at 104 (3.5 away). Zone is 4.
@@ -593,5 +755,54 @@ mod tests {
             },
         );
         assert!((hit.delta.x - -1.0).abs() < 1e-6, "delta.x = {}", hit.delta.x);
+    }
+
+    #[test]
+    fn grid_beats_a_closer_guide() {
+        let mut doc = Document::new(&NewDocument::default());
+        doc.settings.grid.horizontal = 72.0;
+        doc.settings.grid.vertical = 72.0;
+        doc.settings.grid.subdivisions = 8; // 9 pt
+        let layer = doc.default_layer();
+        let id = ItemId(doc.alloc());
+        let item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(Rect::new(10.0, 10.0, 40.0, 40.0)));
+        doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
+        // Guide 1 pt away at x = 11. Subdivision line at 9 is 1 pt the other way. Grid must win.
+        Arc::make_mut(&mut doc.spreads[0]).pages[0].guides.push(Guide {
+            orientation: Orientation::Vertical,
+            position: 11.0,
+            spread: true,
+            locked: false,
+            layer: None,
+            liquid: false,
+        });
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_document_grid = true;
+        let hit = snap(&cx, move_req(Rect::new(10.0, 10.0, 40.0, 40.0), &[id]));
+        assert!((hit.delta.x - -1.0).abs() < 1e-6);
+        assert!(hit.guides.is_empty());
+    }
+
+    #[test]
+    fn hidden_baseline_still_snaps_and_zero_increment_does_not() {
+        let mut doc = Document::new(&NewDocument::default());
+        doc.settings.baseline_grid.start = 36.0;
+        doc.settings.baseline_grid.increment = 12.0;
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let cx = ctx_on(&doc, &sel, &cache, &layout);
+        // Top at 49 wants the line at 48 (start 36, increment 12). The margin at 36 is 13 pt away.
+        let hit = snap(&cx, y_req(Rect::new(100.0, 49.0, 140.0, 80.0)));
+        assert!((hit.delta.y - -1.0).abs() < 1e-6);
+        let mut dead = doc.clone();
+        dead.settings.baseline_grid.increment = 0.0;
+        let layout = CanvasLayout::new(&dead, false);
+        let cx = ctx_on(&dead, &sel, &cache, &layout);
+        let hit = snap(&cx, y_req(Rect::new(100.0, 49.0, 140.0, 80.0)));
+        assert_eq!(hit.delta.y, 0.0);
     }
 }
