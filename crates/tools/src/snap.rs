@@ -255,11 +255,11 @@ fn zone_tol(cx: &ToolContext) -> Option<f64> {
 /// `angle` is compared with `decompose(item.xf).rotation` in the same sign. The tolerance is
 /// the zone length subtended at `radius` (`atan(zone / radius)` in degrees). A radius below
 /// 1 pt, or a non-finite angle, radius, or zone, does not hit. Candidates are visible items
-/// on the requested spread, including children of a group. Each candidate is that item's own
-/// transform, not an ancestor composed in. Hidden items and the shared exclude list are
-/// skipped. An unrotated item contributes 0. Parent pages are not walked. The closest angle
-/// wins, folding whole turns so a few degrees across 0 still match. The measure is the angle
-/// in degrees and there is no guide line.
+/// on the requested spread, including children of a group, plus shown parent items. Each
+/// candidate is that item's own transform, not an ancestor composed in. Hidden items and the
+/// shared exclude list are skipped. An unrotated item contributes 0. The closest angle wins,
+/// folding whole turns so a few degrees across 0 still match. The measure is the angle in
+/// degrees and there is no guide line.
 fn rotation_snap(cx: &ToolContext, req: &SnapRequest<'_>, zone_length: f64) -> Snap {
     let Some(angle) = match_rotation(cx, req, zone_length) else {
         return Snap::default();
@@ -291,7 +291,72 @@ fn match_rotation(cx: &ToolContext, req: &SnapRequest<'_>, zone_length: f64) -> 
             push_rotation(&mut best, cx.selection, req, item, false, 0, &mut seen, proposed, tol);
         }
     }
+    // Parent editing already lists those items on the spread. Do not add them again.
+    if !layout_edits_parents(cx) {
+        push_parent_rotations(&mut best, cx, req, &mut seen, proposed, tol);
+    }
     best.map(|(_, angle)| angle)
+}
+
+/// Shown parent items, same page and `based_on` walk as parent lengths.
+/// Each item is passed through [`push_rotation`], so the angle is still its own `xf`.
+fn push_parent_rotations(
+    best: &mut Option<(f64, f64)>,
+    cx: &ToolContext,
+    req: &SnapRequest<'_>,
+    seen_items: &mut HashSet<ItemId>,
+    proposed: f64,
+    tol: f64,
+) {
+    let SpreadRef::Doc(si) = req.spread else { return };
+    let page_count = cx.doc.spreads.get(si).map(|sp| sp.pages.len()).unwrap_or(0);
+    let first = cx.doc.first_page_of_spread(si);
+    for pi in 0..page_count {
+        let Some(abs) = first.checked_add(pi) else { continue };
+        let Some(page) = cx.doc.page(abs) else { continue };
+        if !page.show_parent_items {
+            continue;
+        }
+        let doc_side = page.side;
+        let overridden = page.overridden.clone();
+        let Some((ppi, _)) = cx.doc.parent_page_for(abs) else { continue };
+        let mut seen_spreads = HashSet::new();
+        push_parent_rotation_chain(best, cx, req, doc_side, &overridden, ppi, seen_items, &mut seen_spreads, proposed, tol);
+    }
+}
+
+fn push_parent_rotation_chain(
+    best: &mut Option<(f64, f64)>,
+    cx: &ToolContext,
+    req: &SnapRequest<'_>,
+    doc_side: PageSide,
+    overridden: &[ItemId],
+    index: usize,
+    seen_items: &mut HashSet<ItemId>,
+    seen_spreads: &mut HashSet<SpreadId>,
+    proposed: f64,
+    tol: f64,
+) {
+    let Some(parent) = cx.doc.parents.get(index) else { return };
+    if !seen_spreads.insert(parent.id) {
+        return;
+    }
+    let next = parent.parent.as_ref().and_then(|info| info.based_on);
+    if let Some(page_idx) = shown_parent_page_index(parent.pages.len(), doc_side) {
+        for item in &parent.items {
+            if overridden.contains(&item.id) {
+                continue;
+            }
+            // A facing parent only shows items whose center sits on this document page's parent page.
+            if parent.pages.len() > 1 && parent.page_at_x(item.bounds().center().x) != Some(page_idx) {
+                continue;
+            }
+            push_rotation(best, cx.selection, req, item, false, 0, seen_items, proposed, tol);
+        }
+    }
+    let Some(next_id) = next else { return };
+    let Some(next_index) = cx.doc.parent_index(next_id) else { return };
+    push_parent_rotation_chain(best, cx, req, doc_side, overridden, next_index, seen_items, seen_spreads, proposed, tol);
 }
 
 fn push_rotation(
@@ -1883,5 +1948,48 @@ mod tests {
         let angle = hit.angle.expect("rotation hit");
         assert!((angle - 30.0).abs() < 1e-6);
         assert!(matches!(hit.guides.first(), Some(Overlay::Measure { .. })));
+    }
+
+    #[test]
+    fn parent_item_angle_matches() {
+        // Document::new already has A-Parent. Apply a second parent and insert on the
+        // page parent_page_for shows, not Parent(0). A facing right page sits near x 612.
+        let mut doc = Document::new(&NewDocument::default());
+        let pid = doc.add_parent("B", "B-Parent", 1, 12.0, Margins::uniform(36.0));
+        doc.apply_parent(&[0], Some(pid)).unwrap();
+        std::sync::Arc::make_mut(&mut doc.spreads[0]).pages[0].show_parent_items = true;
+        let (ppi, ppg) = doc.parent_page_for(0).unwrap();
+        let parent_x = doc.parents[ppi].pages[ppg].x;
+        let rect = Rect::new(parent_x + 72.0, 140.0, parent_x + 152.0, 180.0);
+        let center = rect.center();
+        let layer = doc.default_layer();
+        let id = ItemId(doc.alloc());
+        let mut item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(rect));
+        item.xf = Affine::translate((center.x, center.y)) * Affine::rotate((-30.0_f64).to_radians()) * Affine::translate((-center.x, -center.y));
+        doc.insert_item(SpreadRef::Parent(ppi), item, None).unwrap();
+        assert!(doc.spreads[0].items.iter().all(|it| (designcraft_geom::decompose::decompose(it.xf).rotation - 30.0).abs() > 1.0));
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_guides = false;
+        let hit = snap(
+            &cx,
+            SnapRequest {
+                spread: SpreadRef::Doc(0),
+                gesture: Gesture::Rotate,
+                rect: Rect::new(100.0, 100.0, 160.0, 140.0),
+                x_edges: [false, false, false],
+                y_edges: [false, false, false],
+                exclude: &[],
+                copying: false,
+                lengths: [None, None],
+                angle: Some(28.0),
+                radius: 80.0,
+                pointer: Point::new(180.0, 120.0),
+            },
+        );
+        let angle = hit.angle.expect("parent rotation hit");
+        assert!((angle - 30.0).abs() < 1e-6);
     }
 }
