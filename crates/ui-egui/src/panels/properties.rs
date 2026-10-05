@@ -358,8 +358,10 @@ fn document_sections(app: &mut DesignApp, ui: &mut Ui) {
     if guides != app.ui.guides {
         let _ = app.run("view.guides", json!({}));
     }
+    if smart != app.ui.smart_guides {
+        let _ = app.run("view.smartGuides", json!({}));
+    }
     app.ui.guides_locked = locked;
-    app.ui.smart_guides = smart;
     rule(ui);
     section(ui, "Quick Actions", true);
     let (a, b) = button_pair(ui, "Import File", "Insert Page");

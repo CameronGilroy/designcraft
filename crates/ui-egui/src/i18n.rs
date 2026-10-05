@@ -101,6 +101,23 @@ const TABLE: &[(&str, [&str; 4])] = &[
     ("Screen Mode", ["Bildschirmmodus", "Mode d'affichage", "Modo de pantalla", "スクリーンモード"]),
     ("Grids & Guides", ["Raster und Hilfslinien", "Grilles et repères", "Cuadrículas y guías", "グリッドとガイド"]),
     ("Show Rulers", ["Lineale einblenden", "Afficher les règles", "Mostrar reglas", "定規を表示"]),
+    ("Snap to Guides", ["An Hilfslinien ausrichten", "Coller aux repères", "Ajustar a las guías", "ガイドにスナップ"]),
+    (
+        "Snap to Document Grid",
+        ["Am Dokumentraster ausrichten", "Coller à la grille du document", "Ajustar a la cuadrícula del documento", "ドキュメントグリッドにスナップ"],
+    ),
+    ("Smart Guides", ["Smarte Hilfslinien", "Repères intelligents", "Guías inteligentes", "スマートガイド"]),
+    (
+        "Align to Object Edges",
+        ["An Objektkanten ausrichten", "Aligner sur les bords des objets", "Alinear a los bordes del objeto", "オブジェクトの端に揃える"],
+    ),
+    (
+        "Align to Object Centers",
+        ["An Objektmitten ausrichten", "Aligner sur les centres des objets", "Alinear a los centros del objeto", "オブジェクトの中心に揃える"],
+    ),
+    ("Smart Dimensions", ["Smarte Maße", "Mesures intelligentes", "Dimensiones inteligentes", "スマートサイズ"]),
+    ("Smart Spacing", ["Smarte Abstände", "Espacements intelligents", "Espaciado inteligente", "スマート間隔"]),
+    ("Snap to Zone", ["Fangzone", "Zone de magnétisme", "Zona de ajuste", "スナップゾーン"]),
     // Window and panels.
     ("Properties", ["Eigenschaften", "Propriétés", "Propiedades", "プロパティ"]),
     ("Layers", ["Ebenen", "Calques", "Capas", "レイヤー"]),

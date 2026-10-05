@@ -641,6 +641,18 @@ fn preferences(ui: &mut egui::Ui, d: &mut Dialog) {
                         text_field(ui, d, "pasteboard.v", 80.0);
                         ui.end_row();
                     });
+                    ui.add_space(6.0);
+                    check(ui, d, "snap.alignEdges", "Align to Object Edges");
+                    check(ui, d, "snap.alignCenters", "Align to Object Centers");
+                    check(ui, d, "snap.dimensions", "Smart Dimensions");
+                    check(ui, d, "snap.spacing", "Smart Spacing");
+                    ui.horizontal(|ui| {
+                        ui.label("Snap to Zone");
+                        let mut zone = d.n("snap.zone").filter(|z| z.is_finite()).unwrap_or(4.0);
+                        if ui.add(egui::DragValue::new(&mut zone).speed(0.1)).changed() {
+                            d.fields.insert("snap.zone".into(), json!(zone));
+                        }
+                    });
                 }
                 "display" => {
                     ui.label(egui::RichText::new("Options").font(semibold(12.0)));
@@ -1421,6 +1433,21 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             app.run("window.richBlack", json!({"on": d.b("richBlack")}))?;
             if let Some(v) = d.n("uiScale") {
                 app.run("window.uiScale", json!({"scale": v / 100.0}))?;
+            }
+            if d.fields.contains_key("snap.alignEdges") {
+                app.ui.align_edges = d.b("snap.alignEdges");
+            }
+            if d.fields.contains_key("snap.alignCenters") {
+                app.ui.align_centers = d.b("snap.alignCenters");
+            }
+            if d.fields.contains_key("snap.dimensions") {
+                app.ui.smart_dimensions = d.b("snap.dimensions");
+            }
+            if d.fields.contains_key("snap.spacing") {
+                app.ui.smart_spacing = d.b("snap.spacing");
+            }
+            if let Some(zone) = d.n("snap.zone").filter(|z| z.is_finite()) {
+                app.ui.snap_zone = if zone < 0.0 { 0.0 } else { zone };
             }
             if !d.fields.contains_key("horizontalUnits") {
                 return Ok(Value::Null);
