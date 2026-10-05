@@ -263,8 +263,9 @@ fn pass_guides(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) ->
 ///
 /// Edges match edges only while `align_edges` is on. Centers match centers only while
 /// `align_centers` is on, and only when the request's middle flag is set. Hidden items are
-/// skipped. Excluded items are skipped unless `copying` is set, so an Alt-drag can meet the
-/// original. Parent items and group children are not targets.
+/// skipped. Without copying, excluded items are skipped. With copying, that list is the
+/// drag-start set and stays a target. Live selection items outside that set are preview
+/// copies and are skipped. Parent items and group children are not targets.
 fn pass_align(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> Option<AxisHit> {
     if !cx.snap.smart_guides || (!cx.snap.align_edges && !cx.snap.align_centers) {
         return None;
@@ -276,12 +277,17 @@ fn pass_align(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> 
         offer_box(&mut best, req.rect, flags, axis, page.bounds(), tol, cx.snap.align_edges, cx.snap.align_centers);
     }
     for item in &sp.items {
-        if item.hidden || (!req.copying && req.exclude.contains(&item.id)) {
+        if item.hidden || align_skips_item(cx, req, item.id) {
             continue;
         }
         offer_box(&mut best, req.rect, flags, axis, item.visible_bounds(), tol, cx.snap.align_edges, cx.snap.align_centers);
     }
     best.map(|b| b.hit)
+}
+
+/// Drag-start ids stay targets while copying. Preview copies are the live selection minus that set.
+fn align_skips_item(cx: &ToolContext, req: &SnapRequest<'_>, id: ItemId) -> bool {
+    if req.copying { cx.selection.items.contains(&id) && !req.exclude.contains(&id) } else { req.exclude.contains(&id) }
 }
 
 fn axis_flags(req: &SnapRequest<'_>, axis: Axis) -> [bool; 3] {
@@ -551,5 +557,41 @@ mod tests {
             },
         );
         assert!((hit.delta.x - -2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn alt_copy_does_not_stick_to_the_preview() {
+        let mut doc = Document::new(&NewDocument::default());
+        let layer = doc.default_layer();
+        let make = |doc: &mut Document, rect: Rect| {
+            let id = ItemId(doc.alloc());
+            let item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(rect));
+            doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
+            id
+        };
+        let original = make(&mut doc, Rect::new(100.0, 40.0, 160.0, 80.0));
+        let ghost = make(&mut doc, Rect::new(161.0, 40.0, 221.0, 80.0));
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::items(vec![ghost]);
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_guides = false;
+        let hit = snap(
+            &cx,
+            SnapRequest {
+                spread: SpreadRef::Doc(0),
+                gesture: Gesture::Move,
+                rect: Rect::new(161.0, 40.0, 221.0, 80.0),
+                x_edges: [true, false, false],
+                y_edges: [false, false, false],
+                exclude: &[original],
+                copying: true,
+                lengths: [None, None],
+                angle: None,
+                radius: 0.0,
+                pointer: Point::new(0.0, 0.0),
+            },
+        );
+        assert!((hit.delta.x - -1.0).abs() < 1e-6, "delta.x = {}", hit.delta.x);
     }
 }

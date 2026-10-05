@@ -4,7 +4,7 @@
 //! the 8 bounding-box handles resize (Shift keeps proportions, Alt from centre, Cmd scales content),
 //! empty-canvas drags make a marquee, double-clicking a text frame switches to the Type tool.
 
-use designcraft_doc::SpreadRef;
+use designcraft_doc::{ItemId, SpreadRef};
 use designcraft_geom::{Point, Rect, Vec2};
 use serde_json::{Value, json};
 
@@ -14,7 +14,7 @@ use crate::{Action, Cursor, Gesture, Mods, Overlay, PointerEvent, PointerKind, S
 enum Drag {
     None,
     Pending { start: Point, hit: bool },
-    Move { start: Point, origin_spread: SpreadRef, bounds0: Option<Rect> },
+    Move { start: Point, origin_spread: SpreadRef, bounds0: Option<Rect>, exclude: Vec<ItemId> },
     Resize { handle: usize, start: Point, from: Rect, spread: SpreadRef },
     Rotate { center: Point, start_angle: f64 },
     Marquee { start: Point, cur: Point },
@@ -251,7 +251,8 @@ impl Tool for SelectionTool {
                     self.shift_release = None;
                     if hit && !cx.selection.items.is_empty() {
                         let sr = cx.selection.items.first().and_then(|i| cx.doc.find(*i)).map(|l| l.spread).unwrap_or(SpreadRef::Doc(0));
-                        self.drag = Drag::Move { start, origin_spread: sr, bounds0: cx.selection_bounds() };
+                        let exclude = cx.selection.items.clone();
+                        self.drag = Drag::Move { start, origin_spread: sr, bounds0: cx.selection_bounds(), exclude };
                         let label = if ev.mods.alt { "Duplicate" } else { "Move" };
                         let mut v = vec![Action::Begin(label.into())];
                         v.extend(self.pointer(cx, ev));
@@ -261,24 +262,30 @@ impl Tool for SelectionTool {
                         vec![]
                     }
                 }
-                Drag::Move { start, origin_spread, bounds0 } => {
+                Drag::Move { start, origin_spread, bounds0, exclude } => {
                     let mut d: Vec2 = p - start;
-                    let mut x_edges = [true, true, true];
-                    let mut y_edges = [true, true, true];
+                    let mut screen_x_locked = false;
+                    let mut screen_y_locked = false;
                     if ev.mods.shift {
                         if d.x.abs() > d.y.abs() {
                             d.y = 0.0;
-                            y_edges = [false, false, false];
+                            screen_y_locked = true;
                         } else {
                             d.x = 0.0;
-                            x_edges = [false, false, false];
+                            screen_x_locked = true;
                         }
                     }
+                    // 180 degrees keeps the screen axis. 90 and 270 swap it into the other spread axis.
+                    let odd_turn = cx.layout.slot(origin_spread).is_some_and(|slot| slot.rotation % 2 == 1);
+                    let spread_x_locked = if odd_turn { screen_y_locked } else { screen_x_locked };
+                    let spread_y_locked = if odd_turn { screen_x_locked } else { screen_y_locked };
+                    let x_edges = if spread_x_locked { [false; 3] } else { [true; 3] };
+                    let y_edges = if spread_y_locked { [false; 3] } else { [true; 3] };
                     self.guides.clear();
                     // The movement in the spread's own coordinates (its view may be turned).
                     let mut ds = cx.layout.delta_to_spread(origin_spread, d);
                     let b0s = bounds0.map(|b| cx.layout.xf(origin_spread).inverse().transform_rect_bbox(b));
-                    // Command suspends snapping. A Shift-locked axis is not offered.
+                    // Command suspends snapping. A Shift-locked spread axis is not offered.
                     if !ev.mods.cmd
                         && cx.snap.any()
                         && let Some(b0) = b0s
@@ -291,7 +298,7 @@ impl Tool for SelectionTool {
                                 rect: b0 + ds,
                                 x_edges,
                                 y_edges,
-                                exclude: &cx.selection.items,
+                                exclude: &exclude,
                                 copying: ev.mods.alt,
                                 lengths: [None, None],
                                 angle: None,

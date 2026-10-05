@@ -107,6 +107,27 @@ fn cmd_move_does_not_snap() {
 }
 
 #[test]
+fn shift_move_on_a_turned_spread_stays_on_the_line() {
+    use designcraft_tools::{PointerEvent, PointerKind};
+    let mut s = session();
+    s.execute("frame.create", &json!({"rect": [80.0, 100.0, 140.0, 140.0], "content": "unassigned"})).unwrap();
+    s.execute("layout.rotateSpreadView", &json!({"angle": 90})).unwrap();
+    // Vertical guide sits on the spread axis that a screen-horizontal Shift lock must not offer.
+    s.execute("guide.add", &json!({"orientation": "vertical", "position": 82.0, "page": 0})).unwrap();
+    s.set_tool("selection");
+    let v = ViewInfo::at_zoom(1.0);
+    let b0 = s.doc().unwrap().doc.spreads[0].items[0].bounds();
+    let c = s.layout().to_canvas(designcraft_doc::SpreadRef::Doc(0), b0.center());
+    let shift = designcraft_tools::Mods { shift: true, ..Default::default() };
+    s.pointer(&PointerEvent::new(PointerKind::Down, c.x, c.y).with_mods(shift), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, c.x + 60.0, c.y + 1.0).with_mods(shift), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, c.x + 60.0, c.y + 1.0).with_mods(shift), v).unwrap();
+    let b = s.doc().unwrap().doc.spreads[0].items[0].bounds();
+    assert!((b.x0 - b0.x0).abs() < 1e-6, "locked screen axis jumped to {b:?}");
+    assert!((b.y0 - b0.y0).abs() > 1.0, "free axis did not move: {b:?}");
+}
+
+#[test]
 fn pages_and_layers() {
     let mut s = session();
     s.execute("layout.pages.insert", &json!({"count": 3})).unwrap();
