@@ -16,7 +16,7 @@ enum Drag {
     Pending { start: Point, hit: bool },
     Move { start: Point, origin_spread: SpreadRef, bounds0: Option<Rect>, exclude: Vec<ItemId> },
     Resize { handle: usize, start: Point, from: Rect, spread: SpreadRef },
-    Rotate { center: Point, start_angle: f64 },
+    Rotate { center: Point, start_angle: f64, start_rotation: Option<f64> },
     Marquee { start: Point, cur: Point },
     Anchor { id: u64, si: usize, ai: usize, handle: Option<&'static str>, start: Point },
 }
@@ -344,7 +344,7 @@ impl Tool for SelectionTool {
                     && handle_at(cx, p).is_none()
                     && let Some(center) = rotate_zone(cx, p)
                 {
-                    self.drag = Drag::Rotate { center, start_angle: (p - center).atan2() };
+                    self.drag = Drag::Rotate { center, start_angle: (p - center).atan2(), start_rotation: crate::snap::reference_rotation(cx) };
                     return vec![Action::Begin("Rotate".into())];
                 }
                 if let Some(h) = handle_at(cx, p).filter(|_| !self.direct)
@@ -525,36 +525,42 @@ impl Tool for SelectionTool {
                     self.drag = Drag::Marquee { start, cur: p };
                     vec![]
                 }
-                Drag::Rotate { center, start_angle } => {
+                Drag::Rotate { center, start_angle, start_rotation } => {
                     let mut a = ((p - center).atan2() - start_angle).to_degrees();
                     self.guides.clear();
                     if ev.mods.shift {
                         // 45 degree steps. The rotation pass does not run while Shift is held.
                         a = (a / 45.0).round() * 45.0;
-                    } else {
-                        let spread = cx.selection.items.first().and_then(|id| cx.doc.find(*id)).map(|loc| loc.spread).unwrap_or(SpreadRef::Doc(0));
-                        let exclude = cx.selection.items.clone();
-                        // The rect is unused by the angle pass. It only has to be finite.
-                        let hit = crate::snap::snap(
-                            cx,
-                            SnapRequest {
-                                spread,
-                                gesture: Gesture::Rotate,
-                                rect: Rect::new(0.0, 0.0, 1.0, 1.0),
-                                x_edges: [false, false, false],
-                                y_edges: [false, false, false],
-                                exclude: &exclude,
-                                copying: false,
-                                lengths: [None, None],
-                                angle: Some(-a),
-                                radius: (p - center).hypot(),
-                                pointer: cx.layout.to_spread(spread, p),
-                            },
-                        );
-                        if let Some(snapped) = hit.angle {
-                            a = -snapped;
+                    } else if let Some(start) = start_rotation {
+                        let raw = -a;
+                        if let Some(resulting) = crate::snap::folded_rotation(start + raw) {
+                            let spread =
+                                cx.selection.items.first().and_then(|id| cx.doc.find(*id)).map(|loc| loc.spread).unwrap_or(SpreadRef::Doc(0));
+                            let exclude = cx.selection.items.clone();
+                            // The rect is unused by the angle pass. It only has to be finite.
+                            let hit = crate::snap::snap(
+                                cx,
+                                SnapRequest {
+                                    spread,
+                                    gesture: Gesture::Rotate,
+                                    rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+                                    x_edges: [false, false, false],
+                                    y_edges: [false, false, false],
+                                    exclude: &exclude,
+                                    copying: false,
+                                    lengths: [None, None],
+                                    angle: Some(resulting),
+                                    radius: (p - center).hypot(),
+                                    pointer: cx.layout.to_spread(spread, p),
+                                },
+                            );
+                            if let Some(snapped) = hit.angle
+                                && let Some(delta) = crate::snap::rotation_command_delta(start, snapped, raw)
+                            {
+                                a = -delta;
+                            }
+                            self.guides = hit.guides;
                         }
-                        self.guides = hit.guides;
                     }
                     // Screen y points down: a positive screen angle is clockwise.
                     vec![Action::Preview("transform.rotate".into(), json!({"angle": -a}))]

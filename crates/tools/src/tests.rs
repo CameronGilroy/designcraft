@@ -481,3 +481,43 @@ fn dimension_guide_lies_on_the_committed_side() {
     }
     assert!(problems.is_empty(), "{}", problems.join(" | "));
 }
+
+#[test]
+fn rotation_drag_lands_on_the_other_angle() {
+    // Reference starts at 10. A raw command delta of 18 would show 28.
+    // The other item is at 30, so the composed preview delta is 20, not 30.
+    let mut doc = Document::new(&NewDocument::default());
+    let moving = add_rotated(&mut doc, Rect::new(100.0, 100.0, 180.0, 140.0), 10.0);
+    add_rotated(&mut doc, Rect::new(300.0, 80.0, 380.0, 140.0), 30.0);
+    let sel = Selection::items(vec![moving]);
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    let cx = dims_ctx(&doc, &sel, &cache, &layout, false);
+    let center = cx.selection_bounds().unwrap().center();
+    let radius = 80.0;
+    let down = Point::new(center.x + radius, center.y);
+    let aim = (-18.0_f64).to_radians();
+    let drag_at = Point::new(center.x + radius * aim.cos(), center.y + radius * aim.sin());
+    let raw_command = -((drag_at - center).atan2() - (down - center).atan2()).to_degrees();
+    assert!((raw_command - 18.0).abs() < 1e-6, "unsnapped command {raw_command}");
+    let mut t = create("rotate");
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, down.x, down.y));
+    let actions = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, drag_at.x, drag_at.y));
+    let angle = match &actions[..] {
+        [Action::Preview(cmd, p)] => {
+            assert_eq!(cmd, "transform.rotate");
+            p["angle"].as_f64().unwrap()
+        }
+        other => panic!("{other:?}"),
+    };
+    assert!((angle - 20.0).abs() < 1e-4, "preview angle {angle}, want 20");
+}
+
+fn add_rotated(doc: &mut Document, rect: Rect, degrees: f64) -> ItemId {
+    let layer = doc.default_layer();
+    let id = ItemId(doc.alloc());
+    let mut item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(rect));
+    item.xf = designcraft_geom::Affine::rotate((-degrees).to_radians());
+    doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
+    id
+}

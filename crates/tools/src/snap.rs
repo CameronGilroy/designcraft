@@ -329,6 +329,51 @@ fn own_rotation(item: &Item) -> Option<f64> {
     rotation.is_finite().then_some(rotation)
 }
 
+/// Decompose rotation of the first selected item, captured before a preview changes `xf`.
+/// None when nothing is selected.
+pub(crate) fn reference_rotation(cx: &ToolContext) -> Option<f64> {
+    let id = *cx.selection.items.first()?;
+    own_rotation(cx.doc.item(id)?)
+}
+
+/// Degrees folded into the range `decompose` reports, `(-180, 180]`.
+pub(crate) fn folded_rotation(deg: f64) -> Option<f64> {
+    if !deg.is_finite() {
+        return None;
+    }
+    let mut d = deg.rem_euclid(360.0);
+    if !d.is_finite() {
+        return None;
+    }
+    if d > 180.0 {
+        d -= 360.0;
+    }
+    if d <= -180.0 + 1e-9 {
+        d = 180.0;
+    }
+    d.is_finite().then_some(d)
+}
+
+/// Delta `transform.rotate` should apply so the reference lands on `snapped`.
+///
+/// `transform.rotate` composes, so the command is `snapped - start`, not `snapped`.
+/// Whole turns are added so the result stays nearest the raw command delta.
+pub(crate) fn rotation_command_delta(start: f64, snapped: f64, raw: f64) -> Option<f64> {
+    if !start.is_finite() || !snapped.is_finite() || !raw.is_finite() {
+        return None;
+    }
+    let base = snapped - start;
+    if !base.is_finite() {
+        return None;
+    }
+    let turns = ((raw - base) / 360.0).round();
+    if !turns.is_finite() {
+        return None;
+    }
+    let delta = base + turns * 360.0;
+    delta.is_finite().then_some(delta)
+}
+
 /// Smallest absolute difference in degrees, folded into `0..=180`.
 fn angular_distance(a: f64, b: f64) -> f64 {
     let d = (a - b).rem_euclid(360.0);

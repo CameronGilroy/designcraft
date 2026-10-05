@@ -12,11 +12,13 @@ pub struct XformTool {
     id: &'static str,
     drag: Option<(Point, Point)>,
     guides: Vec<Overlay>,
+    /// First selected item's rotation at pointer down. Rotate only. Later samples see the preview.
+    start_rotation: Option<f64>,
 }
 
 impl XformTool {
     pub fn new(id: &'static str) -> Self {
-        Self { id, drag: None, guides: Vec::new() }
+        Self { id, drag: None, guides: Vec::new(), start_rotation: None }
     }
 }
 
@@ -59,7 +61,11 @@ impl Tool for XformTool {
         match ev.kind {
             PointerKind::Down => {
                 self.guides.clear();
+                self.start_rotation = None;
                 let Some(b) = cx.selection_bounds() else { return vec![] };
+                if self.id == "rotate" {
+                    self.start_rotation = crate::snap::reference_rotation(cx);
+                }
                 self.drag = Some((b.center(), ev.pos));
                 vec![Action::Begin(match self.id {
                     "rotate" => "Rotate".into(),
@@ -77,31 +83,36 @@ impl Tool for XformTool {
                         if ev.mods.shift {
                             // 45 degree steps. The rotation pass does not run while Shift is held.
                             a = (a / 45.0).round() * 45.0;
-                        } else {
-                            let spread =
-                                cx.selection.items.first().and_then(|id| cx.doc.find(*id)).map(|loc| loc.spread).unwrap_or(SpreadRef::Doc(0));
-                            let exclude = cx.selection.items.clone();
-                            // The rect is unused by the angle pass. It only has to be finite.
-                            let hit = crate::snap::snap(
-                                cx,
-                                SnapRequest {
-                                    spread,
-                                    gesture: Gesture::Rotate,
-                                    rect: Rect::new(0.0, 0.0, 1.0, 1.0),
-                                    x_edges: [false, false, false],
-                                    y_edges: [false, false, false],
-                                    exclude: &exclude,
-                                    copying: false,
-                                    lengths: [None, None],
-                                    angle: Some(-a),
-                                    radius: (ev.pos - c).hypot(),
-                                    pointer: cx.layout.to_spread(spread, ev.pos),
-                                },
-                            );
-                            if let Some(snapped) = hit.angle {
-                                a = -snapped;
+                        } else if let Some(start) = self.start_rotation {
+                            let raw = -a;
+                            if let Some(resulting) = crate::snap::folded_rotation(start + raw) {
+                                let spread =
+                                    cx.selection.items.first().and_then(|id| cx.doc.find(*id)).map(|loc| loc.spread).unwrap_or(SpreadRef::Doc(0));
+                                let exclude = cx.selection.items.clone();
+                                // The rect is unused by the angle pass. It only has to be finite.
+                                let hit = crate::snap::snap(
+                                    cx,
+                                    SnapRequest {
+                                        spread,
+                                        gesture: Gesture::Rotate,
+                                        rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+                                        x_edges: [false, false, false],
+                                        y_edges: [false, false, false],
+                                        exclude: &exclude,
+                                        copying: false,
+                                        lengths: [None, None],
+                                        angle: Some(resulting),
+                                        radius: (ev.pos - c).hypot(),
+                                        pointer: cx.layout.to_spread(spread, ev.pos),
+                                    },
+                                );
+                                if let Some(snapped) = hit.angle
+                                    && let Some(delta) = crate::snap::rotation_command_delta(start, snapped, raw)
+                                {
+                                    a = -delta;
+                                }
+                                self.guides = hit.guides;
                             }
-                            self.guides = hit.guides;
                         }
                         vec![Action::Preview("transform.rotate".into(), json!({"angle": -a}))]
                     }
@@ -196,6 +207,7 @@ impl Tool for XformTool {
             }
             PointerKind::Up => {
                 self.guides.clear();
+                self.start_rotation = None;
                 if self.drag.take().is_some() { vec![Action::Commit] } else { vec![] }
             }
             _ => vec![],
