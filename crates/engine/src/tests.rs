@@ -73,6 +73,40 @@ fn tool_gesture_creates_one_undo_step() {
 }
 
 #[test]
+fn shift_move_does_not_take_the_other_axis() {
+    use designcraft_tools::{PointerEvent, PointerKind};
+    let mut s = session();
+    s.execute("frame.create", &json!({"rect": [80.0, 100.0, 140.0, 140.0], "content": "unassigned"})).unwrap();
+    s.execute("guide.add", &json!({"orientation": "horizontal", "position": 102.0, "page": 0})).unwrap();
+    s.set_tool("selection");
+    let v = ViewInfo::at_zoom(1.0);
+    let shift = designcraft_tools::Mods { shift: true, ..Default::default() };
+    s.pointer(&PointerEvent::new(PointerKind::Down, 100.0, 120.0).with_mods(shift), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 160.0, 121.0).with_mods(shift), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 160.0, 121.0).with_mods(shift), v).unwrap();
+    let b = s.doc().unwrap().doc.spreads[0].items[0].bounds();
+    assert!((b.y0 - 100.0).abs() < 1e-6, "locked axis jumped to {b:?}");
+    assert!(b.x0 > 80.0);
+}
+
+#[test]
+fn cmd_move_does_not_snap() {
+    use designcraft_tools::{PointerEvent, PointerKind};
+    let mut s = session();
+    s.execute("frame.create", &json!({"rect": [80.0, 100.0, 140.0, 140.0], "content": "unassigned"})).unwrap();
+    s.execute("guide.add", &json!({"orientation": "horizontal", "position": 102.0, "page": 0})).unwrap();
+    s.set_tool("selection");
+    let v = ViewInfo::at_zoom(1.0);
+    let cmd = designcraft_tools::Mods { cmd: true, shift: false, ..Default::default() };
+    s.pointer(&PointerEvent::new(PointerKind::Down, 110.0, 120.0).with_mods(cmd), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 160.0, 121.0).with_mods(cmd), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 160.0, 121.0).with_mods(cmd), v).unwrap();
+    let b = s.doc().unwrap().doc.spreads[0].items[0].bounds();
+    assert!((b.y0 - 101.0).abs() < 1e-6, "cmd move snapped to {b:?}");
+    assert!(b.x0 > 80.0);
+}
+
+#[test]
 fn pages_and_layers() {
     let mut s = session();
     s.execute("layout.pages.insert", &json!({"count": 3})).unwrap();
