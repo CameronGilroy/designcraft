@@ -73,7 +73,7 @@ impl Tool for FrameTool {
         match ev.kind {
             PointerKind::Down => {
                 let pos = match cx.layout.spread_at(ev.pos) {
-                    Some((sr, sp)) if cx.snap => cx.layout.to_canvas(sr, crate::snap::snap_point(cx, sr, sp).0),
+                    Some((sr, sp)) if cx.snap.any() => cx.layout.to_canvas(sr, crate::snap::snap_point(cx, sr, sp).0),
                     _ => ev.pos,
                 };
                 self.start = Some(pos);
@@ -92,7 +92,7 @@ impl Tool for FrameTool {
                 let Some((sr, sa)) = cx.layout.spread_at(a) else { return vec![] };
                 let mut ev = *ev;
                 self.guides.clear();
-                if cx.snap && !ev.mods.shift {
+                if cx.snap.any() && !ev.mods.shift {
                     let (p, g) = crate::snap::snap_point(cx, sr, cx.layout.to_spread(sr, ev.pos));
                     ev.pos = cx.layout.to_canvas(sr, p);
                     self.guides = g;

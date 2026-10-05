@@ -27,7 +27,7 @@ pub use cmd::{CommandInfo, CommandSpec, command_specs, find_command};
 pub use designcraft_compose as compose;
 pub use designcraft_doc as doc;
 pub use designcraft_tools as tools;
-pub use tooling::{UiRequest, ViewInfo};
+pub use tooling::{SnapView, UiRequest, ViewInfo};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {

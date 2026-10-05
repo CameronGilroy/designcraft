@@ -24,7 +24,7 @@ mod xform;
 
 use designcraft_compose::Cache;
 use designcraft_doc::{Document, Item, ItemId, Selection, SpreadRef};
-use designcraft_geom::{Affine, BezPath, Point, Rect};
+use designcraft_geom::{Affine, BezPath, Point, Rect, Unit, Vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -107,6 +107,87 @@ pub enum Action {
     View(Value),
 }
 
+/// Which snap categories are on, and the snap zone in screen pixels.
+///
+/// Each flag is its own view switch, not one combined mode.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SnapView {
+    pub snap_to_guides: bool,
+    pub snap_to_document_grid: bool,
+    pub show_guides: bool,
+    pub smart_guides: bool,
+    pub align_edges: bool,
+    pub align_centers: bool,
+    pub smart_dimensions: bool,
+    pub smart_spacing: bool,
+    pub zone_px: f64,
+}
+
+impl SnapView {
+    pub const FACTORY: Self = Self {
+        snap_to_guides: true,
+        snap_to_document_grid: false,
+        show_guides: true,
+        smart_guides: true,
+        align_edges: true,
+        align_centers: true,
+        smart_dimensions: true,
+        smart_spacing: true,
+        zone_px: 4.0,
+    };
+    pub const OFF: Self = Self {
+        snap_to_guides: false,
+        snap_to_document_grid: false,
+        show_guides: true,
+        smart_guides: false,
+        align_edges: false,
+        align_centers: false,
+        smart_dimensions: false,
+        smart_spacing: false,
+        zone_px: 4.0,
+    };
+
+    /// Guides, the document grid, or smart guides are on.
+    pub fn any(self) -> bool {
+        self.snap_to_guides || self.snap_to_document_grid || self.smart_guides
+    }
+}
+
+impl Default for SnapView {
+    fn default() -> Self {
+        Self::FACTORY
+    }
+}
+
+/// The gesture asking for a snap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gesture {
+    Move,
+    Resize,
+    Create,
+    Rotate,
+    Point,
+}
+
+pub struct SnapRequest<'a> {
+    pub spread: SpreadRef,
+    pub gesture: Gesture,
+    pub rect: Rect,
+    /// Left, center, right. All false means the axis is locked.
+    pub x_edges: [bool; 3],
+    /// Top, center, bottom.
+    pub y_edges: [bool; 3],
+    pub exclude: &'a [ItemId],
+    pub copying: bool,
+    /// Proposed width and height for the dimensions pass. None when that length is not being set.
+    pub lengths: [Option<f64>; 2],
+    /// Proposed rotation in the same degrees `transform.rotate` already receives. None unless rotating.
+    pub angle: Option<f64>,
+    pub radius: f64,
+    pub pointer: Point,
+}
+
 /// Read-only context a tool sees.
 pub struct ToolContext<'a> {
     pub doc: &'a Document,
@@ -117,7 +198,8 @@ pub struct ToolContext<'a> {
     pub zoom: f64,
     /// Layer new items go on.
     pub layer: designcraft_doc::LayerId,
-    pub snap: bool,
+    pub snap: SnapView,
+    pub unit: Unit,
 }
 
 impl ToolContext<'_> {
@@ -206,6 +288,20 @@ pub enum Overlay {
         a: Point,
         b: Point,
     },
+    /// Spacing segment in canvas coordinates, with a measurement label.
+    Gap {
+        a: Point,
+        b: Point,
+        label: String,
+    },
+}
+
+/// Correction from a snap, in spread coordinates for `delta`.
+#[derive(Clone, Debug, Default)]
+pub struct Snap {
+    pub delta: Vec2,
+    pub angle: Option<f64>,
+    pub guides: Vec<Overlay>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

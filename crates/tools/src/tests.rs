@@ -1,12 +1,12 @@
 use designcraft_compose::Cache;
 use designcraft_doc::build::NewDocument;
 use designcraft_doc::{Document, ParaFormat, Selection, SpreadRef};
-use designcraft_geom::Rect;
+use designcraft_geom::{Rect, Unit};
 
 use super::*;
 
 fn ctx<'a>(d: &'a Document, s: &'a Selection, c: &'a Cache, l: &'a CanvasLayout) -> ToolContext<'a> {
-    ToolContext { doc: d, selection: s, cache: c, layout: l, zoom: 1.0, layer: d.default_layer(), snap: false }
+    ToolContext { doc: d, selection: s, cache: c, layout: l, zoom: 1.0, layer: d.default_layer(), snap: SnapView::OFF, unit: Unit::Points }
 }
 
 #[test]
