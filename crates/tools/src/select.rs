@@ -8,7 +8,7 @@ use designcraft_doc::SpreadRef;
 use designcraft_geom::{Point, Rect, Vec2};
 use serde_json::{Value, json};
 
-use crate::{Action, Cursor, Mods, Overlay, PointerEvent, PointerKind, Tool, ToolContext, ToolKey, rect_json, spread_json};
+use crate::{Action, Cursor, Gesture, Mods, Overlay, PointerEvent, PointerKind, SnapRequest, Tool, ToolContext, ToolKey, rect_json, spread_json};
 
 #[derive(Clone, Debug)]
 enum Drag {
@@ -54,11 +54,13 @@ pub struct SelectionTool {
     drag: Drag,
     hover_handle: Option<usize>,
     guides: Vec<Overlay>,
+    /// Selected item to toggle if this Shift press never becomes a drag.
+    shift_release: Option<u64>,
 }
 
 impl SelectionTool {
     pub fn new(direct: bool) -> Self {
-        Self { direct, drag: Drag::None, hover_handle: None, guides: vec![] }
+        Self { direct, drag: Drag::None, hover_handle: None, guides: vec![], shift_release: None }
     }
 }
 
@@ -183,6 +185,7 @@ impl Tool for SelectionTool {
                 vec![]
             }
             PointerKind::Down => {
+                self.shift_release = None;
                 if self.direct
                     && let Some((id, si, ai, handle)) = anchor_at(cx, p)
                 {
@@ -221,7 +224,12 @@ impl Tool for SelectionTool {
                         let id = if self.direct { id } else { cx.doc.top_level_of(id).unwrap_or(id) };
                         let mut out = vec![];
                         if ev.mods.shift {
-                            out.push(Action::Exec("selection.toggle".into(), json!({"id": id.0})));
+                            if cx.selection.contains(id) {
+                                // Keep it selected so a Shift-drag can constrain. A click still toggles, on release.
+                                self.shift_release = Some(id.0);
+                            } else {
+                                out.push(Action::Exec("selection.toggle".into(), json!({"id": id.0})));
+                            }
                         } else if !cx.selection.contains(id) {
                             out.push(Action::Exec("selection.set".into(), json!({"ids": [id.0], "content": self.direct})));
                         }
@@ -240,6 +248,7 @@ impl Tool for SelectionTool {
                     if (p - start).hypot() < cx.tol(3.0) {
                         return vec![];
                     }
+                    self.shift_release = None;
                     if hit && !cx.selection.items.is_empty() {
                         let sr = cx.selection.items.first().and_then(|i| cx.doc.find(*i)).map(|l| l.spread).unwrap_or(SpreadRef::Doc(0));
                         self.drag = Drag::Move { start, origin_spread: sr, bounds0: cx.selection_bounds() };
@@ -254,23 +263,49 @@ impl Tool for SelectionTool {
                 }
                 Drag::Move { start, origin_spread, bounds0 } => {
                     let mut d: Vec2 = p - start;
+                    let mut x_edges = [true, true, true];
+                    let mut y_edges = [true, true, true];
                     if ev.mods.shift {
                         if d.x.abs() > d.y.abs() {
                             d.y = 0.0;
+                            y_edges = [false, false, false];
                         } else {
                             d.x = 0.0;
+                            x_edges = [false, false, false];
                         }
                     }
                     self.guides.clear();
                     // The movement in the spread's own coordinates (its view may be turned).
                     let mut ds = cx.layout.delta_to_spread(origin_spread, d);
                     let b0s = bounds0.map(|b| cx.layout.xf(origin_spread).inverse().transform_rect_bbox(b));
-                    if cx.snap.any()
+                    // Command suspends snapping. A Shift-locked axis is not offered.
+                    if !ev.mods.cmd
+                        && cx.snap.any()
                         && let Some(b0) = b0s
                     {
-                        let snap = crate::snap::snap_rect(cx, origin_spread, b0 + ds, &cx.selection.items);
-                        ds += snap.delta;
-                        self.guides = snap.guides;
+                        let hit = crate::snap::snap(
+                            cx,
+                            SnapRequest {
+                                spread: origin_spread,
+                                gesture: Gesture::Move,
+                                rect: b0 + ds,
+                                x_edges,
+                                y_edges,
+                                exclude: &cx.selection.items,
+                                copying: ev.mods.alt,
+                                lengths: [None, None],
+                                angle: None,
+                                radius: 0.0,
+                                pointer: cx.layout.to_spread(origin_spread, p),
+                            },
+                        );
+                        if x_edges != [false, false, false] {
+                            ds.x += hit.delta.x;
+                        }
+                        if y_edges != [false, false, false] {
+                            ds.y += hit.delta.y;
+                        }
+                        self.guides = hit.guides;
                     }
                     // Dragging to another spread moves the items there.
                     let target = cx.layout.spread_at(p).map(|(s, _)| s).unwrap_or(origin_spread);
@@ -318,9 +353,14 @@ impl Tool for SelectionTool {
             },
             PointerKind::Up => {
                 self.guides.clear();
+                let release = self.shift_release.take();
                 let d = std::mem::replace(&mut self.drag, Drag::None);
                 match d {
                     Drag::Move { .. } | Drag::Resize { .. } | Drag::Anchor { .. } | Drag::Rotate { .. } => vec![Action::Commit],
+                    Drag::Pending { .. } => match release {
+                        Some(id) => vec![Action::Exec("selection.toggle".into(), json!({"id": id}))],
+                        None => vec![],
+                    },
                     Drag::Marquee { start, cur } => {
                         let r = Rect::from_points(start, cur);
                         // Items whose bounds intersect the marquee.
@@ -337,7 +377,7 @@ impl Tool for SelectionTool {
                         }
                         vec![Action::Exec("selection.set".into(), json!({"ids": ids, "add": ev.mods.shift}))]
                     }
-                    _ => vec![],
+                    Drag::None => vec![],
                 }
             }
             PointerKind::DoubleClick => {

@@ -2,8 +2,7 @@
 //!
 //! [`snap`] tries each pass on a free axis and keeps the first hit inside the snap zone.
 //! Ruler guides, margins, and columns draw nothing. Alignment draws [`Overlay::Guide`] in
-//! canvas coordinates. [`snap_rect`] is the older closest-target helper the selection tool
-//! still calls.
+//! canvas coordinates. [`snap_rect`] is the older closest-target helper.
 
 use designcraft_doc::{ItemId, Orientation, SpreadRef};
 use designcraft_geom::{Point, Rect};
@@ -263,8 +262,9 @@ fn pass_guides(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) ->
 /// Page and top-level item edges and centers. Draws one [`Overlay::Guide`] per winning axis.
 ///
 /// Edges match edges only while `align_edges` is on. Centers match centers only while
-/// `align_centers` is on, and only when the request's middle flag is set. Hidden and excluded
-/// items are skipped. Parent items and group children are not targets.
+/// `align_centers` is on, and only when the request's middle flag is set. Hidden items are
+/// skipped. Excluded items are skipped unless `copying` is set, so an Alt-drag can meet the
+/// original. Parent items and group children are not targets.
 fn pass_align(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> Option<AxisHit> {
     if !cx.snap.smart_guides || (!cx.snap.align_edges && !cx.snap.align_centers) {
         return None;
@@ -276,7 +276,7 @@ fn pass_align(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> 
         offer_box(&mut best, req.rect, flags, axis, page.bounds(), tol, cx.snap.align_edges, cx.snap.align_centers);
     }
     for item in &sp.items {
-        if req.exclude.contains(&item.id) || item.hidden {
+        if item.hidden || (!req.copying && req.exclude.contains(&item.id)) {
             continue;
         }
         offer_box(&mut best, req.rect, flags, axis, item.visible_bounds(), tol, cx.snap.align_edges, cx.snap.align_centers);
@@ -520,5 +520,36 @@ mod tests {
             },
         );
         assert_eq!(hit.delta.x, 0.0);
+    }
+
+    #[test]
+    fn alt_copy_snaps_to_the_original() {
+        let mut doc = Document::new(&NewDocument::default());
+        let layer = doc.default_layer();
+        let id = ItemId(doc.alloc());
+        let item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(Rect::new(100.0, 40.0, 160.0, 80.0)));
+        doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_guides = false;
+        let hit = snap(
+            &cx,
+            SnapRequest {
+                spread: SpreadRef::Doc(0),
+                gesture: Gesture::Move,
+                rect: Rect::new(162.0, 40.0, 222.0, 80.0),
+                x_edges: [true, false, false],
+                y_edges: [false, false, false],
+                exclude: &[id],
+                copying: true,
+                lengths: [None, None],
+                angle: None,
+                radius: 0.0,
+                pointer: Point::new(0.0, 0.0),
+            },
+        );
+        assert!((hit.delta.x - -2.0).abs() < 1e-6);
     }
 }
