@@ -198,6 +198,77 @@ fn apply_aspect(from: Rect, handle: usize, rect: Rect, s: f64) -> Rect {
     Rect::new(x0, y0, x1, y1)
 }
 
+/// Snap changes the size. Shift then restores the aspect, and Alt places that size on the original center.
+///
+/// Nudging one edge of an already centered rect walks the center. Mirroring that nudge doubles a length match.
+fn finish_snapped_resize(
+    from: Rect,
+    handle: usize,
+    proposed: Rect,
+    mods: Mods,
+    driver_x: bool,
+    x_edges: [bool; 3],
+    y_edges: [bool; 3],
+    hit: &crate::Snap,
+) -> Rect {
+    if !mods.alt {
+        let mut to = crate::snap::nudge_edges(proposed, x_edges, y_edges, hit.delta);
+        if mods.shift && from.width() > 1e-9 && from.height() > 1e-9 {
+            let s = if driver_x { (to.x1 - to.x0) / from.width() } else { (to.y1 - to.y0) / from.height() };
+            if s.is_finite() {
+                to = apply_aspect(from, handle, to, s);
+            }
+        }
+        return to;
+    }
+    let mut w = proposed.x1 - proposed.x0;
+    let mut h = proposed.y1 - proposed.y0;
+    w += centered_size_delta(x_edges, hit.delta.x, hit.length_delta[0]);
+    h += centered_size_delta(y_edges, hit.delta.y, hit.length_delta[1]);
+    if mods.shift && from.width() > 1e-9 && from.height() > 1e-9 {
+        if driver_x {
+            let s = w / from.width();
+            if s.is_finite() {
+                h = from.height() * s;
+            }
+        } else {
+            let s = h / from.height();
+            if s.is_finite() {
+                w = from.width() * s;
+            }
+        }
+    }
+    if !(w.is_finite() && h.is_finite()) {
+        return proposed;
+    }
+    let c = from.center();
+    Rect::new(c.x - w / 2.0, c.y - h / 2.0, c.x + w / 2.0, c.y + h / 2.0)
+}
+
+/// Length match: add the difference once. Position match: the flagged edge moves and the other side mirrors.
+fn centered_size_delta(edges: [bool; 3], delta: f64, length_delta: Option<f64>) -> f64 {
+    if let Some(diff) = length_delta.filter(|d| d.is_finite()) {
+        return diff;
+    }
+    let edge = axis_size_delta(edges, delta);
+    if edge.is_finite() { edge * 2.0 } else { 0.0 }
+}
+
+/// Signed change in `hi - lo` when one flagged edge moves by `delta`.
+fn axis_size_delta(edges: [bool; 3], delta: f64) -> f64 {
+    if !delta.is_finite() {
+        return 0.0;
+    }
+    let [low_edge, _, high_edge] = edges;
+    if high_edge && !low_edge {
+        delta
+    } else if low_edge && !high_edge {
+        -delta
+    } else {
+        0.0
+    }
+}
+
 fn apply_alt(from: Rect, handle: usize, rect: Rect) -> Rect {
     let (x0, y0, x1, y1) = (rect.x0, rect.y0, rect.x1, rect.y1);
     let c = from.center();
@@ -424,29 +495,25 @@ impl Tool for SelectionTool {
                         }
                         let exclude = cx.selection.items.clone();
                         let (pad_x, pad_y) = single_stroke_pad(cx);
-                        let hit = crate::snap::snap(
+                        let proposed = to;
+                        let mut hit = crate::snap::snap(
                             cx,
                             SnapRequest {
                                 spread,
                                 gesture: Gesture::Resize,
-                                rect: to,
+                                rect: proposed,
                                 x_edges,
                                 y_edges,
                                 exclude: &exclude,
                                 copying: false,
-                                lengths: [axis_length(x_edges, to.width(), pad_x), axis_length(y_edges, to.height(), pad_y)],
+                                lengths: [axis_length(x_edges, proposed.width(), pad_x), axis_length(y_edges, proposed.height(), pad_y)],
                                 angle: None,
                                 radius: 0.0,
                                 pointer,
                             },
                         );
-                        to = crate::snap::nudge_edges(to, x_edges, y_edges, hit.delta);
-                        if ev.mods.shift && !ev.mods.alt && from.width() > 1e-9 && from.height() > 1e-9 {
-                            let s = if driver_x { (to.x1 - to.x0) / from.width() } else { (to.y1 - to.y0) / from.height() };
-                            if s.is_finite() {
-                                to = apply_aspect(from, handle, to, s);
-                            }
-                        }
+                        to = finish_snapped_resize(from, handle, proposed, ev.mods, driver_x, x_edges, y_edges, &hit);
+                        crate::snap::lay_dimension_guides(&mut hit.guides, cx.layout.xf(spread), proposed, to, x_edges, y_edges, hit.length_delta);
                         self.guides = hit.guides;
                     }
                     vec![Action::Preview(

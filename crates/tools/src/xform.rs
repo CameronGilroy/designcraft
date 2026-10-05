@@ -98,18 +98,18 @@ impl Tool for XformTool {
                             if w0 > 1e-9 && h0 > 1e-9 {
                                 let center = from.center();
                                 let (mut w, mut h) = (w0 * sx.abs(), h0 * sy.abs());
-                                let to = Rect::new(center.x - w / 2.0, center.y - h / 2.0, center.x + w / 2.0, center.y + h / 2.0);
+                                let pre = Rect::new(center.x - w / 2.0, center.y - h / 2.0, center.x + w / 2.0, center.y + h / 2.0);
                                 let pointer = cx.layout.to_spread(spread, ev.pos);
                                 let x_edges = if x_drives { edge_toward(pointer.x, center.x) } else { [false, false, false] };
                                 let y_edges = if x_drives && ev.mods.shift { [false, false, false] } else { edge_toward(pointer.y, center.y) };
                                 let exclude = cx.selection.items.clone();
                                 let (pad_x, pad_y) = scale_stroke_pad(cx);
-                                let hit = crate::snap::snap(
+                                let mut hit = crate::snap::snap(
                                     cx,
                                     SnapRequest {
                                         spread,
                                         gesture: Gesture::Resize,
-                                        rect: to,
+                                        rect: pre,
                                         x_edges,
                                         y_edges,
                                         exclude: &exclude,
@@ -141,9 +141,21 @@ impl Tool for XformTool {
                                         w = w0 * (h / h0);
                                     }
                                 }
-                                if w.is_finite() && h.is_finite() && w.abs() > 1e-9 && h.abs() > 1e-9 {
-                                    sx = (w / w0) * sign_x;
-                                    sy = (h / h0) * sign_y;
+                                if w.is_finite() && h.is_finite() {
+                                    let committed = Rect::new(center.x - w / 2.0, center.y - h / 2.0, center.x + w / 2.0, center.y + h / 2.0);
+                                    crate::snap::lay_dimension_guides(
+                                        &mut hit.guides,
+                                        cx.layout.xf(spread),
+                                        pre,
+                                        committed,
+                                        x_edges,
+                                        y_edges,
+                                        hit.length_delta,
+                                    );
+                                    if w.abs() > 1e-9 && h.abs() > 1e-9 {
+                                        sx = (w / w0) * sign_x;
+                                        sy = (h / h0) * sign_y;
+                                    }
                                 }
                                 self.guides = hit.guides;
                             }

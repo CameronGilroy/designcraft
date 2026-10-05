@@ -1,7 +1,8 @@
 use designcraft_compose::Cache;
 use designcraft_doc::build::NewDocument;
-use designcraft_doc::{Document, ParaFormat, Selection, SpreadRef};
-use designcraft_geom::{Rect, Unit};
+use designcraft_doc::{Document, Item, ItemId, ParaFormat, Selection, Shape, SpreadRef};
+use designcraft_geom::shapes;
+use designcraft_geom::{Point, Rect, Unit};
 
 use super::*;
 
@@ -291,4 +292,192 @@ fn turned_spread_maps_points_both_ways() {
     // A canvas drag rightwards is a drag down the spread.
     let dv = slot.delta_to_spread(designcraft_geom::Vec2::new(10.0, 0.0));
     assert!(dv.x.abs() < 1e-9 && (dv.y + 10.0).abs() < 1e-9 || (dv.y - 10.0).abs() < 1e-9, "{dv:?}");
+}
+
+fn add_rect(doc: &mut Document, rect: Rect) -> ItemId {
+    let layer = doc.default_layer();
+    let id = ItemId(doc.alloc());
+    let item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(rect));
+    doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
+    id
+}
+
+/// Dimensions on, ruler guides and the document grid off. Alignment is optional.
+fn dims_ctx<'a>(d: &'a Document, s: &'a Selection, c: &'a Cache, l: &'a CanvasLayout, align: bool) -> ToolContext<'a> {
+    let mut cx = ctx(d, s, c, l);
+    cx.snap = SnapView::FACTORY;
+    cx.snap.snap_to_guides = false;
+    cx.snap.snap_to_document_grid = false;
+    cx.snap.align_edges = align;
+    cx.snap.align_centers = align;
+    cx
+}
+
+fn spread_pt(l: &CanvasLayout, x: f64, y: f64) -> Point {
+    l.to_canvas(SpreadRef::Doc(0), Point::new(x, y))
+}
+
+fn near(a: Point, b: Point) -> bool {
+    (a.x - b.x).abs() < 1e-4 && (a.y - b.y).abs() < 1e-4
+}
+
+fn guide_matches(overlays: &[Overlay], a: Point, b: Point) -> bool {
+    overlays.iter().any(|o| match o {
+        Overlay::Guide { a: ga, b: gb } => (near(*ga, a) && near(*gb, b)) || (near(*ga, b) && near(*gb, a)),
+        _ => false,
+    })
+}
+
+fn guide_list(overlays: &[Overlay]) -> String {
+    overlays
+        .iter()
+        .filter_map(|o| match o {
+            Overlay::Guide { a, b } => Some(format!("({:.4},{:.4})-({:.4},{:.4})", a.x, a.y, b.x, b.y)),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+#[test]
+fn shift_alt_resize_keeps_aspect_and_center() {
+    // 100 by 50, center (150, 125), aspect 2. Corner handle, Shift and Alt.
+    // The centered width is 160. Another item's side is 163, inside the zone.
+    let mut doc = Document::new(&NewDocument::default());
+    let moving = add_rect(&mut doc, Rect::new(100.0, 100.0, 200.0, 150.0));
+    add_rect(&mut doc, Rect::new(400.0, 400.0, 563.0, 430.0));
+    let sel = Selection::items(vec![moving]);
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    let cx = dims_ctx(&doc, &sel, &cache, &layout, false);
+    let mut t = create("selection");
+    let mods = Mods { shift: true, alt: true, ..Mods::default() };
+    let down = spread_pt(&layout, 200.0, 150.0);
+    let drag = spread_pt(&layout, 230.0, 155.0);
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, down.x, down.y).with_mods(mods));
+    let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, drag.x, drag.y).with_mods(mods));
+    let params = match &a[..] {
+        [Action::Preview(cmd, p)] => {
+            assert_eq!(cmd, "transform.resize");
+            p
+        }
+        other => panic!("{other:?}"),
+    };
+    let to = params["to"].as_array().unwrap();
+    let (x0, y0, x1, y1) = (to[0].as_f64().unwrap(), to[1].as_f64().unwrap(), to[2].as_f64().unwrap(), to[3].as_f64().unwrap());
+    let (w, h) = (x1 - x0, y1 - y0);
+    let (cx0, cy0) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    assert!((cx0 - 150.0).abs() < 1e-4 && (cy0 - 125.0).abs() < 1e-4, "center walked to ({cx0}, {cy0}) rect {to:?}");
+    assert!((w / h - 2.0).abs() < 1e-4, "aspect {} rect {to:?}", w / h);
+    assert!((w - 163.0).abs() < 1e-4, "driving length {w}, want the matched 163, not twice the correction");
+}
+
+#[test]
+fn line_length_keeps_the_crossed_guide() {
+    // Diagonal from (100, 100) to (180, 140). Length is about 89.44, near a 92 side.
+    // Endpoint y is 2 pt from the other item's top, so Y is a position snap and X is the length.
+    let mut doc = Document::new(&NewDocument::default());
+    add_rect(&mut doc, Rect::new(400.0, 142.0, 492.0, 180.0));
+    let sel = Selection::default();
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    let cx = dims_ctx(&doc, &sel, &cache, &layout, true);
+    let mut t = create("line");
+    let a = spread_pt(&layout, 100.0, 100.0);
+    let b = spread_pt(&layout, 180.0, 140.0);
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, a.x, a.y));
+    let actions = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, b.x, b.y));
+    let params = actions
+        .iter()
+        .find_map(|act| match act {
+            Action::Preview(cmd, p) if cmd == "line.create" => Some(p),
+            _ => None,
+        })
+        .unwrap();
+    let end = params["b"].as_array().unwrap();
+    let (bx, by) = (end[0].as_f64().unwrap(), end[1].as_f64().unwrap());
+    let len = 80.0_f64.hypot(40.0);
+    let expect_x = 180.0 + (92.0 - len);
+    assert!((by - 142.0).abs() < 1e-4, "endpoint y {by} left the guide at 142 (x {bx})");
+    assert!((bx - expect_x).abs() < 1e-4, "endpoint x {bx}, want {expect_x} from the length delta on X only");
+}
+
+#[test]
+fn dimension_guide_lies_on_the_committed_side() {
+    let mut problems = Vec::new();
+
+    // Centered scale. Width 120 grows to the matched 123, so each side moves 1.5, not 3.
+    let mut doc = Document::new(&NewDocument::default());
+    let moving = add_rect(&mut doc, Rect::new(100.0, 100.0, 200.0, 160.0));
+    add_rect(&mut doc, Rect::new(400.0, 400.0, 523.0, 440.0));
+    let sel = Selection::items(vec![moving]);
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    let cx = dims_ctx(&doc, &sel, &cache, &layout, false);
+    let mut t = create("scale");
+    let center = spread_pt(&layout, 150.0, 130.0);
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, center.x + 50.0, center.y + 30.0));
+    let drag = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, center.x + 60.0, center.y + 40.0));
+    let (sx, sy) = match &drag[..] {
+        [Action::Preview(cmd, p)] => {
+            assert_eq!(cmd, "transform.scale");
+            (p["sx"].as_f64().unwrap(), p["sy"].as_f64().unwrap())
+        }
+        other => panic!("{other:?}"),
+    };
+    let committed = Rect::new(150.0 - 50.0 * sx.abs(), 130.0 - 30.0 * sy.abs(), 150.0 + 50.0 * sx.abs(), 130.0 + 30.0 * sy.abs());
+    let xf = layout.xf(SpreadRef::Doc(0));
+    let bottom = (xf * Point::new(committed.x0, committed.y1), xf * Point::new(committed.x1, committed.y1));
+    let overlays = t.overlays(&cx);
+    let scale_guides = overlays.iter().filter(|o| matches!(o, Overlay::Guide { .. })).count();
+    if scale_guides != 1 || !guide_matches(&overlays, bottom.0, bottom.1) {
+        problems.push(format!(
+            "scale guide is not on the committed bottom ({:.4},{:.4})-({:.4},{:.4}), sx {sx} sy {sy}, {scale_guides} guides [{}]",
+            bottom.0.x,
+            bottom.0.y,
+            bottom.1.x,
+            bottom.1.y,
+            guide_list(&overlays)
+        ));
+    }
+
+    // Shift resize. Width snaps 130 to 133, then the height follows the aspect and the bottom moves.
+    let mut doc = Document::new(&NewDocument::default());
+    let moving = add_rect(&mut doc, Rect::new(100.0, 100.0, 200.0, 150.0));
+    add_rect(&mut doc, Rect::new(400.0, 400.0, 533.0, 430.0));
+    let sel = Selection::items(vec![moving]);
+    let cache = Cache::new();
+    let layout = CanvasLayout::new(&doc, false);
+    let cx = dims_ctx(&doc, &sel, &cache, &layout, false);
+    let mut t = create("selection");
+    let mods = Mods { shift: true, ..Mods::default() };
+    let down = spread_pt(&layout, 200.0, 150.0);
+    let drag_at = spread_pt(&layout, 230.0, 155.0);
+    t.pointer(&cx, &PointerEvent::new(PointerKind::Down, down.x, down.y));
+    let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, drag_at.x, drag_at.y).with_mods(mods));
+    let to = match &a[..] {
+        [Action::Preview(cmd, p)] => {
+            assert_eq!(cmd, "transform.resize");
+            p["to"].as_array().unwrap()
+        }
+        other => panic!("{other:?}"),
+    };
+    let rect = Rect::new(to[0].as_f64().unwrap(), to[1].as_f64().unwrap(), to[2].as_f64().unwrap(), to[3].as_f64().unwrap());
+    let xf = layout.xf(SpreadRef::Doc(0));
+    let y = rect.y0.max(rect.y1);
+    let (x0, x1) = (rect.x0.min(rect.x1), rect.x0.max(rect.x1));
+    let side = (xf * Point::new(x0, y), xf * Point::new(x1, y));
+    let overlays = t.overlays(&cx);
+    let shift_guides = overlays.iter().filter(|o| matches!(o, Overlay::Guide { .. })).count();
+    if shift_guides != 1 || !guide_matches(&overlays, side.0, side.1) {
+        problems.push(format!(
+            "shift guide is not on the committed side ({:.4},{:.4})-({:.4},{:.4}), rect {to:?}, {shift_guides} guides [{}]",
+            side.0.x,
+            side.0.y,
+            side.1.x,
+            side.1.y,
+            guide_list(&overlays)
+        ));
+    }
+    assert!(problems.is_empty(), "{}", problems.join(" | "));
 }
