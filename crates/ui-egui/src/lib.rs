@@ -86,6 +86,16 @@ pub struct SavedWorkspace {
     pub floating: Vec<(String, [f32; 2])>,
 }
 
+/// A missing on-by-default bool stays on. `bool::default` is false.
+fn default_true() -> bool {
+    true
+}
+
+/// A missing snap zone stays at the factory width, in screen pixels.
+fn default_zone() -> f64 {
+    4.0
+}
+
 /// Persisted UI state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -162,6 +172,19 @@ pub struct UiState {
     pub text_style_tab: u8,
     pub guides_locked: bool,
     pub smart_guides: bool,
+    #[serde(default = "default_true")]
+    pub snap_to_guides: bool,
+    pub snap_to_document_grid: bool,
+    #[serde(default = "default_true")]
+    pub align_edges: bool,
+    #[serde(default = "default_true")]
+    pub align_centers: bool,
+    #[serde(default = "default_true")]
+    pub smart_dimensions: bool,
+    #[serde(default = "default_true")]
+    pub smart_spacing: bool,
+    #[serde(default = "default_zone")]
+    pub snap_zone: f64,
     /// Window > Contextual Task Bar.
     pub task_bar: bool,
     /// Help › About DesignCraft is open.
@@ -228,6 +251,13 @@ impl Default for UiState {
             text_style_tab: 0,
             guides_locked: false,
             smart_guides: true,
+            snap_to_guides: true,
+            snap_to_document_grid: false,
+            align_edges: true,
+            align_centers: true,
+            smart_dimensions: true,
+            smart_spacing: true,
+            snap_zone: 4.0,
             task_bar: true,
             about: false,
             pending_urls: Vec::new(),
@@ -235,6 +265,23 @@ impl Default for UiState {
             dialog: None,
             palette: None,
             flyout: None,
+        }
+    }
+}
+
+impl UiState {
+    /// Copies the live view switches into the snap engine's view.
+    pub fn snap_view(&self) -> SnapView {
+        SnapView {
+            snap_to_guides: self.snap_to_guides,
+            snap_to_document_grid: self.snap_to_document_grid,
+            show_guides: self.guides,
+            smart_guides: self.smart_guides,
+            align_edges: self.align_edges,
+            align_centers: self.align_centers,
+            smart_dimensions: self.smart_dimensions,
+            smart_spacing: self.smart_spacing,
+            zone_px: self.snap_zone,
         }
     }
 }
@@ -429,7 +476,7 @@ impl DesignApp {
         self.pane = pane;
     }
     pub fn view_info(&self) -> ViewInfo {
-        ViewInfo { zoom: self.view().map(|v| v.zoom).unwrap_or(1.0), snap: SnapView::FACTORY, unit: self.ui.units }
+        ViewInfo { zoom: self.view().map(|v| v.zoom).unwrap_or(1.0), snap: self.ui.snap_view(), unit: self.ui.units }
     }
 
     pub fn status(&mut self, s: impl Into<String>) {
@@ -804,5 +851,22 @@ pub fn now_ms() -> f64 {
     #[cfg(target_arch = "wasm32")]
     {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snap_view_uses_the_saved_switches() {
+        let mut ui = UiState::default();
+        assert!(ui.snap_view().snap_to_guides);
+        assert!(!ui.snap_view().snap_to_document_grid);
+        assert_eq!(ui.snap_view().zone_px, 4.0);
+        ui.snap_to_guides = false;
+        ui.snap_zone = 0.0;
+        assert!(!ui.snap_view().snap_to_guides);
+        assert_eq!(ui.snap_view().zone_px, 0.0);
     }
 }

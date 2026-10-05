@@ -77,6 +77,9 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.frameEdges", "Show/Hide Frame Edges", Some("Cmd+H"), "{}"),
     ("view.rulers", "Show/Hide Rulers", Some("Cmd+R"), "{}"),
     ("view.guides", "Show/Hide Guides", Some("Cmd+;"), "{}"),
+    ("view.snapToGuides", "Snap to Guides", Some("Cmd+Shift+;"), "{}"),
+    ("view.snapToDocumentGrid", "Snap to Document Grid", None, "{}"),
+    ("view.smartGuides", "Smart Guides", None, "{}"),
     ("view.baselineGrid", "Show/Hide Baseline Grid", Some("Cmd+Alt+'"), "{}"),
     ("view.textThreads", "Show/Hide Text Threads", Some("Cmd+Alt+Y"), "{}"),
     ("view.hiddenCharacters", "Show/Hide Hidden Characters", Some("Cmd+Alt+I"), "{}"),
@@ -584,6 +587,9 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "-",
             ">Grids & Guides",
             "ui:view.guides",
+            "ui:view.snapToGuides",
+            "ui:view.snapToDocumentGrid",
+            "ui:view.smartGuides",
             "ui:view.baselineGrid",
             "-",
             "ui:app.deleteAllGuides",
@@ -959,6 +965,11 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 f["pasteboard.h"] = m(&doc["pasteboard"][0]);
                 f["pasteboard.v"] = m(&doc["pasteboard"][1]);
             }
+            f["snap.alignEdges"] = json!(app.ui.align_edges);
+            f["snap.alignCenters"] = json!(app.ui.align_centers);
+            f["snap.dimensions"] = json!(app.ui.smart_dimensions);
+            f["snap.spacing"] = json!(app.ui.smart_spacing);
+            f["snap.zone"] = json!(app.ui.snap_zone);
             f["displayQuality"] = json!(match app.ui.display_quality {
                 designcraft_render::DisplayQuality::Fast => "fast",
                 designcraft_render::DisplayQuality::Typical => "typical",
@@ -1042,6 +1053,9 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "view.rulers" => flag(&mut app.ui.rulers),
         "view.guides" => flag(&mut app.ui.guides),
+        "view.snapToGuides" => flag(&mut app.ui.snap_to_guides),
+        "view.snapToDocumentGrid" => flag(&mut app.ui.snap_to_document_grid),
+        "view.smartGuides" => flag(&mut app.ui.smart_guides),
         "view.baselineGrid" => flag(&mut app.ui.baseline_grid),
         "view.textThreads" => flag(&mut app.ui.text_threads),
         "view.hiddenCharacters" => flag(&mut app.ui.hidden_characters),
@@ -1606,6 +1620,9 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "view.typicalDisplay" => app.ui.display_quality == designcraft_render::DisplayQuality::Typical,
         "view.highQualityDisplay" => app.ui.display_quality == designcraft_render::DisplayQuality::High,
         "view.guides" => app.ui.guides,
+        "view.snapToGuides" => app.ui.snap_to_guides,
+        "view.snapToDocumentGrid" => app.ui.snap_to_document_grid,
+        "view.smartGuides" => app.ui.smart_guides,
         "view.baselineGrid" => app.ui.baseline_grid,
         "view.textThreads" => app.ui.text_threads,
         "view.hiddenCharacters" => app.ui.hidden_characters,
