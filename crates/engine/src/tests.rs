@@ -107,6 +107,28 @@ fn cmd_move_does_not_snap() {
 }
 
 #[test]
+fn cmd_resize_still_snaps_to_a_guide() {
+    use designcraft_tools::{PointerEvent, PointerKind};
+    let mut s = session();
+    s.execute("frame.create", &json!({"rect": [100.0, 100.0, 200.0, 180.0], "content": "unassigned"})).unwrap();
+    s.execute("guide.add", &json!({"orientation": "vertical", "position": 250.0, "page": 0})).unwrap();
+    s.set_tool("selection");
+    let v = ViewInfo::at_zoom(1.0);
+    let b0 = s.doc().unwrap().doc.spreads[0].items[0].bounds();
+    let right = s.layout().to_canvas(designcraft_doc::SpreadRef::Doc(0), designcraft_geom::Point::new(b0.x1, b0.center().y));
+    let cmd = designcraft_tools::Mods { cmd: true, ..Default::default() };
+    s.pointer(&PointerEvent::new(PointerKind::Down, right.x, right.y).with_mods(cmd), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, right.x + 47.0, right.y).with_mods(cmd), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, right.x + 47.0, right.y).with_mods(cmd), v).unwrap();
+    let it = &s.doc().unwrap().doc.spreads[0].items[0];
+    let b = it.bounds();
+    assert!((b.x1 - 250.0).abs() < 1e-6, "cmd resize did not snap the moving edge: {b:?}");
+    assert!((b.x0 - b0.x0).abs() < 1e-6 && (b.y0 - b0.y0).abs() < 1e-6 && (b.y1 - b0.y1).abs() < 1e-6, "{b:?}");
+    let expect = (b.x1 - b.x0).abs() / b0.width() * (b.y1 - b.y0).abs() / b0.height();
+    assert!((it.stroke.weight - expect.sqrt()).abs() < 1e-6, "content scale weight {} want {}", it.stroke.weight, expect.sqrt());
+}
+
+#[test]
 fn shift_move_on_a_turned_spread_stays_on_the_line() {
     use designcraft_tools::{PointerEvent, PointerKind};
     let mut s = session();

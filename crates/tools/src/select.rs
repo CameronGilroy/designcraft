@@ -102,6 +102,11 @@ fn rotate_zone(cx: &ToolContext, p: Point) -> Option<Point> {
 
 /// New rect when dragging `handle` of `from` to `p`.
 pub fn resize_rect(from: Rect, handle: usize, p: Point, m: Mods) -> Rect {
+    finish_resize(from, handle, resize_edges_rect(from, handle, p), m)
+}
+
+/// Edges the pointer sets, before Shift or Alt.
+fn resize_edges_rect(from: Rect, handle: usize, p: Point) -> Rect {
     let (mut x0, mut y0, mut x1, mut y1) = (from.x0, from.y0, from.x1, from.y1);
     match handle {
         0 => {
@@ -125,51 +130,123 @@ pub fn resize_rect(from: Rect, handle: usize, p: Point, m: Mods) -> Rect {
         }
         _ => x0 = p.x,
     }
-    if m.shift && from.width() > 1e-9 && from.height() > 1e-9 {
-        let sx = (x1 - x0) / from.width();
-        let sy = (y1 - y0) / from.height();
-        let s = if matches!(handle, 1 | 5) {
-            sy
-        } else if matches!(handle, 3 | 7) || sx.abs() > sy.abs() {
-            sx
-        } else {
-            sy
-        };
-        let (w, h) = (from.width() * s, from.height() * s);
-        match handle {
-            0 => {
-                x0 = x1 - w;
-                y0 = y1 - h;
-            }
-            2 => {
-                x1 = x0 + w;
-                y0 = y1 - h;
-            }
-            3..=5 => {
-                x1 = x0 + w;
-                y1 = y0 + h;
-            }
-            6 | 7 => {
-                x0 = x1 - w;
-                y1 = y0 + h;
-            }
-            _ => {
-                x0 = x1 - w;
-                y0 = y1 - h;
-            }
+    Rect::new(x0, y0, x1, y1)
+}
+
+fn finish_resize(from: Rect, handle: usize, rect: Rect, m: Mods) -> Rect {
+    let rect = if m.shift && from.width() > 1e-9 && from.height() > 1e-9 {
+        apply_aspect(from, handle, rect, aspect_scale(from, handle, rect))
+    } else {
+        rect
+    };
+    if m.alt { apply_alt(from, handle, rect) } else { rect }
+}
+
+fn aspect_scale(from: Rect, handle: usize, rect: Rect) -> f64 {
+    let sx = (rect.x1 - rect.x0) / from.width();
+    let sy = (rect.y1 - rect.y0) / from.height();
+    if matches!(handle, 1 | 5) {
+        sy
+    } else if matches!(handle, 3 | 7) || sx.abs() > sy.abs() {
+        sx
+    } else {
+        sy
+    }
+}
+
+/// True when the width, not the height, drives a Shift constraint.
+fn drives_x(handle: usize, from: Rect, rect: Rect) -> bool {
+    if matches!(handle, 1 | 5) {
+        return false;
+    }
+    if matches!(handle, 3 | 7) {
+        return true;
+    }
+    if from.width() <= 1e-9 || from.height() <= 1e-9 {
+        return true;
+    }
+    let sx = ((rect.x1 - rect.x0) / from.width()).abs();
+    let sy = ((rect.y1 - rect.y0) / from.height()).abs();
+    sx > sy
+}
+
+fn apply_aspect(from: Rect, handle: usize, rect: Rect, s: f64) -> Rect {
+    let (mut x0, mut y0, mut x1, mut y1) = (rect.x0, rect.y0, rect.x1, rect.y1);
+    let (w, h) = (from.width() * s, from.height() * s);
+    match handle {
+        0 => {
+            x0 = x1 - w;
+            y0 = y1 - h;
+        }
+        2 => {
+            x1 = x0 + w;
+            y0 = y1 - h;
+        }
+        3..=5 => {
+            x1 = x0 + w;
+            y1 = y0 + h;
+        }
+        6 | 7 => {
+            x0 = x1 - w;
+            y1 = y0 + h;
+        }
+        _ => {
+            x0 = x1 - w;
+            y0 = y1 - h;
         }
     }
-    if m.alt {
-        let c = from.center();
-        let (hw, hh) = ((x1 - x0) / 2.0, (y1 - y0) / 2.0);
-        let (hw, hh) = match handle {
-            1 | 5 => (from.width() / 2.0, (if handle == 1 { c.y - y0 } else { y1 - c.y })),
-            3 | 7 => ((if handle == 7 { c.x - x0 } else { x1 - c.x }), from.height() / 2.0),
-            _ => (hw.abs().max((c.x - x0).abs()).max((x1 - c.x).abs()), hh.abs().max((c.y - y0).abs()).max((y1 - c.y).abs())),
-        };
-        return Rect::new(c.x - hw, c.y - hh, c.x + hw, c.y + hh);
-    }
     Rect::new(x0, y0, x1, y1)
+}
+
+fn apply_alt(from: Rect, handle: usize, rect: Rect) -> Rect {
+    let (x0, y0, x1, y1) = (rect.x0, rect.y0, rect.x1, rect.y1);
+    let c = from.center();
+    let (hw, hh) = ((x1 - x0) / 2.0, (y1 - y0) / 2.0);
+    let (hw, hh) = match handle {
+        1 | 5 => (from.width() / 2.0, (if handle == 1 { c.y - y0 } else { y1 - c.y })),
+        3 | 7 => ((if handle == 7 { c.x - x0 } else { x1 - c.x }), from.height() / 2.0),
+        _ => (hw.abs().max((c.x - x0).abs()).max((x1 - c.x).abs()), hh.abs().max((c.y - y0).abs()).max((y1 - c.y).abs())),
+    };
+    Rect::new(c.x - hw, c.y - hh, c.x + hw, c.y + hh)
+}
+
+/// Left/center/right and top/center/bottom for a handle. Centers stay off.
+fn resize_edge_flags(handle: usize) -> ([bool; 3], [bool; 3]) {
+    let x = match handle {
+        0 | 6 | 7 => [true, false, false],
+        2..=4 => [false, false, true],
+        _ => [false, false, false],
+    };
+    let y = match handle {
+        0..=2 => [true, false, false],
+        4..=6 => [false, false, true],
+        _ => [false, false, false],
+    };
+    (x, y)
+}
+
+fn axis_length(edges: [bool; 3], size: f64, pad: f64) -> Option<f64> {
+    if edges == [false, false, false] {
+        return None;
+    }
+    let len = size.abs() + pad;
+    len.is_finite().then_some(len)
+}
+
+/// Visible size minus path size, for one selected item. Centered stroke then matches the outer edge.
+fn single_stroke_pad(cx: &ToolContext) -> (f64, f64) {
+    if cx.selection.items.len() != 1 {
+        return (0.0, 0.0);
+    }
+    let Some(id) = cx.selection.items.first() else { return (0.0, 0.0) };
+    let Some(it) = cx.doc.item(*id) else { return (0.0, 0.0) };
+    let path = it.bounds();
+    let vis = it.visible_bounds();
+    (positive_pad(vis.width() - path.width()), positive_pad(vis.height() - path.height()))
+}
+
+fn positive_pad(v: f64) -> f64 {
+    if v.is_finite() && v > 0.0 { v } else { 0.0 }
 }
 
 impl Tool for SelectionTool {
@@ -327,10 +404,51 @@ impl Tool for SelectionTool {
                     vec![Action::Preview("transform.move".into(), params)]
                 }
                 Drag::Resize { handle, start, from, spread } => {
-                    let to = resize_rect(from, handle, cx.layout.to_spread(spread, p), ev.mods);
                     let _ = start;
+                    let pointer = cx.layout.to_spread(spread, p);
+                    let raw = resize_edges_rect(from, handle, pointer);
+                    let mut to = resize_rect(from, handle, pointer, ev.mods);
                     // Space while dragging: Live Distribute (several objects keep their size).
                     let distribute = ev.mods.space && cx.selection.items.len() > 1;
+                    self.guides.clear();
+                    // Command still scales content. It does not skip the snap.
+                    if !distribute && cx.snap.any() {
+                        let (mut x_edges, mut y_edges) = resize_edge_flags(handle);
+                        let driver_x = drives_x(handle, from, raw);
+                        if ev.mods.shift {
+                            if driver_x {
+                                y_edges = [false, false, false];
+                            } else {
+                                x_edges = [false, false, false];
+                            }
+                        }
+                        let exclude = cx.selection.items.clone();
+                        let (pad_x, pad_y) = single_stroke_pad(cx);
+                        let hit = crate::snap::snap(
+                            cx,
+                            SnapRequest {
+                                spread,
+                                gesture: Gesture::Resize,
+                                rect: to,
+                                x_edges,
+                                y_edges,
+                                exclude: &exclude,
+                                copying: false,
+                                lengths: [axis_length(x_edges, to.width(), pad_x), axis_length(y_edges, to.height(), pad_y)],
+                                angle: None,
+                                radius: 0.0,
+                                pointer,
+                            },
+                        );
+                        to = crate::snap::nudge_edges(to, x_edges, y_edges, hit.delta);
+                        if ev.mods.shift && !ev.mods.alt && from.width() > 1e-9 && from.height() > 1e-9 {
+                            let s = if driver_x { (to.x1 - to.x0) / from.width() } else { (to.y1 - to.y0) / from.height() };
+                            if s.is_finite() {
+                                to = apply_aspect(from, handle, to, s);
+                            }
+                        }
+                        self.guides = hit.guides;
+                    }
                     vec![Action::Preview(
                         "transform.resize".into(),
                         json!({"from": rect_json(from), "to": rect_json(to), "content": ev.mods.cmd, "distribute": distribute}),
@@ -423,7 +541,7 @@ impl Tool for SelectionTool {
     fn overlays(&self, _cx: &ToolContext) -> Vec<Overlay> {
         match &self.drag {
             Drag::Marquee { start, cur } => vec![Overlay::Marquee(Rect::from_points(*start, *cur))],
-            Drag::Move { .. } => self.guides.clone(),
+            Drag::Move { .. } | Drag::Resize { .. } => self.guides.clone(),
             _ => vec![],
         }
     }

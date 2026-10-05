@@ -6,9 +6,9 @@
 
 use std::collections::HashSet;
 
-use designcraft_doc::{Item, ItemId, Orientation, PageSide, Selection, SpreadId, SpreadRef};
+use designcraft_doc::{Item, ItemId, Orientation, PageSide, Selection, SpreadId, SpreadRef, StrokeAlign};
 use designcraft_geom::snap::snap_to_grid;
-use designcraft_geom::{Point, Rect};
+use designcraft_geom::{Point, Rect, Vec2, format_measure};
 
 pub use crate::{Gesture, Snap, SnapRequest, SnapView};
 
@@ -149,18 +149,45 @@ pub fn snap(cx: &ToolContext, req: SnapRequest<'_>) -> Snap {
     let mut out = Snap::default();
     if let Some(hit) = &x_hit {
         out.delta.x = hit.delta;
+        out.length_delta[0] = hit.length_delta;
     }
     if let Some(hit) = &y_hit {
         out.delta.y = hit.delta;
+        out.length_delta[1] = hit.length_delta;
     }
     let placed = Rect::new(req.rect.x0 + out.delta.x, req.rect.y0 + out.delta.y, req.rect.x1 + out.delta.x, req.rect.y1 + out.delta.y);
     if let Some(hit) = &x_hit {
-        push_alignment_guide(&mut out.guides, cx, req.spread, Axis::X, hit, placed);
+        push_hit_guides(&mut out.guides, cx, &req, Axis::X, hit, placed);
     }
     if let Some(hit) = &y_hit {
-        push_alignment_guide(&mut out.guides, cx, req.spread, Axis::Y, hit, placed);
+        push_hit_guides(&mut out.guides, cx, &req, Axis::Y, hit, placed);
     }
     out
+}
+
+/// Move the flagged edges by `delta`.
+///
+/// One edge takes the whole delta. Both edges of an axis split it, low edge one way and high
+/// edge the other, so a length match keeps the centre. A non-finite component is ignored.
+pub(crate) fn nudge_edges(mut rect: Rect, x_edges: [bool; 3], y_edges: [bool; 3], delta: Vec2) -> Rect {
+    nudge_axis(&mut rect.x0, &mut rect.x1, x_edges, delta.x);
+    nudge_axis(&mut rect.y0, &mut rect.y1, y_edges, delta.y);
+    rect
+}
+
+fn nudge_axis(lo: &mut f64, hi: &mut f64, flags: [bool; 3], delta: f64) {
+    if !delta.is_finite() {
+        return;
+    }
+    let [low_edge, _, high_edge] = flags;
+    if low_edge && high_edge {
+        *lo -= delta;
+        *hi += delta;
+    } else if low_edge {
+        *lo += delta;
+    } else if high_edge {
+        *hi += delta;
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -169,13 +196,24 @@ enum Axis {
     Y,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct AxisHit {
     delta: f64,
     /// Position of the winning line on this axis.
     at: f64,
     /// Target box for an alignment guide. None when the hit draws nothing.
     span: Option<Rect>,
+    /// Matched length minus the proposed length, when this hit is a dimension match.
+    length_delta: Option<f64>,
+    /// Spread-space segment along the matched side, plus the measure text.
+    dimension: Option<DimMark>,
+}
+
+#[derive(Clone)]
+struct DimMark {
+    a: Point,
+    b: Point,
+    text: String,
 }
 
 struct Best {
@@ -343,8 +381,232 @@ fn pass_spacing(_cx: &ToolContext, _req: &SnapRequest<'_>, _axis: Axis, _tol: f6
     None
 }
 
-fn pass_dimensions(_cx: &ToolContext, _req: &SnapRequest<'_>, _axis: Axis, _tol: f64) -> Option<AxisHit> {
-    None
+/// Other items' own side lengths, on resize and create.
+///
+/// Own size is the path box in item space, inflated the way [`Item::visible_bounds`] inflates,
+/// then multiplied by the absolute scale (ancestors included, rotation dropped). Width and height
+/// are both candidates for whichever length is set. The closest length inside the zone wins.
+/// Delta is the length difference applied from the moving edge. A rotated rectangle contributes
+/// its side lengths, not the axis-aligned box.
+fn pass_dimensions(cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, tol: f64) -> Option<AxisHit> {
+    if !matches!(req.gesture, Gesture::Resize | Gesture::Create) || !cx.snap.smart_guides || !cx.snap.smart_dimensions {
+        return None;
+    }
+    let proposed = match axis {
+        Axis::X => req.lengths[0],
+        Axis::Y => req.lengths[1],
+    }?;
+    if !proposed.is_finite() {
+        return None;
+    }
+    let mut best: Option<(f64, f64)> = None;
+    for len in dimension_lengths(cx, req) {
+        if !len.is_finite() || len < 0.0 {
+            continue;
+        }
+        let dist = (len - proposed).abs();
+        if dist <= tol && best.is_none_or(|(have, _)| dist < have) {
+            best = Some((dist, len));
+        }
+    }
+    let (_, length) = best?;
+    let diff = length - proposed;
+    if !diff.is_finite() {
+        return None;
+    }
+    let flags = axis_flags(req, axis);
+    let text = format_measure(length, cx.unit);
+    Some(AxisHit {
+        delta: length_edge_delta(flags, diff),
+        at: 0.0,
+        span: None,
+        length_delta: Some(diff),
+        dimension: Some(dimension_mark(req, axis, diff, text)),
+    })
+}
+
+/// Edge shift so adding it to the moving edge grows the length by `diff`.
+fn length_edge_delta(flags: [bool; 3], diff: f64) -> f64 {
+    let [low_edge, mid, high_edge] = flags;
+    if low_edge && high_edge && !mid {
+        diff / 2.0
+    } else if high_edge && !low_edge {
+        diff
+    } else if low_edge && !high_edge {
+        -diff
+    } else {
+        diff
+    }
+}
+
+/// Guide along the side whose length matched, after the edge has moved.
+fn dimension_mark(req: &SnapRequest<'_>, axis: Axis, diff: f64, text: String) -> DimMark {
+    let rect = req.rect;
+    let flags = axis_flags(req, axis);
+    let (a, b) = match axis {
+        Axis::X => {
+            let (x0, x1) = grown_span(rect.x0, rect.x1, flags, diff);
+            let y = rect.y0.max(rect.y1);
+            (Point::new(x0, y), Point::new(x1, y))
+        }
+        Axis::Y => {
+            let (y0, y1) = grown_span(rect.y0, rect.y1, flags, diff);
+            let x = rect.x0.max(rect.x1);
+            (Point::new(x, y0), Point::new(x, y1))
+        }
+    };
+    DimMark { a, b, text }
+}
+
+fn grown_span(a0: f64, a1: f64, flags: [bool; 3], diff: f64) -> (f64, f64) {
+    let (lo, hi) = if a0 <= a1 { (a0, a1) } else { (a1, a0) };
+    let [low_edge, mid, high_edge] = flags;
+    if low_edge && high_edge && !mid {
+        let mid_v = (lo + hi) / 2.0;
+        let half = (hi - lo) / 2.0 + diff / 2.0;
+        (mid_v - half, mid_v + half)
+    } else if low_edge && !high_edge {
+        (lo - diff, hi)
+    } else {
+        (lo, hi + diff)
+    }
+}
+
+fn dimension_lengths(cx: &ToolContext, req: &SnapRequest<'_>) -> Vec<f64> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    if let Some(sp) = cx.doc.spread(req.spread) {
+        for item in &sp.items {
+            push_own_lengths(&mut out, cx.selection, req, item, 1.0, 1.0, false, 0, &mut seen);
+        }
+    }
+    if !layout_edits_parents(cx) {
+        push_parent_lengths(&mut out, cx, req, &mut seen);
+    }
+    out
+}
+
+fn push_own_lengths(
+    out: &mut Vec<f64>,
+    selection: &Selection,
+    req: &SnapRequest<'_>,
+    item: &Item,
+    ancestor_sx: f64,
+    ancestor_sy: f64,
+    skipped: bool,
+    depth: usize,
+    seen: &mut HashSet<ItemId>,
+) {
+    if depth >= ALIGN_GROUP_DEPTH || !seen.insert(item.id) || item.hidden {
+        return;
+    }
+    let skip = skipped || align_skips_item(selection, req, item.id);
+    if item.is_group() && !item.children().is_empty() {
+        let decomposed = designcraft_geom::decompose::decompose(item.xf);
+        let sx = ancestor_sx * decomposed.scale_x.abs();
+        let sy = ancestor_sy * decomposed.scale_y.abs();
+        if !sx.is_finite() || !sy.is_finite() {
+            return;
+        }
+        for child in item.children() {
+            push_own_lengths(out, selection, req, child, sx, sy, skip, depth + 1, seen);
+        }
+        return;
+    }
+    if skip {
+        return;
+    }
+    let Some((w, h)) = leaf_own_size(item, ancestor_sx, ancestor_sy) else { return };
+    out.push(w);
+    out.push(h);
+}
+
+/// Path bounds in item space, stroke outset, then absolute scale. Rotation is not applied.
+fn leaf_own_size(item: &Item, ancestor_sx: f64, ancestor_sy: f64) -> Option<(f64, f64)> {
+    let local = item.path.bounds()?;
+    if !rect_finite(local) {
+        return None;
+    }
+    let outset = stroke_outset(item);
+    if !outset.is_finite() {
+        return None;
+    }
+    let local = if outset > 0.0 { local.inflate(outset, outset) } else { local };
+    if !rect_finite(local) {
+        return None;
+    }
+    let decomposed = designcraft_geom::decompose::decompose(item.xf);
+    let sx = ancestor_sx * decomposed.scale_x.abs();
+    let sy = ancestor_sy * decomposed.scale_y.abs();
+    if !sx.is_finite() || !sy.is_finite() {
+        return None;
+    }
+    let w = (local.x1 - local.x0).abs() * sx;
+    let h = (local.y1 - local.y0).abs() * sy;
+    (w.is_finite() && h.is_finite()).then_some((w, h))
+}
+
+/// Same outset as [`Item::visible_bounds`]: half the weight when centered, the whole weight when
+/// outside, nothing when inside or when the stroke is none. Open paths also count arrowheads.
+fn stroke_outset(item: &Item) -> f64 {
+    if item.stroke.is_none() {
+        return 0.0;
+    }
+    let w = match item.stroke.align {
+        StrokeAlign::Center => item.stroke.weight / 2.0,
+        StrokeAlign::Inside => 0.0,
+        StrokeAlign::Outside => item.stroke.weight,
+    };
+    if item.path.is_closed() { w } else { w.max(item.stroke.extent() - item.stroke.weight) }
+}
+
+fn push_parent_lengths(out: &mut Vec<f64>, cx: &ToolContext, req: &SnapRequest<'_>, seen_items: &mut HashSet<ItemId>) {
+    let SpreadRef::Doc(si) = req.spread else { return };
+    let page_count = cx.doc.spreads.get(si).map(|sp| sp.pages.len()).unwrap_or(0);
+    let first = cx.doc.first_page_of_spread(si);
+    for pi in 0..page_count {
+        let Some(abs) = first.checked_add(pi) else { continue };
+        let Some(page) = cx.doc.page(abs) else { continue };
+        if !page.show_parent_items {
+            continue;
+        }
+        let doc_side = page.side;
+        let overridden = page.overridden.clone();
+        let Some((ppi, _)) = cx.doc.parent_page_for(abs) else { continue };
+        let mut seen_spreads = HashSet::new();
+        push_parent_length_chain(out, cx, req, doc_side, &overridden, ppi, seen_items, &mut seen_spreads);
+    }
+}
+
+fn push_parent_length_chain(
+    out: &mut Vec<f64>,
+    cx: &ToolContext,
+    req: &SnapRequest<'_>,
+    doc_side: PageSide,
+    overridden: &[ItemId],
+    index: usize,
+    seen_items: &mut HashSet<ItemId>,
+    seen_spreads: &mut HashSet<SpreadId>,
+) {
+    let Some(parent) = cx.doc.parents.get(index) else { return };
+    if !seen_spreads.insert(parent.id) {
+        return;
+    }
+    let next = parent.parent.as_ref().and_then(|info| info.based_on);
+    if let Some(page_idx) = shown_parent_page_index(parent.pages.len(), doc_side) {
+        for item in &parent.items {
+            if overridden.contains(&item.id) {
+                continue;
+            }
+            if parent.pages.len() > 1 && parent.page_at_x(item.bounds().center().x) != Some(page_idx) {
+                continue;
+            }
+            push_own_lengths(out, cx.selection, req, item, 1.0, 1.0, false, 0, seen_items);
+        }
+    }
+    let Some(next_id) = next else { return };
+    let Some(next_index) = cx.doc.parent_index(next_id) else { return };
+    push_parent_length_chain(out, cx, req, doc_side, overridden, next_index, seen_items, seen_spreads);
 }
 
 /// Ruler guides, margins, and column sides. No overlay.
@@ -626,7 +888,20 @@ fn offer(best: &mut Option<Best>, moving: f64, target: f64, tol: f64, span: Opti
     let delta = target - moving;
     let dist = delta.abs();
     if dist <= tol && best.as_ref().is_none_or(|b| dist < b.dist) {
-        *best = Some(Best { dist, hit: AxisHit { delta, at: target, span } });
+        *best = Some(Best { dist, hit: AxisHit { delta, at: target, span, length_delta: None, dimension: None } });
+    }
+}
+
+fn push_hit_guides(out: &mut Vec<Overlay>, cx: &ToolContext, req: &SnapRequest<'_>, axis: Axis, hit: &AxisHit, moving: Rect) {
+    push_alignment_guide(out, cx, req.spread, axis, hit, moving);
+    let Some(mark) = &hit.dimension else { return };
+    let xf = cx.layout.xf(req.spread);
+    if mark.a.x.is_finite() && mark.a.y.is_finite() && mark.b.x.is_finite() && mark.b.y.is_finite() {
+        out.push(Overlay::Guide { a: xf * mark.a, b: xf * mark.b });
+    }
+    let p = xf * req.pointer;
+    if p.x.is_finite() && p.y.is_finite() {
+        out.push(Overlay::Measure { p, text: mark.text.clone() });
     }
 }
 
@@ -659,8 +934,8 @@ mod tests {
     use designcraft_compose::Cache;
     use designcraft_doc::build::NewDocument;
     use designcraft_doc::{Document, Guide, Item, Margins, Selection, Shape, Stroke};
-    use designcraft_geom::Unit;
     use designcraft_geom::shapes;
+    use designcraft_geom::{Affine, Unit};
 
     use crate::layout::CanvasLayout;
 
@@ -967,5 +1242,40 @@ mod tests {
         let cx = ctx_on(&dead, &sel, &cache, &layout);
         let hit = snap(&cx, y_req(Rect::new(100.0, 49.0, 140.0, 80.0)));
         assert_eq!(hit.delta.y, 0.0);
+    }
+
+    #[test]
+    fn rotated_item_matches_its_own_side() {
+        let mut doc = Document::new(&NewDocument::default());
+        let layer = doc.default_layer();
+        let id = ItemId(doc.alloc());
+        let mut item = Item::new(id, layer, Shape::Rectangle, shapes::rectangle(Rect::new(0.0, 0.0, 200.0, 40.0)));
+        item.xf = Affine::rotate((-30.0_f64).to_radians());
+        doc.insert_item(SpreadRef::Doc(0), item, None).unwrap();
+        let cache = Cache::new();
+        let layout = CanvasLayout::new(&doc, false);
+        let sel = Selection::default();
+        let mut cx = ctx_on(&doc, &sel, &cache, &layout);
+        cx.snap.snap_to_guides = false;
+        cx.snap.snap_to_document_grid = false;
+        // Width 193.2 is the axis-aligned box. 200 is the side. Zone 4 reaches 200 from 197, not from 193.
+        let hit = snap(
+            &cx,
+            SnapRequest {
+                spread: SpreadRef::Doc(0),
+                gesture: Gesture::Resize,
+                rect: Rect::new(80.0, 200.0, 277.0, 280.0),
+                x_edges: [false, false, true],
+                y_edges: [false, false, false],
+                exclude: &[],
+                copying: false,
+                lengths: [Some(197.0), None],
+                angle: None,
+                radius: 0.0,
+                pointer: Point::new(277.0, 240.0),
+            },
+        );
+        assert!((hit.delta.x - 3.0).abs() < 1e-6);
+        assert!(matches!(hit.guides.last(), Some(Overlay::Measure { text, .. }) if text.contains("200")));
     }
 }
