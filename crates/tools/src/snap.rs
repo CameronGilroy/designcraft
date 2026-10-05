@@ -3,15 +3,11 @@
 //! lines to draw (canvas coordinates).
 
 use designcraft_doc::{ItemId, Orientation, SpreadRef};
-use designcraft_geom::{Point, Rect, Vec2};
+use designcraft_geom::{Point, Rect};
+
+pub use crate::{Gesture, Snap, SnapRequest, SnapView};
 
 use crate::{Overlay, ToolContext};
-
-#[derive(Clone, Debug, Default)]
-pub struct Snap {
-    pub delta: Vec2,
-    pub guides: Vec<Overlay>,
-}
 
 #[derive(Clone, Copy)]
 struct Target {
@@ -75,19 +71,19 @@ fn best(cands: &[f64], targets: &[Target], tol: f64) -> Option<(f64, Target)> {
     out
 }
 
-/// Snap a moving rect (spread coords). Edges and centre snap independently per axis.
-pub fn snap_rect(cx: &ToolContext, sr: SpreadRef, r: Rect, exclude: &[ItemId]) -> Snap {
+/// Closest target on each free axis. Tolerance is 5 screen pixels, same as [`snap_rect`].
+fn snap_axes(cx: &ToolContext, sr: SpreadRef, r: Rect, exclude: &[ItemId], x_free: bool, y_free: bool) -> Snap {
     let tol = cx.tol(5.0);
     let (xs, ys) = targets(cx, sr, exclude);
     let mut s = Snap::default();
     let xf = cx.layout.xf(sr);
-    if let Some((d, t)) = best(&[r.x0, r.center().x, r.x1], &xs, tol) {
+    if x_free && let Some((d, t)) = best(&[r.x0, r.center().x, r.x1], &xs, tol) {
         s.delta.x = d;
         let lo = t.lo.min(r.y0) - 6.0;
         let hi = t.hi.max(r.y1) + 6.0;
         s.guides.push(guide(xf * Point::new(t.v, lo), xf * Point::new(t.v, hi), t.smart));
     }
-    if let Some((d, t)) = best(&[r.y0, r.center().y, r.y1], &ys, tol) {
+    if y_free && let Some((d, t)) = best(&[r.y0, r.center().y, r.y1], &ys, tol) {
         s.delta.y = d;
         let lo = t.lo.min(r.x0) - 6.0;
         let hi = t.hi.max(r.x1) + 6.0;
@@ -96,12 +92,54 @@ pub fn snap_rect(cx: &ToolContext, sr: SpreadRef, r: Rect, exclude: &[ItemId]) -
     s
 }
 
+/// Snap a moving rect (spread coords). Edges and centre snap independently per axis.
+pub fn snap_rect(cx: &ToolContext, sr: SpreadRef, r: Rect, exclude: &[ItemId]) -> Snap {
+    snap_axes(cx, sr, r, exclude, true, true)
+}
+
 /// Snap a single point (drawing tools).
 pub fn snap_point(cx: &ToolContext, sr: SpreadRef, p: Point) -> (Point, Vec<Overlay>) {
     let s = snap_rect(cx, sr, Rect::from_points(p, p), &[]);
     (p + s.delta, s.guides)
 }
 
+fn rect_finite(r: Rect) -> bool {
+    r.x0.is_finite() && r.y0.is_finite() && r.x1.is_finite() && r.y1.is_finite()
+}
+
+/// Closest-target snap for one gesture.
+///
+/// Same targets and 5 px tolerance as [`snap_rect`], and only when a snap category is on.
+/// A non-finite rect returns no correction. An axis whose three edge flags are all false stays at 0.
+pub fn snap(cx: &ToolContext, req: SnapRequest<'_>) -> Snap {
+    if !rect_finite(req.rect) || !cx.snap.any() {
+        return Snap::default();
+    }
+    let x_free = req.x_edges != [false; 3];
+    let y_free = req.y_edges != [false; 3];
+    if x_free && y_free {
+        return snap_rect(cx, req.spread, req.rect, req.exclude);
+    }
+    snap_axes(cx, req.spread, req.rect, req.exclude, x_free, y_free)
+}
+
 fn guide(a: Point, b: Point, smart: bool) -> Overlay {
     if smart { Overlay::Guide { a, b } } else { Overlay::Line { a, b, color: [255, 0, 255], dashed: false } }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The factory flags are const. Pin them anyway.
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn factory_zone_is_four_pixels() {
+        assert!(SnapView::FACTORY.snap_to_guides);
+        assert!(!SnapView::FACTORY.snap_to_document_grid);
+        assert!(SnapView::FACTORY.smart_guides);
+        assert_eq!(SnapView::FACTORY.zone_px, 4.0);
+        assert!(!SnapView::OFF.any());
+        assert!(SnapView::FACTORY.any());
+    }
 }

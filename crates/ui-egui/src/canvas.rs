@@ -1222,6 +1222,15 @@ fn draw_tool_overlays(app: &mut DesignApp, painter: &egui::Painter, xf: &Xf) {
             Overlay::Guide { a, b } => {
                 painter.line_segment([xf.to_screen(a), xf.to_screen(b)], Stroke::new(1.0, Color32::from_rgb(0, 200, 83)));
             }
+            Overlay::Gap { a, b, label } => {
+                let (a, b) = (xf.to_screen(a), xf.to_screen(b));
+                painter.line_segment([a, b], Stroke::new(1.0, Color32::from_rgb(0, 200, 83)));
+                let s = a + (b - a) * 0.5;
+                let g = painter.layout_no_wrap(label, egui::FontId::proportional(11.0), Color32::WHITE);
+                let r = Rect::from_min_size(s, g.size() + vec2(10.0, 6.0));
+                painter.rect_filled(r, 3.0, Color32::from_rgba_unmultiplied(70, 70, 70, 230));
+                painter.galley(r.min + vec2(5.0, 3.0), g, Color32::WHITE);
+            }
             Overlay::Path { .. } => {}
         }
     }

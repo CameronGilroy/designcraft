@@ -45,7 +45,7 @@ fn smart_quotes_and_formatting() {
 fn tool_gesture_creates_one_undo_step() {
     let mut s = session();
     s.set_tool("rectangle");
-    let v = ViewInfo { zoom: 1.0 };
+    let v = ViewInfo::at_zoom(1.0);
     use designcraft_tools::{PointerEvent, PointerKind};
     s.pointer(&PointerEvent::new(PointerKind::Down, 10.0, 10.0), v).unwrap();
     for i in 1..10 {
@@ -134,7 +134,7 @@ fn align_and_distribute() {
 fn pen_draws_and_direct_selection_edits() {
     use designcraft_tools::{PointerEvent, PointerKind};
     let mut s = session();
-    let v = ViewInfo { zoom: 1.0 };
+    let v = ViewInfo::at_zoom(1.0);
     s.set_tool("pen");
     let click = |s: &mut Session, x: f64, y: f64| {
         s.pointer(&PointerEvent::new(PointerKind::Down, x, y), v).unwrap();
@@ -189,7 +189,7 @@ fn place_gun_click_drag_and_into_frame() {
     let b64 = cmd::base64_encode(&png);
     s.execute("place.load", &json!({"base64": b64, "name": "a.png"})).unwrap();
     assert_eq!(s.tool_id(), "placeGun");
-    let v = ViewInfo { zoom: 1.0 };
+    let v = ViewInfo::at_zoom(1.0);
     s.pointer(&PointerEvent::new(PointerKind::Down, 100.0, 100.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Drag, 180.0, 300.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Up, 180.0, 300.0), v).unwrap();
@@ -413,7 +413,7 @@ fn gridify_while_drawing_frames() {
     let mut s = session();
     let n0 = s.doc().unwrap().doc.spreads[0].items.len();
     s.set_tool("rectangleFrame");
-    let v = ViewInfo { zoom: 1.0 };
+    let v = ViewInfo::at_zoom(1.0);
     s.pointer(&PointerEvent::new(PointerKind::Down, 100.0, 100.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Drag, 312.0, 212.0), v).unwrap();
     for k in [ToolKey::Right, ToolKey::Right, ToolKey::Up, ToolKey::Left] {
@@ -434,7 +434,7 @@ fn gap_tool_drag_moves_the_gap() {
     let mut s = session();
     let a = s.execute("frame.create", &json!({"rect": [100, 100, 200, 300]})).unwrap()["id"].as_u64().unwrap();
     s.set_tool("gap");
-    let v = ViewInfo { zoom: 1.0 };
+    let v = ViewInfo::at_zoom(1.0);
     s.pointer(&PointerEvent::new(PointerKind::Down, 250.0, 200.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Drag, 270.0, 205.0), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Up, 270.0, 205.0), v).unwrap();

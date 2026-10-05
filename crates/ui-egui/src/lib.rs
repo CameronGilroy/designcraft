@@ -26,7 +26,7 @@ pub mod widgets;
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 
-use designcraft_engine::{Session, UiRequest, ViewInfo};
+use designcraft_engine::{Session, SnapView, UiRequest, ViewInfo};
 use designcraft_geom::{Point, Unit};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -429,7 +429,7 @@ impl DesignApp {
         self.pane = pane;
     }
     pub fn view_info(&self) -> ViewInfo {
-        ViewInfo { zoom: self.view().map(|v| v.zoom).unwrap_or(1.0) }
+        ViewInfo { zoom: self.view().map(|v| v.zoom).unwrap_or(1.0), snap: SnapView::FACTORY, unit: self.ui.units }
     }
 
     pub fn status(&mut self, s: impl Into<String>) {

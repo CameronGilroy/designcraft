@@ -265,7 +265,7 @@ impl Tool for SelectionTool {
                     // The movement in the spread's own coordinates (its view may be turned).
                     let mut ds = cx.layout.delta_to_spread(origin_spread, d);
                     let b0s = bounds0.map(|b| cx.layout.xf(origin_spread).inverse().transform_rect_bbox(b));
-                    if cx.snap
+                    if cx.snap.any()
                         && let Some(b0) = b0s
                     {
                         let snap = crate::snap::snap_rect(cx, origin_spread, b0 + ds, &cx.selection.items);
