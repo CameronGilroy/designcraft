@@ -651,8 +651,18 @@ fn move_caret(s: &mut Session, p: &Value) -> Result<Value> {
         None => cs,
     };
     let pos = t.focus.min(text.len());
+    // Vertical lines run top to bottom and follow each other right to left: Down and Up move along
+    // the line (Right and Left of horizontal text), Left and Right to the next and previous line.
+    let vertical_text = compose::caret(&cs, pos).and_then(|(fi, ..)| cs.frames.get(fi)).is_some_and(|f| f.vertical);
+    let dir = match (vertical_text, dir.as_str()) {
+        (true, "down") => "right",
+        (true, "up") => "left",
+        (true, "left") => "down",
+        (true, "right") => "up",
+        (_, d) => d,
+    };
     let collapse_to = |left: bool| if left { t.range().start } else { t.range().end };
-    let new = match dir.as_str() {
+    let new = match dir {
         "left" if !extend && !t.is_caret() => collapse_to(true),
         "right" if !extend && !t.is_caret() => collapse_to(false),
         "left" | "right" => {
@@ -1491,5 +1501,83 @@ mod story_direction_tests {
         })
         .unwrap();
         assert_eq!(composed(&s, sid), [true, true, true]);
+    }
+}
+
+#[cfg(test)]
+mod vertical_caret_tests {
+    use designcraft_doc::StoryId;
+    use serde_json::json;
+
+    use crate::Session;
+
+    /// A story set in three or more lines; returns its id.
+    fn story(s: &mut Session, vertical: bool) -> StoryId {
+        s.execute("file.new", &json!({})).unwrap();
+        let text = "一二三四五六七八九十".repeat(8);
+        let rect = if vertical { [72, 72, 200, 400] } else { [72, 72, 400, 200] };
+        let r = s.execute("frame.create", &json!({"rect": rect, "content": "text", "text": text, "vertical": vertical})).unwrap();
+        StoryId(r["story"].as_u64().unwrap())
+    }
+
+    fn mv(s: &mut Session, dir: &str, extend: bool, word: bool) -> usize {
+        s.execute("text.move", &json!({"dir": dir, "extend": extend, "word": word})).unwrap()["pos"].as_u64().unwrap() as usize
+    }
+
+    /// (line index, position along the line) of the caret at `pos`.
+    fn place(s: &Session, sid: StoryId, pos: usize) -> (usize, f64) {
+        let cs = s.cache.get(&s.doc().unwrap().doc, sid, None);
+        let (_, x, baseline, _, _) = crate::compose::caret(&cs, pos).unwrap();
+        let line = cs.frames[0].lines.iter().position(|l| (l.baseline - baseline).abs() < 0.01).unwrap();
+        (line, x)
+    }
+
+    #[test]
+    fn arrow_keys_follow_vertical_lines() {
+        let mut s = Session::new();
+        let sid = story(&mut s, true);
+        assert!(s.cache.get(&s.doc().unwrap().doc, sid, None).frames[0].lines.len() >= 3);
+        let c = '一'.len_utf8();
+        s.execute("text.select", &json!({"story": sid.0, "anchor": 3 * c, "focus": 3 * c})).unwrap();
+        // Down and Up move along the line, a character at a time.
+        assert_eq!(mv(&mut s, "down", false, false), 4 * c);
+        assert_eq!(mv(&mut s, "up", false, false), 3 * c);
+        // Left moves to the next line (lines follow each other right to left), keeping the
+        // position along the line; Right comes back.
+        let (line, x) = place(&s, sid, 3 * c);
+        let next = mv(&mut s, "left", false, false);
+        let (nline, nx) = place(&s, sid, next);
+        assert_eq!(nline, line + 1);
+        assert!((nx - x).abs() < 0.5, "{x} {nx}");
+        assert_eq!(mv(&mut s, "right", false, false), 3 * c);
+        // Shift extends.
+        assert_eq!(mv(&mut s, "down", true, false), 4 * c);
+        let t = s.doc().unwrap().selection.text.unwrap();
+        assert_eq!((t.anchor, t.focus), (3 * c, 4 * c));
+        let p = mv(&mut s, "left", true, false);
+        let t = s.doc().unwrap().selection.text.unwrap();
+        assert_eq!((t.anchor, t.focus), (3 * c, p));
+        assert_eq!(place(&s, sid, p).0, line + 1);
+        // With a selection, Up collapses it to its start.
+        assert_eq!(mv(&mut s, "up", false, false), 3 * c);
+        // By words: Alt+Down is the vertical Alt+Right.
+        let text = s.doc().unwrap().doc.story(sid).unwrap().text.clone();
+        assert_eq!(mv(&mut s, "down", false, true), super::next_word(&text, 3 * c));
+    }
+
+    #[test]
+    fn arrow_keys_in_horizontal_lines() {
+        let mut s = Session::new();
+        let sid = story(&mut s, false);
+        let c = '一'.len_utf8();
+        s.execute("text.select", &json!({"story": sid.0, "anchor": 3 * c, "focus": 3 * c})).unwrap();
+        assert_eq!(mv(&mut s, "right", false, false), 4 * c);
+        assert_eq!(mv(&mut s, "left", false, false), 3 * c);
+        let (line, x) = place(&s, sid, 3 * c);
+        let next = mv(&mut s, "down", false, false);
+        let (nline, nx) = place(&s, sid, next);
+        assert_eq!(nline, line + 1);
+        assert!((nx - x).abs() < 0.5, "{x} {nx}");
+        assert_eq!(mv(&mut s, "up", false, false), 3 * c);
     }
 }
