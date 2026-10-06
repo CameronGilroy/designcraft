@@ -117,7 +117,7 @@ pub fn specs() -> Vec<CommandSpec> {
             ok()
         }),
         cmd!(noundo "conveyor.collect", "Collect", [], None, "{ids? (default: the selection)} — each object onto the Content Collector conveyor → {count}", has_selection, |s, p| {
-            let ids = super::ids_param(p, "ids").unwrap_or_else(|| s.active().map(|d| d.selection.items.clone()).unwrap_or_default());
+            let ids = super::targets(s, p)?;
             let keep = s.active().map(|d| d.selection.clone());
             for id in ids {
                 let name = s.doc()?.doc.item(id).map(|it| it.default_label().trim_matches(|c| c == '<' || c == '>').to_string()).unwrap_or_default();

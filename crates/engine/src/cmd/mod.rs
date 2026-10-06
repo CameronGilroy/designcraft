@@ -269,8 +269,9 @@ pub(crate) fn named_targets(spec: &CommandSpec, p: &Value) -> Option<Vec<ItemId>
     if !spec.params.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == "ids") {
         return None;
     }
-    if let Some(ids) = ids_param(p, "ids").filter(|v| !v.is_empty()) {
-        return Some(ids);
+    // As `targets` reads them: `ids`, when given, wins over `id` (an empty list names nothing).
+    if let Some(ids) = ids_param(p, "ids") {
+        return (!ids.is_empty()).then_some(ids);
     }
     id_param(p, "id").map(|i| vec![i])
 }

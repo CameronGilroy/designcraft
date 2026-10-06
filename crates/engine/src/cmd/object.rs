@@ -2413,5 +2413,11 @@ mod named_target_tests {
         let e = s.execute("object.textFrameOptions", &json!({"ids": [99999], "columns": 1})).unwrap_err().to_string();
         assert!(e.contains("no object with id 99999"), "{e}");
         assert_eq!(columns(&s), Some(2));
+        // An empty `ids` names nothing (as `targets` reads it), even beside an `id`.
+        let e = s.execute("object.textFrameOptions", &json!({"ids": [], "id": r["id"], "columns": 3})).unwrap_err().to_string();
+        assert!(e.contains("nothing selected"), "{e}");
+        assert_eq!(columns(&s), Some(2));
+        // Commands documented with `ids` honour `id` too.
+        assert_eq!(s.execute("conveyor.collect", &json!({"id": r["id"]})).unwrap()["count"], 1);
     }
 }
