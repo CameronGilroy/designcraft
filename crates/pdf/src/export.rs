@@ -505,6 +505,11 @@ pub(crate) fn solid_fill(c: krilla::color::Color, opacity: f32) -> Fill {
 }
 
 impl Exporter<'_> {
+    /// A print document, or a PDF/X file (whose output intent is CMYK).
+    pub(crate) fn for_print(&self) -> bool {
+        self.doc.settings.intent == designcraft_doc::Intent::Print || self.opts.standard == Standard::PdfX4
+    }
+
     pub(crate) fn warn(&mut self, w: impl Into<String>) {
         let w = w.into();
         if !self.warnings.contains(&w) {
@@ -522,6 +527,10 @@ impl Exporter<'_> {
             let sw = self.doc.swatch(n)?;
             match &sw.value {
                 SwatchValue::None => return None,
+                // [Paper] prints no ink (it knocks out what lies below); its colour is only what
+                // the screen shows. Written as RGB white (`1 1 1 rg`) it would put DeviceRGB in a
+                // CMYK print file.
+                SwatchValue::Paper { .. } if self.for_print() => return Some(device(&Color::cmyk(0.0, 0.0, 0.0, 0.0), self.rgb_only)),
                 SwatchValue::Tint { base, tint: bt } => {
                     t *= bt;
                     n = base;
