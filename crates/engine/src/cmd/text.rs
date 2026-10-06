@@ -327,7 +327,7 @@ fn release(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn insert(s: &mut Session, p: &Value) -> Result<Value> {
-    let text = str_param(p, "text").unwrap_or("").to_string();
+    let text = super::text_param(p, "text");
     // Tab in a table cell moves to the next cell (Shift-Tab: `table.prevCell`).
     if text == "\t" && s.doc()?.selection.text.is_some_and(|t| t.cell.is_some()) {
         return super::table::step_cell(s, true);

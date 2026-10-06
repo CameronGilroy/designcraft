@@ -230,6 +230,12 @@ pub(crate) fn bool_or(p: &Value, key: &str, default: bool) -> bool {
 pub(crate) fn str_param<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
     p.get(key).and_then(Value::as_str)
 }
+/// Plain text from a parameter, with CR LF and lone CR (classic Mac and InDesign line ends) as
+/// `\n`, the paragraph separator, as edit.paste and text import already do. Kept as they were,
+/// the CRs joined the paragraphs into one.
+pub(crate) fn text_param(p: &Value, key: &str) -> String {
+    str_param(p, key).unwrap_or("").replace("\r\n", "\n").replace('\r', "\n")
+}
 pub(crate) fn id_param(p: &Value, key: &str) -> Option<ItemId> {
     p.get(key).and_then(Value::as_u64).map(ItemId)
 }

@@ -795,7 +795,7 @@ fn frame_create(s: &mut Session, p: &Value) -> Result<Value> {
     let content = str_param(p, "content").unwrap_or("graphic");
     let sr = spread_param(p, "spread");
     let lid = s.doc()?.active_layer;
-    let text = str_param(p, "text").unwrap_or("").to_string();
+    let text = super::text_param(p, "text");
     let caret = bool_or(p, "caret", content == "text");
     let vertical = bool_or(p, "vertical", false);
     let sides = p.get("sides").and_then(Value::as_u64).map_or(s.prefs.polygon_sides, |v| v as u32).clamp(3, 100);
@@ -2367,5 +2367,26 @@ mod gap_tests {
         assert_eq!((bb(&s, a).x1, bb(&s, b).x0), (230.0, 250.0), "the gap moved, its width kept");
         assert_eq!(bb(&s, b).x1, 320.0);
         assert!(s.execute("gap.move", &json!({"at": [150, 200], "delta": 5})).is_err(), "inside an object");
+    }
+}
+
+#[cfg(test)]
+mod line_end_tests {
+    use super::*;
+
+    /// "One\rTwo" made one paragraph (the CR stayed in the text) instead of two.
+    #[test]
+    fn carriage_returns_separate_paragraphs() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [36, 36, 300, 300], "content": "text", "text": "One\rTwo\r\nThree"})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        let story = |s: &Session| s.doc().unwrap().doc.story(sid).unwrap().clone();
+        assert_eq!(story(&s).text, "One\nTwo\nThree");
+        assert_eq!(story(&s).paras.len(), 3);
+        // The caret is at the end: typed text gets the same treatment.
+        s.execute("text.insert", &json!({"text": "\rFour", "raw": true})).unwrap();
+        assert_eq!(story(&s).text, "One\nTwo\nThree\nFour");
+        assert_eq!(story(&s).paras.len(), 4);
     }
 }
