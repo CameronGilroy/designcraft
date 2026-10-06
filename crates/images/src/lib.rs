@@ -1,5 +1,5 @@
 //! Placed graphics: format sniffing, sizes and decoding for the renderer and PDF export.
-//! Rasters go through `image` (PNG, JPEG, GIF, WebP, TIFF, BMP) or `psd` (Photoshop's merged
+//! Rasters go through `image` (PNG, JPEG, GIF, WebP, TIFF, BMP) or [`psd`] (Photoshop's merged
 //! composite); SVG is parsed with usvg (text set in the bundled fonts) and rasterised with resvg
 //! for the screen — PDF export draws the same tree as vectors.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -9,6 +9,7 @@ use std::sync::{Arc, OnceLock};
 pub use resvg::usvg;
 
 mod eps;
+mod psd;
 pub use eps::{bounding_box as eps_bounding_box, eps_proxy, is_eps};
 
 /// CSS pixels (SVG user units) → points.
@@ -99,8 +100,7 @@ pub fn pixel_size(bytes: &[u8]) -> Option<(u32, u32)> {
 /// Straight (non-premultiplied) RGBA8 of a raster.
 pub fn decode_rgba(bytes: &[u8]) -> Option<image::RgbaImage> {
     if is_psd(bytes) {
-        let p = psd::Psd::from_bytes(bytes).ok()?;
-        return image::RgbaImage::from_raw(p.width(), p.height(), p.rgba());
+        return psd::decode(bytes);
     }
     Some(image::load_from_memory(bytes).ok()?.to_rgba8())
 }
