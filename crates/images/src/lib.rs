@@ -59,6 +59,10 @@ fn svg_options() -> &'static usvg::Options<'static> {
         for f in designcraft_fonts::bundled() {
             db.load_font_data(f.to_vec());
         }
+        // Japanese text in SVGs: the craft-fonts faces (none without CRAFT_FONTS_DIR).
+        for f in designcraft_fonts::japanese_document_fonts() {
+            db.load_font_data(f.bytes.to_vec());
+        }
         db.set_serif_family("Source Serif 4");
         db.set_sans_serif_family("Source Sans 3");
         db.set_monospace_family("JetBrains Mono");

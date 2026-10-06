@@ -9,12 +9,45 @@
 
 mod fontdb;
 
-pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, JAPANESE_FALLBACK, base_style, bundled, system_font_dirs};
+pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, base_style, bundled, system_font_dirs};
 pub use harfrust::Feature;
 use harfrust::{Direction, ShapeOptions, Tag, UnicodeBuffer};
 pub use kurbo::BezPath;
 use skrifa::MetadataProvider;
 use skrifa::instance::Size;
+
+/// A font from the optional craft-fonts build input (https://github.com/storytold/craft-fonts;
+/// empty unless built with `CRAFT_FONTS_DIR`, see `build.rs`).
+pub struct CraftFont {
+    pub family: &'static str,
+    pub style: &'static str,
+    /// ISO 15924 scripts the font is for, e.g. `"Jpan"`.
+    pub scripts: &'static [&'static str],
+    pub bytes: &'static [u8],
+}
+
+include!(concat!(env!("OUT_DIR"), "/craft_fonts.rs"));
+
+/// The craft-fonts faces for Japanese (`"Jpan"`), in manifest order. Empty without craft-fonts.
+pub fn japanese_fonts() -> impl Iterator<Item = &'static CraftFont> {
+    CRAFT_FONTS.iter().filter(|f| f.scripts.contains(&"Jpan"))
+}
+
+/// Japanese faces in document-fallback order: Mincho (serif) families first, matching the
+/// serif default text font, then the others; Regular before other styles.
+pub fn japanese_document_fonts() -> Vec<&'static CraftFont> {
+    let mut v: Vec<_> = japanese_fonts().collect();
+    v.sort_by_key(|f| (!f.family.contains("Mincho"), f.style != "Regular"));
+    v
+}
+
+/// Japanese faces in UI order: BIZ UDPGothic first (the UI face), then the others; `bold` puts
+/// bold styles before regular ones.
+pub fn japanese_ui_fonts(bold: bool) -> Vec<&'static CraftFont> {
+    let mut v: Vec<_> = japanese_fonts().collect();
+    v.sort_by_key(|f| (f.family != "BIZ UDPGothic", (f.style == "Bold") != bold));
+    v
+}
 
 /// InDesign's default text font is a serif; ours is Source Serif 4.
 pub const DEFAULT_FAMILY: &str = "Source Serif 4";
@@ -249,17 +282,48 @@ mod tests {
     }
 
     #[test]
-    fn japanese_fallback_is_bundled_and_has_vertical_forms() {
-        // Inspect the bundled face directly so this test cannot pass through an OS fallback.
-        let font = skrifa::FontRef::new(JAPANESE_FALLBACK).unwrap();
-        for ch in "日本語縦書き横書きルビ、。「」".chars() {
-            assert_ne!(font.charmap().map(ch).unwrap_or_default(), skrifa::GlyphId::NOTDEF);
+    fn craft_fonts_japanese_faces_cover_japanese_and_have_vertical_forms() {
+        if CRAFT_FONTS.is_empty() {
+            eprintln!("skipped: built without craft-fonts (set CRAFT_FONTS_DIR to a checkout)");
+            return;
         }
-        let face = FontDb::global().face("Shippori Mincho", "Regular");
-        assert_eq!(face.family, "Shippori Mincho");
-        let horizontal = shape(&face, "「」、。", &[], |c| c);
-        let vertical = shape(&face, "「」、。", &[feature("vert").unwrap(), feature("vrt2").unwrap()], |c| c);
-        assert_eq!(horizontal.len(), vertical.len());
-        assert!(horizontal.iter().zip(&vertical).any(|(h, v)| h.gid != v.gid));
+        let fonts = japanese_document_fonts();
+        assert!(!fonts.is_empty(), "craft-fonts has Japanese fonts");
+        assert!(fonts[0].family.contains("Mincho"), "documents fall back to a Mincho first");
+        assert_eq!(japanese_ui_fonts(false)[0].family, "BIZ UDPGothic");
+        assert_eq!(japanese_ui_fonts(true)[0].style, "Bold");
+        let db = FontDb::with_font_dirs(Vec::new());
+        db.set_system_fallback(false);
+        for cf in fonts {
+            // Inspect the embedded face directly so this cannot pass through an OS fallback.
+            let font = skrifa::FontRef::new(cf.bytes).unwrap();
+            for ch in "日本語縦書き横書きルビ、。「」".chars() {
+                assert_ne!(font.charmap().map(ch).unwrap_or_default(), skrifa::GlyphId::NOTDEF, "{} lacks {ch}", cf.family);
+            }
+            let face = db.face(cf.family, cf.style);
+            assert_eq!(face.family, cf.family);
+            let horizontal = shape(&face, "「」、。", &[], |c| c);
+            let vertical = shape(&face, "「」、。", &[feature("vert").unwrap(), feature("vrt2").unwrap()], |c| c);
+            assert_eq!(horizontal.len(), vertical.len());
+            assert!(horizontal.iter().zip(&vertical).any(|(h, v)| h.gid != v.gid), "{} has vertical forms", cf.family);
+        }
+        // Japanese in a Latin face falls back to a craft-fonts Mincho, without system fonts.
+        let latin = db.face(DEFAULT_FAMILY, "Regular");
+        let fb = db.fallback_for('語', latin.id()).unwrap();
+        assert!(fb.family.contains("Mincho"), "{fb:?}");
+    }
+
+    #[test]
+    fn works_without_craft_fonts() {
+        // Always true without CRAFT_FONTS_DIR; with it, the bundled fonts must still all load.
+        let db = FontDb::with_font_dirs(Vec::new());
+        db.set_system_fallback(false);
+        assert_eq!(db.face(DEFAULT_FAMILY, "Regular").family, DEFAULT_FAMILY);
+        assert!(!shape(&db.face(DEFAULT_FAMILY, "Regular"), "Hello", &[], |c| c).is_empty());
+        if CRAFT_FONTS.is_empty() {
+            assert!(japanese_fonts().next().is_none() && japanese_document_fonts().is_empty());
+            let latin = db.face(DEFAULT_FAMILY, "Regular");
+            assert!(db.fallback_for('語', latin.id()).is_none(), "no bundled Japanese font");
+        }
     }
 }
