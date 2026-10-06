@@ -1258,7 +1258,7 @@ fn arabic_character_direction_override_survives_line_layout() {
 #[test]
 fn arabic_fallback_marks_stay_with_bases_and_custom_offsets_move_only_marks() {
     let db = designcraft_fonts::FontDb::global();
-    let Some(face) = db.fallback_for('ب', db.face(designcraft_fonts::DEFAULT_FAMILY, "Regular").id()) else { return };
+    let Some(face) = db.fallback_for('ب', db.face(designcraft_fonts::DEFAULT_FAMILY, "Regular").id(), None) else { return };
     if !face.covers('ُ') {
         return;
     }
@@ -1467,4 +1467,29 @@ fn chinese_and_japanese_take_their_localized_forms() {
     let chinese = gid("Chinese: Simplified");
     assert_eq!(chinese, FontDb::global().face(noto.family, noto.style).glyph_for('直'));
     assert_ne!(gid("Japanese"), chinese, "Japanese 直");
+}
+
+#[test]
+fn cjk_fallback_follows_the_language() {
+    use designcraft_fonts::testing::font_with;
+    // Stand-ins for Hiragino Mincho ProN (the Japanese chain's first system font) and Songti SC
+    // (first in the Simplified Chinese chain); the real ones when installed.
+    let db = designcraft_fonts::FontDb::global();
+    db.add_font(font_with("Hiragino Mincho ProN", &['直']).unwrap());
+    db.add_font(font_with("Songti SC", &['直']).unwrap());
+    // (face of the Latin letter, face of the ideograph)
+    let faces_of = |language: &str| {
+        let (mut d, sid, _) = doc_with("a直", Rect::new(36.0, 36.0, 300.0, 100.0), ParaAttrs::default());
+        d.story_mut(sid).unwrap().format_chars(0..4, |f| f.over.language = Some(language.into()));
+        let cs = compose_story(&d, sid, &ComposeOptions::default());
+        let face_at = |byte: usize| all_lines(&cs).iter().flat_map(|l| l.glyphs.iter()).find(|g| g.byte == byte).map(|g| g.face).unwrap();
+        (face_at(0), face_at(1))
+    };
+    assert_eq!(faces_of("Chinese: Simplified").1.family, "Songti SC");
+    // Japanese: the craft-fonts faces lead the chain (Mincho first), then the system fonts.
+    let japanese = designcraft_fonts::japanese_document_fonts().first().map_or("Hiragino Mincho ProN", |f| f.family);
+    assert_eq!(faces_of("Japanese").1.family, japanese);
+    // Without a CJK language, the language-blind search.
+    let (primary, han) = faces_of("English: USA");
+    assert_eq!(Some(han.family.clone()), db.fallback_for('直', primary.id(), None).map(|f| f.family.clone()));
 }

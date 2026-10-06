@@ -246,6 +246,8 @@ pub struct FontDb {
 struct SysFallback {
     enabled: bool,
     misses: std::collections::HashSet<char>,
+    /// CJK chain families already looked up in the catalog (loaded, or not installed).
+    chain_tried: std::collections::HashSet<&'static str>,
 }
 
 /// Families tried (when installed) for characters the loaded fonts lack: CJK, symbols, emoji.
@@ -277,6 +279,108 @@ const SYSTEM_FALLBACKS: &[&str] = &[
     "Apple Color Emoji",
     "Noto Color Emoji",
 ];
+
+/// CJK fallback chains: the families tried first (user-added, else installed) for characters of
+/// each language that the primary font lacks. Each lists macOS, then Windows, then Linux /
+/// cross-platform families, serif first; a platform only has its own installed. Japanese tries
+/// the craft-fonts Japanese faces before these ([`japanese_chain`]).
+const JAPANESE_FALLBACKS: &[&str] = &[
+    "Hiragino Mincho ProN",
+    "YuMincho",
+    "Hiragino Sans",
+    "Yu Mincho",
+    "MS Mincho",
+    "Yu Gothic",
+    "Noto Serif CJK JP",
+    "Source Han Serif JP",
+    "Noto Serif JP",
+    "Noto Sans CJK JP",
+    "Source Han Sans JP",
+];
+const SIMPLIFIED_CHINESE_FALLBACKS: &[&str] = &[
+    "Songti SC",
+    "STSong",
+    "PingFang SC",
+    "SimSun",
+    "Microsoft YaHei",
+    "Noto Serif CJK SC",
+    "Source Han Serif SC",
+    "Noto Serif SC",
+    "Noto Sans CJK SC",
+    "Source Han Sans SC",
+];
+const TRADITIONAL_CHINESE_FALLBACKS: &[&str] = &[
+    "Songti TC",
+    "PingFang TC",
+    "PMingLiU",
+    "MingLiU",
+    "Microsoft JhengHei",
+    "Noto Serif CJK TC",
+    "Source Han Serif TC",
+    "Noto Serif TC",
+    "Noto Sans CJK TC",
+    "Source Han Sans TC",
+];
+const KOREAN_FALLBACKS: &[&str] = &[
+    "AppleMyungjo",
+    "Apple SD Gothic Neo",
+    "Batang",
+    "Malgun Gothic",
+    "Noto Serif CJK KR",
+    "Source Han Serif K",
+    "Noto Serif KR",
+    "Noto Sans CJK KR",
+    "Source Han Sans K",
+];
+
+/// The Japanese fallback chain: the craft-fonts Japanese faces' families in document order
+/// (Mincho first; none without craft-fonts), then [`JAPANESE_FALLBACKS`].
+fn japanese_chain() -> &'static [&'static str] {
+    static CHAIN: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    CHAIN.get_or_init(|| {
+        let mut chain: Vec<&'static str> = Vec::new();
+        for f in crate::japanese_document_fonts() {
+            if !chain.contains(&f.family) {
+                chain.push(f.family);
+            }
+        }
+        chain.extend_from_slice(JAPANESE_FALLBACKS);
+        chain
+    })
+}
+
+/// The CJK fallback chain for `c` in `language` (a BCP 47 tag). The script decides where it is
+/// unambiguous (Hangul is Korean, kana Japanese, Bopomofo Traditional Chinese); ideographs and CJK
+/// punctuation follow the language, and have no chain without a CJK one.
+fn cjk_chain(c: char, language: Option<&str>) -> Option<&'static [&'static str]> {
+    match c as u32 {
+        0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xFFA0..=0xFFDC => return Some(KOREAN_FALLBACKS),
+        0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9F | 0x1B000..=0x1B16F => return Some(japanese_chain()),
+        0x3100..=0x312F | 0x31A0..=0x31BF => return Some(TRADITIONAL_CHINESE_FALLBACKS),
+        // Radicals, CJK symbols and punctuation, kanbun, strokes, enclosed and compatibility
+        // characters, ideographs, compatibility and vertical forms, full-width forms.
+        0x2E80..=0x2FDF
+        | 0x3000..=0x303F
+        | 0x3190..=0x319F
+        | 0x31C0..=0x31EF
+        | 0x3200..=0x33FF
+        | 0x3400..=0x4DBF
+        | 0x4E00..=0x9FFF
+        | 0xF900..=0xFAFF
+        | 0xFE10..=0xFE1F
+        | 0xFE30..=0xFE4F
+        | 0xFF00..=0xFFEF
+        | 0x20000..=0x3FFFF => {}
+        _ => return None,
+    }
+    match language? {
+        "ja" => Some(japanese_chain()),
+        "ko" => Some(KOREAN_FALLBACKS),
+        "zh" | "zh-Hans" => Some(SIMPLIFIED_CHINESE_FALLBACKS),
+        "zh-Hant" => Some(TRADITIONAL_CHINESE_FALLBACKS),
+        _ => None,
+    }
+}
 
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 const OUTLINE_CACHE_MAX: usize = 50_000;
@@ -796,9 +900,16 @@ impl FontDb {
             .map(|f| (*f).clone())
     }
 
-    /// First face (fallback family first, then load order) that covers `c`; on native, system
+    /// A face other than `exclude` that covers `c` in `language` (a BCP 47 tag, `None` when
+    /// unknown). CJK characters try their language's chain first (see [`cjk_chain`]); then the
+    /// first face (fallback family first, then load order) that covers `c`. On native, system
     /// fonts are cataloged and loaded lazily the first time no loaded face covers a character.
-    pub fn fallback_for(&self, c: char, exclude: u32) -> Option<Arc<FontFace>> {
+    pub fn fallback_for(&self, c: char, exclude: u32, language: Option<&str>) -> Option<Arc<FontFace>> {
+        if let Some(chain) = cjk_chain(c, language)
+            && let Some(f) = chain.iter().find_map(|family| self.chain_face(family, c, exclude))
+        {
+            return Some(f);
+        }
         if let Some(f) = self.loaded_fallback(c, exclude) {
             return Some(f);
         }
@@ -807,6 +918,23 @@ impl FontDb {
             return self.loaded_fallback(c, exclude);
         }
         None
+    }
+
+    /// The face of `family` (regular first) that covers `c`, loading the installed family the
+    /// first time a chain asks for it (native, while the system fallback is on).
+    fn chain_face(&self, family: &'static str, c: char, exclude: u32) -> Option<Arc<FontFace>> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if !self.is_loaded(family) {
+            // Held while loading, so a parallel lookup waits for the font instead of passing it by.
+            let mut sys = self.sys.lock().unwrap_or_else(|e| e.into_inner());
+            if sys.enabled && sys.chain_tried.insert(family) {
+                self.load_cataloged(family);
+            }
+        }
+        let faces = self.read_faces();
+        let mut order: Vec<&Arc<FontFace>> = faces.iter().filter(|f| f.id != exclude && f.family.eq_ignore_ascii_case(family)).collect();
+        order.sort_by_key(|f| (f.italic, (f.weight - 400.0).abs() as i32));
+        order.into_iter().find(|f| f.covers(c)).cloned()
     }
 
     fn loaded_fallback(&self, c: char, exclude: u32) -> Option<Arc<FontFace>> {
@@ -903,3 +1031,8 @@ impl OutlinePen for FlipPen {
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "tests_sysfonts.rs"]
 mod tests_sysfonts;
+
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "tests_fallback.rs"]
+mod tests_fallback;

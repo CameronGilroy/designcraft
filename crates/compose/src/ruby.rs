@@ -45,7 +45,7 @@ fn kenten(b: &PlacedGlyph, size: f64, character: &str) -> Vec<PlacedGlyph> {
     let mut base = b.clone();
     if let Some(c) = character.chars().next()
         && !base.face.covers(c)
-        && let Some(face) = designcraft_fonts::FontDb::global().fallback_for(c, base.face.id())
+        && let Some(face) = designcraft_fonts::FontDb::global().fallback_for(c, base.face.id(), None)
     {
         base.face = designcraft_fonts::FaceRef::of(&face);
     }

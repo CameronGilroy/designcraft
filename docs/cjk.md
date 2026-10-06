@@ -41,14 +41,12 @@ presets or tables are copied. Our default mojikumi and kinsoku tables are built 
 | Ruby | group ruby only, fixed 50 % size, no options, doesn't affect leading |
 | Kenten | the IDML kinds and a custom character, drawn as characters; no position, size, alignment, colour or font |
 | Composite fonts | done: model, `style.compositeFont.*`, shaping, IDML, font list, replace and Preflight; no dialog |
-| CJK fonts | Japanese faces (Shippori Mincho first) from the optional craft-fonts build input; language-blind fallback; no per-document fonts |
+| CJK fonts | Japanese faces (Shippori Mincho first) from the optional craft-fonts build input; fallback by language (Japanese: the craft-fonts faces, then system fonts; Simplified and Traditional Chinese, Korean: system fonts); no per-document fonts |
 | Everything else below | missing |
 
 Known bugs to fix first:
 
 - Korean breaks between every syllable (it should break at spaces by default).
-- Fallback is language-blind: Chinese and Korean text without a covering font get the Japanese
-  fallback font (and so Japanese glyph forms, whatever their language's `locl` asks for).
 - Vertical advances are the horizontal ones and upright glyphs turn about a guessed centre
   (`adv × 0.38`), so proportional and non-square glyphs sit wrong in vertical text.
 - A justified CJK line has no stretch except Single Word Justification.

@@ -466,6 +466,8 @@ fn shape_run_raw(
     out: &mut Vec<Glyph>,
 ) {
     let primary = db.face(&p.font_family, &p.font_style);
+    // The language picks the fallback for CJK characters the primary font lacks.
+    let lang = designcraft_doc::language_tag(&p.language);
     let strong = |c| match unicode_bidi::bidi_class(c) {
         unicode_bidi::BidiClass::AL => Some(true),
         unicode_bidi::BidiClass::L | unicode_bidi::BidiClass::R => Some(false),
@@ -501,7 +503,8 @@ fn shape_run_raw(
             if d != c {
                 flush(seg_start, i, &seg_face, out);
                 seg_start = i + c.len_utf8();
-                let face = if primary.covers(d) { primary.clone() } else { db.fallback_for(d, primary.id()).unwrap_or_else(|| primary.clone()) };
+                let face =
+                    if primary.covers(d) { primary.clone() } else { db.fallback_for(d, primary.id(), lang).unwrap_or_else(|| primary.clone()) };
                 shape_segment(db, text, i..i + c.len_utf8(), Some(d.encode_utf8(&mut [0; 4])), p, &face, auto_leading, style, out, sub.vertical);
                 continue;
             }
@@ -602,7 +605,7 @@ fn shape_run_raw(
         let face = if covered || is_mark(c) {
             if is_mark(c) { seg_face.clone() } else { primary.clone() }
         } else {
-            db.fallback_for(c, primary.id()).unwrap_or_else(|| primary.clone())
+            db.fallback_for(c, primary.id(), lang).unwrap_or_else(|| primary.clone())
         };
         if face.id() != seg_face.id() {
             flush(seg_start, i, &seg_face, out);

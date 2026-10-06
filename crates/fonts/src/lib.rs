@@ -8,6 +8,8 @@
 #![forbid(unsafe_code)]
 
 mod fontdb;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, base_style, bundled, system_font_dirs};
 pub use harfrust::Feature;
@@ -382,10 +384,13 @@ mod tests {
             assert_eq!(horizontal.len(), vertical.len());
             assert!(horizontal.iter().zip(&vertical).any(|(h, v)| h.gid != v.gid), "{} has vertical forms", cf.family);
         }
-        // Japanese in a Latin face falls back to a craft-fonts Mincho, without system fonts.
+        // Japanese in a Latin face falls back to a craft-fonts Mincho, without system fonts, in
+        // Japanese text (the Japanese chain) and without a language (the first loaded face).
         let latin = db.face(DEFAULT_FAMILY, "Regular");
-        let fb = db.fallback_for('語', latin.id()).unwrap();
-        assert!(fb.family.contains("Mincho"), "{fb:?}");
+        for language in [Some("ja"), None] {
+            let fb = db.fallback_for('語', latin.id(), language).unwrap();
+            assert!(fb.family.contains("Mincho"), "{language:?}: {fb:?}");
+        }
     }
 
     #[test]
@@ -398,7 +403,9 @@ mod tests {
         if CRAFT_FONTS.is_empty() {
             assert!(japanese_fonts().next().is_none() && japanese_document_fonts().is_empty());
             let latin = db.face(DEFAULT_FAMILY, "Regular");
-            assert!(db.fallback_for('語', latin.id()).is_none(), "no bundled Japanese font");
+            for language in [Some("ja"), None] {
+                assert!(db.fallback_for('語', latin.id(), language).is_none(), "no bundled Japanese font: {language:?}");
+            }
         }
     }
 }
