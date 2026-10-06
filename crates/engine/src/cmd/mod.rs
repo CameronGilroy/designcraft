@@ -113,9 +113,12 @@ pub fn always(_: &Session) -> std::result::Result<(), String> {
 pub fn has_doc(s: &Session) -> std::result::Result<(), String> {
     s.active().map(|_| ()).ok_or_else(|| "no document open".into())
 }
+/// Why [`has_selection`] disables a command. A command that documents `ids` still runs when the
+/// call names its objects (see [`named_targets`]).
+pub const NOTHING_SELECTED: &str = "nothing selected";
 pub fn has_selection(s: &Session) -> std::result::Result<(), String> {
     has_doc(s)?;
-    if s.active().is_some_and(|d| !d.selection.items.is_empty()) { Ok(()) } else { Err("nothing selected".into()) }
+    if s.active().is_some_and(|d| !d.selection.items.is_empty()) { Ok(()) } else { Err(NOTHING_SELECTED.into()) }
 }
 pub fn has_text(s: &Session) -> std::result::Result<(), String> {
     has_doc(s)?;
@@ -258,6 +261,18 @@ pub(crate) fn spread_param(p: &Value, key: &str) -> SpreadRef {
         Some(v) => serde_json::from_value(v.clone()).unwrap_or(SpreadRef::Doc(0)),
         None => SpreadRef::Doc(0),
     }
+}
+
+/// The objects a call names with a non-empty `ids` or an `id`, for a command whose params
+/// document `ids` (it acts on [`targets`]). `None` when the call names none.
+pub(crate) fn named_targets(spec: &CommandSpec, p: &Value) -> Option<Vec<ItemId>> {
+    if !spec.params.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == "ids") {
+        return None;
+    }
+    if let Some(ids) = ids_param(p, "ids").filter(|v| !v.is_empty()) {
+        return Some(ids);
+    }
+    id_param(p, "id").map(|i| vec![i])
 }
 
 /// Targets: `ids` / `id` params or the selection.

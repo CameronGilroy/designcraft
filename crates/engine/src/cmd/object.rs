@@ -114,12 +114,12 @@ pub fn specs() -> Vec<CommandSpec> {
             "Transform Panel",
             [],
             None,
-            "{x?, y?, width?, height?, scaleX? (%), scaleY? (%), rotation? (°), shear? (°), ref?: 0..8} — reference-point based geometry; rotation and shear are absolute (Transformations are Totals decides whether nested objects measure them on the pasteboard)",
+            "{x?, y?, width?, height?, scaleX? (%), scaleY? (%), rotation? (°), shear? (°), ref?: 0..8, ids?} — reference-point based geometry; rotation and shear are absolute (Transformations are Totals decides whether nested objects measure them on the pasteboard)",
             has_selection,
             transform_set
         ),
         cmd!(query "transform.info", "Transform Values", [], None, "{ids?} → {scaleX, scaleY (%), rotation, shear (°), content?: the same for a placed graphic} of the first target", has_selection, transform_info),
-        cmd!("object.arrange", "Arrange", ["Object", "Arrange"], None, "{to: front|forward|backward|back}", has_selection, arrange),
+        cmd!("object.arrange", "Arrange", ["Object", "Arrange"], None, "{to: front|forward|backward|back, ids?}", has_selection, arrange),
         cmd!("object.bringToFront", "Bring to Front", ["Object", "Arrange"], Some("Cmd+Shift+]"), "{}", has_selection, |s, _| s
             .execute("object.arrange", &json!({"to": "front"}))),
         cmd!("object.bringForward", "Bring Forward", ["Object", "Arrange"], Some("Cmd+]"), "{}", has_selection, |s, _| s
@@ -555,7 +555,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Step and Repeat…",
             ["Edit"],
             Some("Cmd+Alt+U"),
-            "{count?: 1, dx?, dy?, rows?, columns?} — copies of the selection offset by (dx, dy); with rows/columns, a grid",
+            "{count?: 1, dx?, dy?, rows?, columns?, ids?} — copies of the selection (or ids) offset by (dx, dy); with rows/columns, a grid",
             has_selection,
             step_and_repeat
         ),
@@ -2388,5 +2388,30 @@ mod line_end_tests {
         s.execute("text.insert", &json!({"text": "\rFour", "raw": true})).unwrap();
         assert_eq!(story(&s).text, "One\nTwo\nThree\nFour");
         assert_eq!(story(&s).paras.len(), 4);
+    }
+}
+
+#[cfg(test)]
+mod named_target_tests {
+    use super::*;
+
+    /// With a text caret (or nothing) selected, a command given `ids` failed
+    /// with "command `object.textFrameOptions` is not available right now: nothing selected".
+    #[test]
+    fn ids_act_without_a_selection() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [36, 36, 300, 300], "content": "text", "text": "Hello"})).unwrap();
+        assert!(s.doc().unwrap().selection.items.is_empty(), "frame.create leaves a text caret");
+        let e = s.execute("object.textFrameOptions", &json!({"columns": 2})).unwrap_err().to_string();
+        assert!(e.contains("nothing selected"), "{e}");
+        s.execute("object.textFrameOptions", &json!({"ids": [r["id"]], "columns": 2})).unwrap();
+        let id = ItemId(r["id"].as_u64().unwrap());
+        let columns = |s: &Session| s.doc().unwrap().doc.item(id).and_then(|i| i.text_frame().map(|t| t.options.columns));
+        assert_eq!(columns(&s), Some(2));
+        s.execute("transform.set", &json!({"id": r["id"], "x": 100, "ref": 0})).unwrap();
+        let e = s.execute("object.textFrameOptions", &json!({"ids": [99999], "columns": 1})).unwrap_err().to_string();
+        assert!(e.contains("no object with id 99999"), "{e}");
+        assert_eq!(columns(&s), Some(2));
     }
 }

@@ -354,7 +354,16 @@ impl Session {
 
     fn execute_unguarded(&mut self, id: &str, params: &Value) -> Result<Value> {
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.into()))?;
-        (spec.enabled)(self).map_err(|e| EngineError::Disabled(id.into(), e))?;
+        if let Err(e) = (spec.enabled)(self) {
+            // A command that takes `ids` acts on the objects the call names, so it needs no
+            // selection: with a text caret or nothing selected, `{"ids": [5]}` still runs.
+            let named = if e == cmd::NOTHING_SELECTED { cmd::named_targets(spec, params) } else { None };
+            let Some(ids) = named else { return Err(EngineError::Disabled(id.into(), e)) };
+            let st = self.doc()?;
+            if let Some(gone) = ids.iter().find(|i| st.doc.item(**i).is_none()) {
+                return Err(EngineError::Disabled(id.into(), format!("no object with id {}", gone.0)));
+            }
+        }
         let before = self.active().map(|d| (d.uid, d.doc.clone()));
         let r = (spec.run)(self, params)?;
         // Undo, redo or deleting layers can take the active layer away: new objects would land on
