@@ -193,25 +193,43 @@ impl Digits {
 /// The BCP 47 tag of a language name as InDesign and IDML write it ("English: USA", "Chinese:
 /// Simplified"), for the shaper's localized forms (`locl`). A variant we don't know falls back to
 /// its language ("English: Australian" → `en`); an unknown language (or "[No Language]") has none.
+/// Case and punctuation don't matter, and Chinese, Japanese and Korean also go by their other
+/// common spellings and locale codes ("Simplified Chinese", "Chinese (Traditional)", "zh_CN",
+/// "zh-Hant", "ja_JP", "ko-KR").
 pub fn language_tag(language: &str) -> Option<&'static str> {
-    let l = language.trim().to_ascii_lowercase();
-    let variant = match l.as_str() {
-        "english: usa" => Some("en-US"),
-        "english: uk" => Some("en-GB"),
-        "english: canadian" => Some("en-CA"),
-        "german: swiss 2006 reform" | "german: swiss" => Some("de-CH"),
-        "french: canadian" => Some("fr-CA"),
-        "portuguese: brazilian" => Some("pt-BR"),
-        "norwegian: bokmål" | "norwegian: bokmal" => Some("nb"),
-        "norwegian: nynorsk" => Some("nn"),
-        "chinese: simplified" => Some("zh-Hans"),
-        "chinese: traditional" => Some("zh-Hant"),
+    let l = language.to_lowercase();
+    let words: Vec<&str> = l.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let first = words.first().copied().unwrap_or("");
+    let has = |any: &[&str]| words.iter().any(|w| any.contains(w));
+    if first == "zh" || has(&["chinese"]) {
+        // The script decides; then the name; then the region.
+        return Some(if has(&["hans"]) {
+            "zh-Hans"
+        } else if has(&["hant"]) {
+            "zh-Hant"
+        } else if has(&["simplified", "cn", "sg"]) {
+            "zh-Hans"
+        } else if has(&["traditional", "tw", "hk", "mo"]) {
+            "zh-Hant"
+        } else {
+            "zh"
+        });
+    }
+    let variant = match words.join(" ").as_str() {
+        "english usa" => Some("en-US"),
+        "english uk" => Some("en-GB"),
+        "english canadian" => Some("en-CA"),
+        "german swiss 2006 reform" | "german swiss" => Some("de-CH"),
+        "french canadian" => Some("fr-CA"),
+        "portuguese brazilian" => Some("pt-BR"),
+        "norwegian bokmål" | "norwegian bokmal" => Some("nb"),
+        "norwegian nynorsk" => Some("nn"),
         _ => None,
     };
     if variant.is_some() {
         return variant;
     }
-    Some(match l.split(':').next().unwrap_or("").trim() {
+    Some(match first {
         "english" => "en",
         "german" => "de",
         "french" => "fr",
@@ -238,9 +256,8 @@ pub fn language_tag(language: &str) -> Option<&'static str> {
         "serbian" => "sr",
         "macedonian" => "mk",
         "turkish" => "tr",
-        "japanese" => "ja",
-        "korean" => "ko",
-        "chinese" => "zh",
+        "japanese" | "ja" => "ja",
+        "korean" | "ko" => "ko",
         "arabic" => "ar",
         "persian" | "farsi" => "fa",
         "urdu" => "ur",
@@ -781,6 +798,45 @@ mod tests {
         assert_eq!(language_tag("[No Language]"), None);
         assert_eq!(language_tag("Klingon"), None);
         assert_eq!(language_tag(""), None);
+    }
+
+    #[test]
+    fn chinese_japanese_and_korean_names_map_in_their_common_spellings() {
+        for (name, tag) in [
+            ("Chinese: Simplified", Some("zh-Hans")),
+            ("Simplified Chinese", Some("zh-Hans")),
+            ("Chinese Simplified", Some("zh-Hans")),
+            ("Chinese (Simplified)", Some("zh-Hans")),
+            ("  chinese:  SIMPLIFIED ", Some("zh-Hans")),
+            ("zh_CN", Some("zh-Hans")),
+            ("zh-CN", Some("zh-Hans")),
+            ("zh-Hans", Some("zh-Hans")),
+            ("zh-Hans-CN", Some("zh-Hans")),
+            ("Chinese: Traditional", Some("zh-Hant")),
+            ("Traditional Chinese", Some("zh-Hant")),
+            ("Chinese Traditional", Some("zh-Hant")),
+            ("Chinese (Traditional)", Some("zh-Hant")),
+            ("zh_TW", Some("zh-Hant")),
+            ("zh-TW", Some("zh-Hant")),
+            ("zh_HK", Some("zh-Hant")),
+            ("zh-HK", Some("zh-Hant")),
+            ("zh-Hant", Some("zh-Hant")),
+            ("Chinese", Some("zh")),
+            ("zh", Some("zh")),
+            ("Japanese", Some("ja")),
+            ("ja", Some("ja")),
+            ("ja_JP", Some("ja")),
+            ("ja-JP", Some("ja")),
+            ("Korean", Some("ko")),
+            ("ko_KR", Some("ko")),
+            ("ko-KR", Some("ko")),
+            ("English: USA", Some("en-US")),
+            ("German: Swiss 2006 Reform", Some("de-CH")),
+            ("Norwegian: Bokmål", Some("nb")),
+            ("[No Language]", None),
+        ] {
+            assert_eq!(language_tag(name), tag, "{name}");
+        }
     }
 
     #[test]

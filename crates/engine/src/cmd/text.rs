@@ -480,6 +480,12 @@ fn smart_quotes(s: &Session, text: &str) -> String {
 
 /// Typographer's quotes of a language: [double open, double close, single open, single close].
 pub fn quote_marks(language: &str) -> [char; 4] {
+    // Chinese and Japanese go by the tag, which accepts every spelling of their names.
+    match designcraft_doc::language_tag(language) {
+        Some("zh-Hans") => return ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}'],
+        Some("zh" | "zh-Hant" | "ja") => return ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}'],
+        _ => {}
+    }
     let l = language.to_ascii_lowercase();
     if l.starts_with("german: swiss") || l.contains("swiss") {
         ['\u{00AB}', '\u{00BB}', '\u{2039}', '\u{203A}']
@@ -508,10 +514,6 @@ pub fn quote_marks(language: &str) -> [char; 4] {
         ['\u{201E}', '\u{201D}', '\u{201A}', '\u{2019}']
     } else if l.starts_with("swedish") || l.starts_with("finnish") {
         ['\u{201D}', '\u{201D}', '\u{2019}', '\u{2019}']
-    } else if l.starts_with("chinese: simplified") {
-        ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}']
-    } else if l.starts_with("japanese") || l.starts_with("chinese") {
-        ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']
     } else if l.starts_with("danish") {
         ['\u{00BB}', '\u{00AB}', '\u{203A}', '\u{2039}']
     } else {
@@ -1334,9 +1336,48 @@ mod language_tests {
         assert_eq!(quote_marks("Chinese: Traditional"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
         assert_eq!(quote_marks("Chinese"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
         assert_eq!(quote_marks("Japanese"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
+        // Other spellings of the language names take the same quotes.
+        assert_eq!(quote_marks("Simplified Chinese"), ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}']);
+        assert_eq!(quote_marks("zh_CN"), ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}']);
+        assert_eq!(quote_marks("Chinese (Traditional)"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
+        assert_eq!(quote_marks("zh-TW"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
+        assert_eq!(quote_marks("ja_JP"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
         for l in ["Japanese", "Korean", "Chinese", "Chinese: Simplified", "Chinese: Traditional"] {
             assert!(!designcraft_compose::is_english(l), "{l}: no English hyphenation or spelling");
         }
+    }
+
+    #[test]
+    fn idml_language_names_keep_their_spelling_and_pick_the_language() {
+        use std::io::Read;
+        // A stand-in for Songti SC (first in the Simplified Chinese chain; the real one when installed).
+        designcraft_fonts::FontDb::global().add_font(designcraft_fonts::testing::font_with("Songti SC", &['直']).unwrap());
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 300, 200], "content": "text", "text": "直"})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 3})).unwrap();
+        s.execute("type.char", &json!({"attrs": {"language": "Simplified Chinese"}})).unwrap();
+        let idml = designcraft_idml::export_idml(&s.doc().unwrap().doc);
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(idml.clone())).unwrap();
+        let stories: String = (0..z.len())
+            .map(|i| {
+                let mut f = z.by_index(i).unwrap();
+                let mut x = String::new();
+                if f.name().starts_with("Stories/") {
+                    f.read_to_string(&mut x).unwrap();
+                }
+                x
+            })
+            .collect();
+        assert!(stories.contains(r#"AppliedLanguage="$ID/Simplified Chinese""#), "{stories}");
+        // The name comes back as written and sets the text as Simplified Chinese.
+        let back = designcraft_idml::import_idml(&idml).unwrap();
+        let st = back.stories.values().find(|st| st.text.contains('直')).unwrap();
+        let (_, base) = back.styles.resolve_para(&st.paras[0]);
+        assert_eq!(back.styles.resolve_char(&base, st.char_format_at(0)).language, "Simplified Chinese");
+        let cs = designcraft_compose::compose_story(&back, st.id, &Default::default());
+        let face = cs.frames[0].lines[0].glyphs.iter().find(|g| g.byte == 0).unwrap().face;
+        assert_eq!(face.family, "Songti SC");
     }
 }
 
