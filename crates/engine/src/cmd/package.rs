@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use designcraft_doc::{AssetId, Document};
+use designcraft_fonts::{FontFace, FontSource};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, cmd, has_doc, str_param};
@@ -16,7 +17,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Package…",
             ["File"],
             None,
-            "{dir: folder to create, idml?: true, pdf?: false, instructions?: text} — the document (its placed files relinked to Links/), Links/, an IDML copy, an optional PDF and a report → {dir, files, report}",
+            "{dir: folder to create, idml?: true, pdf?: false, instructions?: text} — the document (its placed files relinked to Links/), Links/, the font files it uses in Document Fonts/ (unless their licence restricts it), an IDML copy, an optional PDF and a report → {dir, files, report}",
             has_doc,
             package
         ),
@@ -36,6 +37,11 @@ pub fn specs() -> Vec<CommandSpec> {
 fn link_name(name: &str, id: AssetId, taken: &mut Vec<String>) -> String {
     let base =
         Path::new(name).file_name().map(|n| n.to_string_lossy().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| format!("asset-{}", id.0));
+    unique_name(base, taken)
+}
+
+/// `base`, or `base` numbered ("logo 2.png"), unique among `taken` (case-insensitively).
+fn unique_name(base: String, taken: &mut Vec<String>) -> String {
     let (stem, ext) = match base.rsplit_once('.') {
         Some((s, e)) => (s.to_string(), format!(".{e}")),
         None => (base.clone(), String::new()),
@@ -74,6 +80,36 @@ fn write_links(d: &Document, dir: &Path, only: Option<&[AssetId]>) -> Result<(Do
     Ok((out, written))
 }
 
+/// Copy the font file of `face` into `dir` (created when first needed) unless its licence
+/// restricts it or it is already there (`copied`: the source files copied) → what the package
+/// report adds after the font's name (nothing when copied).
+fn copy_font(face: &FontFace, dir: &Path, copied: &mut Vec<PathBuf>, taken: &mut Vec<String>, files: &mut Vec<PathBuf>) -> String {
+    let from = match &face.source {
+        FontSource::Bundled => return " — included with DesignCraft".into(),
+        FontSource::Memory => return " — not copied: no font file".into(),
+        FontSource::Installed(p) | FontSource::Document(p) => p,
+    };
+    if face.restricted_licence() {
+        return " — not copied: its licence doesn't allow it".into();
+    }
+    if copied.contains(from) {
+        return String::new();
+    }
+    let name = from.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "font".into());
+    let to = dir.join(unique_name(name, taken));
+    // Packaging into the folder the font is in: it is there already (and copying a file onto
+    // itself empties it on some systems).
+    let same = std::fs::canonicalize(&to).is_ok_and(|t| std::fs::canonicalize(from).is_ok_and(|f| f == t));
+    match std::fs::create_dir_all(dir).and_then(|_| if same { Ok(0) } else { std::fs::copy(from, &to) }) {
+        Ok(_) => {
+            copied.push(from.clone());
+            files.push(to);
+            String::new()
+        }
+        Err(e) => format!(" — not copied: {e}"),
+    }
+}
+
 fn package(s: &mut Session, p: &Value) -> Result<Value> {
     let dir = PathBuf::from(str_param(p, "dir").ok_or_else(|| bad("file.package", "missing `dir`"))?);
     let st = s.doc()?;
@@ -86,6 +122,17 @@ fn package(s: &mut Session, p: &Value) -> Result<Value> {
     let doc_path = dir.join(format!("{title}.designcraft"));
     std::fs::write(&doc_path, super::to_bytes(&packed)).map_err(|e| EngineError::Other(format!("{}: {e}", doc_path.display())))?;
     files.insert(0, doc_path);
+    // The font files, and what the report says about each font.
+    let db = designcraft_fonts::FontDb::global();
+    let (fonts_dir, mut copied, mut taken) = (dir.join(designcraft_fonts::DOCUMENT_FONTS_FOLDER), Vec::new(), Vec::new());
+    let mut font_lines = Vec::new();
+    for f in fonts.as_array().into_iter().flatten() {
+        let (family, style) = (f["family"].as_str().unwrap_or(""), f["style"].as_str().unwrap_or(""));
+        let missing = f["missing"].as_bool().unwrap_or(false) || f["styleMissing"].as_bool().unwrap_or(false);
+        let note =
+            if missing { " — MISSING".to_string() } else { copy_font(&db.face(family, style), &fonts_dir, &mut copied, &mut taken, &mut files) };
+        font_lines.push(format!("  {family} {style}{note}\n"));
+    }
     if p.get("idml").and_then(Value::as_bool).unwrap_or(true) {
         let path = dir.join(format!("{title}.idml"));
         std::fs::write(&path, designcraft_idml::export_idml(&packed)).map_err(|e| EngineError::Other(format!("{}: {e}", path.display())))?;
@@ -103,10 +150,7 @@ fn package(s: &mut Session, p: &Value) -> Result<Value> {
         r += &format!("Instructions\n{t}\n\n");
     }
     r += "Fonts\n";
-    for f in fonts.as_array().into_iter().flatten() {
-        let missing = f["missing"].as_bool().unwrap_or(false) || f["styleMissing"].as_bool().unwrap_or(false);
-        r += &format!("  {} {}{}\n", f["family"].as_str().unwrap_or(""), f["style"].as_str().unwrap_or(""), if missing { " — MISSING" } else { "" });
-    }
+    r += &font_lines.concat();
     r += "\nLinks\n";
     for l in links.as_array().into_iter().flatten() {
         r += &format!("  {} ({})\n", l["name"].as_str().unwrap_or(""), l["status"].as_str().unwrap_or(""));
@@ -169,6 +213,51 @@ mod tests {
         let r = s.execute("links.copyTo", &json!({"dir": dir.join("Copies").to_string_lossy()})).unwrap();
         assert_eq!(r["copied"], 1);
         assert!(s.doc().unwrap().doc.assets.values().next().unwrap().link.as_deref().unwrap().contains("Copies"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn package_copies_the_fonts_their_licences_allow() {
+        use designcraft_fonts::DOCUMENT_FONTS_FOLDER;
+        use designcraft_fonts::testing::{font_with, with_fs_type};
+        const FREE: &str = "DocFont Package Free";
+        const RESTRICTED: &str = "DocFont Package Restricted";
+        let dir = std::env::temp_dir().join(format!("dc-package-fonts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let fonts = dir.join("src").join(DOCUMENT_FONTS_FOLDER);
+        std::fs::create_dir_all(&fonts).unwrap();
+        std::fs::write(fonts.join("free.ttf"), font_with(FREE, &['F']).unwrap()).unwrap();
+        std::fs::write(fonts.join("restricted.otf"), with_fs_type(font_with(RESTRICTED, &['R']).unwrap(), 0x0002).unwrap()).unwrap();
+        // Text in both fonts, and in the bundled default font.
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "Free Restricted Default"})).unwrap();
+        for (a, b, family) in [(0, 4, FREE), (5, 15, RESTRICTED)] {
+            s.execute("text.select", &json!({"story": r["story"], "anchor": a, "focus": b})).unwrap();
+            s.execute("type.char", &json!({"fontFamily": family, "fontStyle": "Regular"})).unwrap();
+        }
+        let src = dir.join("src").join("Fonts.designcraft");
+        s.execute("file.save", &json!({"path": src.to_string_lossy()})).unwrap();
+        let mut s = Session::new();
+        assert_eq!(s.execute("file.open", &json!({"path": src.to_string_lossy()})).unwrap()["documentFonts"], 2);
+
+        let out = dir.join("Pkg");
+        let r = s.execute("file.package", &json!({"dir": out.to_string_lossy(), "idml": false})).unwrap();
+        let packed_fonts = out.join(DOCUMENT_FONTS_FOLDER);
+        assert!(packed_fonts.join("free.ttf").exists());
+        assert!(!packed_fonts.join("restricted.otf").exists(), "a restricted licence keeps the font out");
+        assert!(r["files"].to_string().contains("free.ttf"), "{}", r["files"]);
+        let report = r["report"].as_str().unwrap();
+        assert!(report.contains(&format!("{RESTRICTED} Regular — not copied: its licence doesn't allow it")), "{report}");
+        assert!(report.contains(&format!("{FREE} Regular\n")), "{report}");
+        assert!(report.contains(&format!("{} Regular — included with DesignCraft", designcraft_fonts::DEFAULT_FAMILY)), "{report}");
+        // The packaged document opens with its fonts.
+        let doc = r["files"][0].as_str().unwrap().to_string();
+        assert_eq!(Session::new().execute("file.open", &json!({"path": doc})).unwrap()["documentFonts"], 1);
+        // Packaging into the folder the fonts come from leaves them whole.
+        let len = std::fs::metadata(fonts.join("free.ttf")).unwrap().len();
+        s.execute("file.package", &json!({"dir": dir.join("src").to_string_lossy(), "idml": false})).unwrap();
+        assert_eq!(std::fs::metadata(fonts.join("free.ttf")).unwrap().len(), len);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

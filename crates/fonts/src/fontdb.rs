@@ -43,6 +43,45 @@ enum FontBytes {
     Owned(Arc<Vec<u8>>),
 }
 
+/// Where a face's font came from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FontSource {
+    /// Compiled into DesignCraft.
+    Bundled,
+    /// Font data handed to [`FontDb::add_font`], with no file behind it.
+    Memory,
+    /// An installed font file (the system's or the user's font folders).
+    Installed(std::path::PathBuf),
+    /// A font file in a document's `Document Fonts` folder ([`FontDb::load_document_fonts`]).
+    Document(std::path::PathBuf),
+}
+
+impl FontSource {
+    /// The font file, if the face was loaded from one.
+    pub fn path(&self) -> Option<&std::path::Path> {
+        match self {
+            FontSource::Installed(p) | FontSource::Document(p) => Some(p),
+            FontSource::Bundled | FontSource::Memory => None,
+        }
+    }
+}
+
+/// The folder beside a document whose fonts the document brings with it (as File › Package
+/// writes it).
+pub const DOCUMENT_FONTS_FOLDER: &str = "Document Fonts";
+/// Caps on what a `Document Fonts` folder (untrusted files) can make [`FontDb::load_document_fonts`]
+/// read: font files read, bytes per file and bytes in all.
+pub const MAX_DOCUMENT_FONT_FILES: usize = 200;
+pub const MAX_DOCUMENT_FONT_BYTES: u64 = 256 << 20;
+pub const MAX_DOCUMENT_FONTS_TOTAL: u64 = 512 << 20;
+
+/// What [`FontDb::load_document_fonts`] did: faces added, and a note for each file it skipped.
+#[derive(Debug, Default)]
+pub struct DocumentFonts {
+    pub faces: usize,
+    pub skipped: Vec<String>,
+}
+
 /// One loaded font face.
 pub struct FontFace {
     id: u32,
@@ -53,6 +92,8 @@ pub struct FontFace {
     /// usWeightClass-style weight (400 = regular).
     pub weight: f32,
     pub italic: bool,
+    /// Where the font came from (a file to copy when packaging, a document's own font).
+    pub source: FontSource,
     bytes: FontBytes,
     index: u32,
     pub upem: f64,
@@ -212,6 +253,15 @@ impl FontFace {
             .and_then(|f| f.gdef().ok())
             .and_then(|gdef| gdef.glyph_class_def()?.ok())
             .is_some_and(|classes| classes.get(GlyphId::new(gid)) == 3)
+    }
+
+    /// Does the font's licence forbid passing it on? OS/2 `fsType` Restricted License embedding
+    /// (bit 1) without a less restrictive bit (Preview & Print, Editable). Fonts without an OS/2
+    /// table aren't restricted.
+    pub fn restricted_licence(&self) -> bool {
+        use skrifa::raw::TableProvider;
+        let fs_type = self.skrifa().and_then(|f| f.os2().ok()).map_or(0, |t| t.fs_type());
+        fs_type & 0x0002 != 0 && fs_type & 0x000C == 0
     }
 }
 
@@ -492,9 +542,11 @@ type Found = (u32, String, String, Vec<([u8; 4], f32)>);
 /// Parse every face in `data` (a font file or collection); a variable font yields one face per
 /// named instance (InDesign lists them as styles).
 fn enumerate_faces(data: &[u8]) -> Vec<Found> {
+    /// A collection's count is input: what a damaged one can make the loop try.
+    const MAX_FACES: u32 = 1024;
     let count = match FileRef::new(data) {
         Ok(FileRef::Font(_)) => 1,
-        Ok(FileRef::Collection(c)) => c.len(),
+        Ok(FileRef::Collection(c)) => c.len().min(MAX_FACES),
         Err(_) => 0,
     };
     let mut out = Vec::new();
@@ -527,14 +579,14 @@ pub(crate) fn last_resort_face() -> Arc<FontFace> {
         // The font is compiled in (`include_bytes!`), so parsing it can't depend on input; the
         // `last_resort_face_parses` test proves it on every run.
         #[allow(clippy::expect_used)]
-        let face = make_face(FontBytes::Static(BUNDLED[0]), 0, FALLBACK_FAMILY.into(), "Regular".into(), Vec::new())
+        let face = make_face(FontBytes::Static(BUNDLED[0]), FontSource::Bundled, 0, FALLBACK_FAMILY.into(), "Regular".into(), Vec::new())
             .expect("the compiled-in Source Sans 3 Regular parses");
         Arc::new(face)
     })
     .clone()
 }
 
-fn make_face(bytes: FontBytes, index: u32, family: String, style: String, coords: Vec<([u8; 4], f32)>) -> Option<FontFace> {
+fn make_face(bytes: FontBytes, source: FontSource, index: u32, family: String, style: String, coords: Vec<([u8; 4], f32)>) -> Option<FontFace> {
     let data: &[u8] = match &bytes {
         FontBytes::Static(b) => b,
         FontBytes::Owned(v) => v.as_slice(),
@@ -569,6 +621,7 @@ fn make_face(bytes: FontBytes, index: u32, family: String, style: String, coords
         coords,
         location,
         instance,
+        source,
         bytes,
         index,
         bmp: std::sync::OnceLock::new(),
@@ -619,7 +672,7 @@ impl FontDb {
         let craft = crate::japanese_document_fonts().into_iter().map(|f| f.bytes);
         for data in BUNDLED.iter().copied().chain(craft) {
             for (i, family, style, coords) in enumerate_faces(data) {
-                if let Some(f) = make_face(FontBytes::Static(data), i, family, style, coords) {
+                if let Some(f) = make_face(FontBytes::Static(data), FontSource::Bundled, i, family, style, coords) {
                     faces.push(Arc::new(f));
                 }
             }
@@ -699,13 +752,30 @@ impl FontDb {
     /// Add a user font (TTF/OTF/TTC bytes). Returns the number of faces added (0 if unparseable or
     /// every face was already present).
     pub fn add_font(&self, bytes: Vec<u8>) -> usize {
+        self.add_faces(bytes, FontSource::Memory)
+    }
+
+    /// Add the faces of a font file from `source`. A document's font is skipped only when the same
+    /// folder already gave that family and style (it stands in for other fonts of the name); any
+    /// other is skipped when a face of that family and style is loaded.
+    fn add_faces(&self, bytes: Vec<u8>, source: FontSource) -> usize {
         let data = Arc::new(bytes);
+        let folder = |s: &FontSource| match s {
+            FontSource::Document(p) => p.parent().map(std::path::Path::to_path_buf),
+            _ => None,
+        };
+        let doc_folder = folder(&source);
         let mut added = 0;
         for (i, family, style, coords) in enumerate_faces(&data) {
-            if self.read_faces().iter().any(|f| f.family.eq_ignore_ascii_case(&family) && f.style.eq_ignore_ascii_case(&style)) {
+            let same = |f: &&Arc<FontFace>| {
+                f.family.eq_ignore_ascii_case(&family)
+                    && f.style.eq_ignore_ascii_case(&style)
+                    && (doc_folder.is_none() || folder(&f.source) == doc_folder)
+            };
+            if self.read_faces().iter().any(|f| same(&f)) {
                 continue;
             }
-            if let Some(f) = make_face(FontBytes::Owned(data.clone()), i, family, style, coords) {
+            if let Some(f) = make_face(FontBytes::Owned(data.clone()), source.clone(), i, family, style, coords) {
                 self.faces.write().unwrap_or_else(|e| e.into_inner()).push(Arc::new(f));
                 added += 1;
             }
@@ -789,10 +859,70 @@ impl FontDb {
         let mut any = false;
         for p in paths {
             if let Ok(data) = std::fs::read(&p) {
-                any |= self.add_font(data) > 0;
+                any |= self.add_faces(data, FontSource::Installed(p)) > 0;
             }
         }
         any
+    }
+
+    /// Load the font files (.ttf, .otf, .ttc, .otc; not in subfolders) of a document's `Document
+    /// Fonts` folder. Their faces come before other faces of the same family and style when a
+    /// family is looked up, and stay loaded. The files are untrusted: past
+    /// [`MAX_DOCUMENT_FONT_FILES`] (in name order), files over [`MAX_DOCUMENT_FONT_BYTES`] or past
+    /// [`MAX_DOCUMENT_FONTS_TOTAL`] in all, and files that aren't fonts are skipped with a note. A
+    /// missing folder loads nothing.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_document_fonts(&self, folder: &std::path::Path) -> DocumentFonts {
+        use std::io::Read;
+        let mut out = DocumentFonts::default();
+        let Ok(entries) = std::fs::read_dir(folder) else { return out };
+        let mut files: Vec<std::path::PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                let ext = p.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
+                matches!(ext.as_deref(), Some("ttf" | "otf" | "ttc" | "otc")) && p.is_file()
+            })
+            .collect();
+        files.sort();
+        let mut total = 0u64;
+        for (n, path) in files.iter().enumerate() {
+            if n == MAX_DOCUMENT_FONT_FILES {
+                out.skipped.push(format!("{} more font files not loaded (at most {MAX_DOCUMENT_FONT_FILES} are)", files.len() - n));
+                break;
+            }
+            let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+            let mut data = Vec::new();
+            let too_large = format!("larger than {} MB", MAX_DOCUMENT_FONT_BYTES >> 20);
+            let over_total = format!("over the {} MB the folder's fonts may take in all", MAX_DOCUMENT_FONTS_TOTAL >> 20);
+            // The listed length skips oversized files unread; one byte past the limit while reading
+            // catches a file that grew since.
+            let listed = std::fs::metadata(path).map_or(0, |m| m.len());
+            let read = if listed > MAX_DOCUMENT_FONT_BYTES || total.saturating_add(listed) > MAX_DOCUMENT_FONTS_TOTAL {
+                Ok(0)
+            } else {
+                std::fs::File::open(path).and_then(|f| f.take(MAX_DOCUMENT_FONT_BYTES + 1).read_to_end(&mut data))
+            };
+            let reason = match read {
+                Err(e) => Some(format!("can't be read ({e})")),
+                Ok(_) if listed > MAX_DOCUMENT_FONT_BYTES => Some(too_large),
+                Ok(len) if len as u64 > MAX_DOCUMENT_FONT_BYTES => Some(too_large),
+                Ok(len) if total.saturating_add(listed.max(len as u64)) > MAX_DOCUMENT_FONTS_TOTAL => Some(over_total),
+                Ok(_) if enumerate_faces(&data).is_empty() => Some("not a font DesignCraft can read".into()),
+                Ok(len) => {
+                    total = total.saturating_add(len as u64);
+                    None
+                }
+            };
+            match reason {
+                Some(r) => out.skipped.push(format!("{name}: {r}")),
+                None => out.faces += self.add_faces(data, FontSource::Document(path.clone())),
+            }
+        }
+        for s in &out.skipped {
+            log::warn!("{}: {s}", folder.display());
+        }
+        out
     }
 
     /// Resolve a family + style to a face, falling back to the closest style of the family, then to
@@ -864,7 +994,7 @@ impl FontDb {
                 None => coords.push((tag, v)),
             }
         }
-        let f = make_face(base.bytes.clone(), base.index, base.family.clone(), style.to_string(), coords)?;
+        let f = make_face(base.bytes.clone(), base.source.clone(), base.index, base.family.clone(), style.to_string(), coords)?;
         let f = Arc::new(f);
         self.faces.write().unwrap_or_else(|e| e.into_inner()).push(f.clone());
         Some(f)
@@ -881,7 +1011,12 @@ impl FontDb {
             return self.instance(family, style);
         }
         let faces = self.read_faces();
-        let cands: Vec<&Arc<FontFace>> = faces.iter().filter(|f| f.family.eq_ignore_ascii_case(family)).collect();
+        // Document fonts first, the most recently loaded first: they stand in for other fonts of
+        // the same name.
+        let (mut cands, others): (Vec<&Arc<FontFace>>, Vec<&Arc<FontFace>>) =
+            faces.iter().filter(|f| f.family.eq_ignore_ascii_case(family)).partition(|f| matches!(f.source, FontSource::Document(_)));
+        cands.reverse();
+        cands.extend(others);
         if cands.is_empty() {
             return None;
         }
@@ -977,7 +1112,7 @@ impl FontDb {
             let Ok(data) = std::fs::read(&p) else { continue };
             let hit =
                 enumerate_faces(&data).iter().any(|(i, _, _, _)| skrifa::FontRef::from_index(&data, *i).is_ok_and(|f| f.charmap().map(c).is_some()));
-            if hit && self.add_font(data) > 0 && covered(self) {
+            if hit && self.add_faces(data, FontSource::Installed(p)) > 0 && covered(self) {
                 return true;
             }
         }
@@ -1036,3 +1171,8 @@ mod tests_sysfonts;
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "tests_fallback.rs"]
 mod tests_fallback;
+
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "tests_docfonts.rs"]
+mod tests_docfonts;

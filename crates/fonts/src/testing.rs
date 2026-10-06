@@ -82,3 +82,13 @@ pub fn font_with(family: &str, chars: &[char]) -> Option<Vec<u8>> {
     }
     Some(out)
 }
+
+/// `font` with its OS/2 `fsType` (embedding licence bits) set to `fs_type`. `None` if the font has
+/// no OS/2 table.
+pub fn with_fs_type(mut font: Vec<u8>, fs_type: u16) -> Option<Vec<u8>> {
+    let tables = usize::from(u16::from_be_bytes(font.get(4..6)?.try_into().ok()?));
+    let rec = (0..tables).map(|r| 12 + r * 16).find(|rec| font.get(*rec..rec + 4) == Some(b"OS/2"))?;
+    let offset = u32::from_be_bytes(font.get(rec + 8..rec + 12)?.try_into().ok()?) as usize;
+    font.get_mut(offset + 8..offset + 10)?.copy_from_slice(&fs_type.to_be_bytes());
+    Some(font)
+}

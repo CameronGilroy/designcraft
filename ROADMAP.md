@@ -146,7 +146,8 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - UI scaling (Preferences › Interface, 50–200%; `window.uiScale`); the window title steps aside when the bar is crowded.
 - Underline / Strikethrough Options: weight, offset, colour and tint (Character panel; screen, PDF and IDML).
 - Relink to Folder and Relink File Extension (`links.relinkFolder`; missing links found by name).
-- File › Package (⌥⇧⌘P): the document relinked to a Links folder, the placed files, an IDML copy, an optional PDF and a report (fonts, links, preflight, instructions); Copy Links To (`links.copyTo`).
+- File › Package (⌥⇧⌘P): the document relinked to a Links folder, the placed files, the font files it uses in a Document Fonts folder (except fonts whose licence restricts it, OS/2 `fsType`), an IDML copy, an optional PDF and a report (fonts, links, preflight, instructions); Copy Links To (`links.copyTo`).
+- Document fonts: opening a `.designcraft` or `.idml` file loads the fonts in the `Document Fonts` folder beside it (as Package writes it), ahead of installed fonts with the same name, so a packaged document opens with its fonts on another machine. Damaged, oversized (over 256 MB per file, 512 MB in all) and surplus (over 200) font files are skipped and listed in `file.open`'s `warnings`; `font.list` gives each font's `source`. Document fonts stay loaded until DesignCraft quits, available to every open document; on the web there is no folder to read.
 - Load Swatches / Save Swatches for Exchange (.ase: CMYK, RGB, Lab, Gray; spot or process) from the Swatches panel menu; `swatch.load` / `swatch.save`.
 - Pathfinder (Object › Pathfinder and a Pathfinder panel): Add, Subtract, Intersect, Exclude Overlap, Minus Back; curves stay curves (flo_curves); `object.pathfinder`.
 - Make / Release Compound Path (⌘8; nested paths become holes), Create Outlines (⇧⌘O; one path per text colour), Scissors tool (C) with `path.split`.

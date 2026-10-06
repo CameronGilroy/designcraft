@@ -11,7 +11,10 @@ mod fontdb;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
-pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, base_style, bundled, system_font_dirs};
+pub use fontdb::{
+    DOCUMENT_FONTS_FOLDER, DocumentFonts, FALLBACK_FAMILY, FaceRef, FontDb, FontFace, FontSource, MAX_DOCUMENT_FONT_BYTES, MAX_DOCUMENT_FONT_FILES,
+    MAX_DOCUMENT_FONTS_TOTAL, base_style, bundled, system_font_dirs,
+};
 pub use harfrust::Feature;
 use harfrust::{Direction, Language, ShapeOptions, Tag, UnicodeBuffer};
 pub use kurbo::BezPath;

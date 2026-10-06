@@ -44,6 +44,8 @@ fn load(path: &str) -> Result<designcraft_doc::Document> {
         let _ = path;
         vec![]
     };
+    // Skipped font files are logged; a chapter opens without them.
+    let _ = super::file::load_document_fonts(path);
     if path.to_lowercase().ends_with(".idml") {
         return designcraft_idml::import_idml(&bytes).map_err(|e| EngineError::Other(format!("{path}: {e}")));
     }

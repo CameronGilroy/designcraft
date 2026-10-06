@@ -91,6 +91,10 @@ pub fn open(s: &mut Session, dir: &Path) -> Result<Vec<usize>> {
             Err(_) => continue,
         };
         let path = meta.get("path").and_then(Value::as_str).map(str::to_string);
+        if let Some(p) = &path {
+            // Skipped font files are logged; the document opens without them.
+            let _ = crate::cmd::load_document_fonts(p);
+        }
         let mut st = DocState::new(d, path);
         // Unsaved: the copy on disk (if any) is older than what was recovered.
         st.saved_doc = std::sync::Arc::new((*st.doc).clone());
