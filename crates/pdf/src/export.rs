@@ -1171,6 +1171,18 @@ impl Exporter<'_> {
         let fmt = image::guess_format(&data).ok();
         let img = match fmt {
             Some(image::ImageFormat::Jpeg) => Image::from_jpeg(data.clone().into(), true).ok(),
+            // A CMYK TIFF keeps its ink values (`image` decodes it to RGB, and 100% K would print
+            // as four-colour black). PDF/A exports are RGB only.
+            Some(image::ImageFormat::Tiff) if !self.rgb_only && designcraft_images::is_cmyk_tiff(&data) => match cmyk_tiff(&data) {
+                Some(img) => Some(img),
+                None => {
+                    self.warn(format!(
+                        "{}: converted to RGB (a CMYK TIFF that is planar, has premultiplied alpha, uses other inks or is over 256 MiB)",
+                        asset.name
+                    ));
+                    lossless(&data, fmt)
+                }
+            },
             _ if self.opts.compress_images => recompress(&data).or_else(|| lossless(&data, fmt)),
             _ => lossless(&data, fmt),
         };
@@ -1279,6 +1291,45 @@ fn lossless(data: &Arc<Vec<u8>>, fmt: Option<image::ImageFormat>) -> Option<Imag
         let (w, h) = rgba.dimensions();
         Some(Image::from_rgba8(rgba.into_raw(), w, h))
     })
+}
+
+/// A CMYK raster as a krilla image: its samples are written unchanged as DeviceCMYK, like a
+/// CMYK JPEG's. An embedded ICC profile is left out, as it is for JPEGs: the inks are meant for
+/// the output intent's press, and tagging them with another CMYK profile would let a RIP
+/// convert 100% K to four-colour black.
+#[derive(Clone, Hash)]
+struct CmykImage(Arc<designcraft_images::CmykRaster>);
+
+impl krilla::image::CustomImage for CmykImage {
+    fn color_channel(&self) -> &[u8] {
+        &self.0.cmyk
+    }
+    fn alpha_channel(&self) -> Option<&[u8]> {
+        self.0.alpha.as_deref()
+    }
+    fn bits_per_component(&self) -> krilla::image::BitsPerComponent {
+        krilla::image::BitsPerComponent::Eight
+    }
+    fn size(&self) -> (u32, u32) {
+        (self.0.width, self.0.height)
+    }
+    fn icc_profile(&self) -> Option<&[u8]> {
+        None
+    }
+    fn color_space(&self) -> krilla::image::ImageColorspace {
+        krilla::image::ImageColorspace::Cmyk
+    }
+}
+
+/// A CMYK TIFF as a DeviceCMYK image. `None` when it can't be read as CMYK.
+fn cmyk_tiff(data: &[u8]) -> Option<Image> {
+    let r = designcraft_images::decode_cmyk_tiff(data)?;
+    // krilla panics when the channel lengths don't match the size.
+    let pixels = usize::try_from(r.width).ok()?.checked_mul(usize::try_from(r.height).ok()?)?;
+    if r.cmyk.len() != pixels.checked_mul(4)? || r.alpha.as_ref().is_some_and(|a| a.len() != pixels) {
+        return None;
+    }
+    Image::from_custom(CmykImage(Arc::new(r)), true).ok()
 }
 
 /// Opaque raster → JPEG (quality 90). `None` when the image has transparency or can't be decoded.

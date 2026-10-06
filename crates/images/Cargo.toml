@@ -11,5 +11,6 @@ workspace = true
 [dependencies]
 designcraft-fonts = { workspace = true }
 image = { workspace = true }
+tiff = { workspace = true }
 resvg = { workspace = true }
 psd = { workspace = true }

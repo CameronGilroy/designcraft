@@ -201,3 +201,72 @@ fn tables_export_cell_text() {
         assert!(text.contains(w), "{w} missing from {text:?}");
     }
 }
+
+/// A 4×2 CMYK TIFF: the left half 100% K (text in a scan), the right half C0 M100 Y100 K0.
+fn cmyk_tiff() -> (Vec<u8>, Vec<u8>) {
+    let (k, red) = ([0u8, 0, 0, 255], [0u8, 255, 255, 0]);
+    let px: Vec<u8> = (0..2).flat_map(|_| [k, k, red, red]).flatten().collect();
+    let mut b = Vec::new();
+    tiff::encoder::TiffEncoder::new(std::io::Cursor::new(&mut b)).unwrap().write_image::<tiff::encoder::colortype::CMYK8>(4, 2, &px).unwrap();
+    (b, px)
+}
+
+fn place(d: &mut Document, data: Vec<u8>, px: (u32, u32)) {
+    let asset = designcraft_doc::AssetId(d.alloc());
+    let mime = designcraft_images::mime(&data).into();
+    d.assets.insert(
+        asset,
+        std::sync::Arc::new(designcraft_doc::Asset {
+            id: asset,
+            name: "scan.tif".into(),
+            mime,
+            link: None,
+            data: data.into(),
+            pixels: Some(px),
+            page: 0,
+        }),
+    );
+    let lid = d.default_layer();
+    let id = ItemId(d.alloc());
+    let mut it = Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(72.0, 72.0, 272.0, 172.0)));
+    it.content = designcraft_doc::Content::Graphic(designcraft_doc::Graphic {
+        asset,
+        size: (px.0 as f64, px.1 as f64),
+        xf: designcraft_geom::Affine::translate((72.0, 72.0)) * designcraft_geom::Affine::scale(50.0),
+        auto_fit: designcraft_doc::Fitting::FillProportionally,
+        fit_align: 4,
+        crop: [0.0; 4],
+    });
+    d.insert_item(SpreadRef::Doc(0), it, None).unwrap();
+}
+
+/// Every image XObject in a PDF: its /ColorSpace name (`?` when not a name) and decoded samples.
+fn image_xobjects(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+    use hayro_syntax::object::Name;
+    let pdf = hayro_syntax::Pdf::new(bytes.to_vec()).expect("parse");
+    pdf.objects()
+        .into_iter()
+        .filter_map(|o| o.into_stream())
+        .filter(|s| s.dict().get::<Name>("Subtype").is_some_and(|n| n.as_str() == "Image"))
+        .map(|s| {
+            let cs = s.dict().get::<Name>("ColorSpace").map_or("?".to_string(), |n| n.as_str().to_string());
+            (cs, s.decoded().expect("decode").into_owned())
+        })
+        .collect()
+}
+
+/// A placed CMYK TIFF went into PDFs as DeviceRGB (#35): 100% K became RGB black, which the
+/// press separates as four-colour black.
+#[test]
+fn cmyk_tiff_keeps_its_inks() {
+    let (tif, px) = cmyk_tiff();
+    let mut d = doc_with_text("x");
+    place(&mut d, tif, (4, 2));
+    for standard in [Standard::None, Standard::PdfX4] {
+        let r = export_pdf_with_report(&d, &Cache::new(), &PdfOptions { standard, ..Default::default() }).unwrap();
+        assert!(r.warnings.is_empty(), "{standard:?}: {:?}", r.warnings);
+        let images = image_xobjects(&r.bytes);
+        assert_eq!(images, vec![("DeviceCMYK".to_string(), px.clone())], "{standard:?}");
+        assert_eq!(images[0].1[..4], [0, 0, 0, 255], "K only");
+    }
+}
