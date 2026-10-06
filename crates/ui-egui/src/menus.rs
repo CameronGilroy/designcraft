@@ -1997,6 +1997,16 @@ mod tests {
     }
 
     #[test]
+    fn transform_menu_items_open_their_dialogs() {
+        for id in ["transform.move", "transform.scale", "transform.rotate", "transform.shear"] {
+            let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            activate(&mut app, id, &Value::Null);
+            let dialog = app.ui.dialog.as_ref().map(|d| d.id.clone());
+            assert_eq!(dialog.as_deref(), Some(format!("cmd:{id}").as_str()), "{id} opens its dialog");
+        }
+    }
+
+    #[test]
     fn snap_preferences_are_a_command() {
         let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         let r = run_ui(&mut app, "view.snapPreferences", &json!({"smartSpacing": false, "zone": 8})).unwrap().unwrap();
