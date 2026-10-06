@@ -502,9 +502,9 @@ fn measure(doc: &Document, runs: usize) -> Result<Vec<Row>, String> {
 }
 
 fn print(title: &str, rows: &[Row], noisy: bool) -> Result<(), String> {
-    println!("{title}");
+    outln!("{title}");
     let mut over = 0;
-    println!("  {:<60} {:>11} {:>10}", "", "measured", "budget");
+    outln!("  {:<60} {:>11} {:>10}", "", "measured", "budget");
     for r in rows {
         let (b, flag) = match r.budget {
             Some(b) if r.ms > b => {
@@ -514,16 +514,16 @@ fn print(title: &str, rows: &[Row], noisy: bool) -> Result<(), String> {
             Some(b) => (format!("{b:>7.0} ms"), "ok"),
             None => ("      —   ".into(), ""),
         };
-        println!("  {:<60} {:>8.2} ms {b}  {flag}", r.name, r.ms);
+        outln!("  {:<60} {:>8.2} ms {b}  {flag}", r.name, r.ms);
     }
     match (over, noisy) {
         (0, _) => Ok(()),
         (_, true) => {
-            println!("{over} over budget, but the machine is busy: re-run when idle.");
+            outln!("{over} over budget, but the machine is busy: re-run when idle.");
             Ok(())
         }
         _ => {
-            println!("{over} budget(s) exceeded");
+            outln!("{over} budget(s) exceeded");
             Ok(())
         }
     }
@@ -533,13 +533,13 @@ fn header() -> (usize, bool) {
     let cores = std::thread::available_parallelism().map_or(1, |c| c.get());
     let load = load_average();
     let noisy = load.is_some_and(|l| l > cores as f64 * 0.75);
-    println!(
+    outln!(
         "{cores} cores, load average {}, render threads {}",
         load.map_or("?".into(), |l| format!("{l:.1}")),
         designcraft_render::default_threads()
     );
     if noisy {
-        println!("WARNING: the machine is busy (load average above ¾ of the cores); wall-clock timings below are not trustworthy.");
+        outln!("WARNING: the machine is busy (load average above ¾ of the cores); wall-clock timings below are not trustworthy.");
     }
     (cores, noisy)
 }
@@ -566,7 +566,7 @@ pub fn perf(args: &[String]) -> Result<(), String> {
     let t = Instant::now();
     let doc = synthetic(&spec)?;
     let frames = spec.pages * spec.frames_per_page;
-    println!(
+    outln!(
         "DesignCraft performance budgets — synthetic: {} pages, {frames} text frames in {} threaded stories, {}k chars, {} images ({} assets), {} gradients (built in {:.0} ms)",
         spec.pages,
         doc.stories.len(),
@@ -601,7 +601,7 @@ pub fn bench(args: &[String]) -> Result<(), String> {
     s.execute("file.open", &serde_json::json!({"path": file})).map_err(|e| e.to_string())?;
     let open = t.elapsed().as_secs_f64() * 1000.0;
     let doc = s.doc().map_err(|e| e.to_string())?.doc.clone();
-    println!("{file}: {} pages, {} stories, {} assets (opened in {open:.0} ms)", doc.page_count(), doc.stories.len(), doc.assets.len());
+    outln!("{file}: {} pages, {} stories, {} assets (opened in {open:.0} ms)", doc.page_count(), doc.stories.len(), doc.assets.len());
     let rows = measure(&doc, runs)?;
     print("", &rows, noisy)
 }
