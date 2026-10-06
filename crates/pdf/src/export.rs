@@ -148,6 +148,8 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
         warnings,
         images: HashMap::new(),
         pdfs: HashMap::new(),
+        version,
+        too_new: Vec::new(),
         svgs: HashMap::new(),
         fonts: HashMap::new(),
         reverse_cmaps: HashMap::new(),
@@ -200,6 +202,7 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
     if opts.tagged {
         pdf.set_tag_tree(ex.tag_tree());
     }
+    ex.check_placed_versions()?;
     let mut bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
     let mut warnings = ex.warnings;
     // Form fields (Buttons and Forms) and, for interactive PDF, video and sound; not in PDF/X.
@@ -311,6 +314,9 @@ pub fn export_booklet(doc: &Document, cache: &Cache, opts: &BookletOptions) -> R
         warnings: Vec::new(),
         images: HashMap::new(),
         pdfs: HashMap::new(),
+        // krilla's default.
+        version: PdfVersion::Pdf17,
+        too_new: Vec::new(),
         svgs: HashMap::new(),
         fonts: HashMap::new(),
         reverse_cmaps: HashMap::new(),
@@ -353,6 +359,7 @@ pub fn export_booklet(doc: &Document, cache: &Cache, opts: &BookletOptions) -> R
         s.finish();
         page.finish();
     }
+    ex.check_placed_versions()?;
     let bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
     let mut warnings = ex.warnings;
     warnings.dedup();
@@ -395,6 +402,10 @@ pub(crate) struct Exporter<'a> {
     images: HashMap<AssetId, Option<Image>>,
     /// Placed PDFs (embedded as vector pages).
     pdfs: HashMap<AssetId, Option<krilla::pdf::PdfDocument>>,
+    /// The PDF version written; placed PDFs must not be newer.
+    version: PdfVersion,
+    /// Placed PDFs too new to embed in this version ("name is PDF 2.0"): the export fails.
+    too_new: Vec<String>,
     /// Parsed placed SVGs.
     svgs: HashMap<AssetId, Option<Arc<designcraft_images::usvg::Tree>>>,
     pub fonts: HashMap<u32, Option<krilla::text::Font>>,
@@ -1088,6 +1099,58 @@ impl Exporter<'_> {
         }
     }
 
+    /// A placed PDF as krilla embeds it. krilla refuses a PDF newer than the file it writes (the
+    /// export fails at the end with `VersionMismatch(Pdf17)`), and PDF/X-4 is PDF 1.6 while
+    /// VectorCraft and most tools write 1.7. PDF 1.7 changed nothing in how a page draws, so a 1.7
+    /// file goes in as 1.6 (its header relabelled, as `qpdf --force-version=1.6` does). A newer
+    /// file is left out and the export fails naming it ([`Exporter::check_placed_versions`]).
+    fn placed_pdf(&mut self, asset: &designcraft_doc::Asset) -> Option<krilla::pdf::PdfDocument> {
+        use hayro_syntax::PdfVersion as V;
+        let Ok(pdf) = krilla::pdf::Pdf::new(asset.data.clone()) else {
+            self.warn(format!("{}: can't read the placed PDF", asset.name));
+            return None;
+        };
+        let max = match self.version {
+            PdfVersion::Pdf14 => V::Pdf14,
+            PdfVersion::Pdf15 => V::Pdf15,
+            PdfVersion::Pdf16 => V::Pdf16,
+            PdfVersion::Pdf17 => V::Pdf17,
+            PdfVersion::Pdf20 => V::Pdf20,
+        };
+        let have = pdf.version();
+        if have <= max {
+            return Some(krilla::pdf::PdfDocument::new(Arc::new(pdf)));
+        }
+        if have == V::Pdf17
+            && max == V::Pdf16
+            && let Some(bytes) = relabel_pdf_header(&asset.data, b"%PDF-1.7", b"%PDF-1.6")
+            && let Ok(pdf) = krilla::pdf::Pdf::new(Arc::new(bytes))
+            && pdf.version() <= max
+        {
+            self.warn(format!("{}: a PDF 1.7 placed in a PDF 1.6 file, embedded as PDF 1.6", asset.name));
+            return Some(krilla::pdf::PdfDocument::new(Arc::new(pdf)));
+        }
+        let v = match have {
+            V::Pdf17 => "PDF 1.7",
+            V::Pdf20 => "PDF 2.0",
+            _ => "a newer PDF",
+        };
+        self.too_new.push(format!("{} is {v}", asset.name));
+        None
+    }
+
+    /// Fail with the names of placed PDFs too new for this export (see [`Exporter::placed_pdf`]).
+    fn check_placed_versions(&self) -> Result<()> {
+        if self.too_new.is_empty() {
+            return Ok(());
+        }
+        let v = self.version.as_str();
+        Err(PdfError::Write(format!(
+            "a placed PDF is newer than the {v} this export writes ({}): save it as {v} or older and place it again",
+            self.too_new.join(", ")
+        )))
+    }
+
     fn load_image(&mut self, id: AssetId) -> Option<Image> {
         if let Some(i) = self.images.get(&id) {
             return i.clone();
@@ -1132,22 +1195,23 @@ impl Exporter<'_> {
             return;
         }
         // Placed PDFs go in as vectors (the page as a form XObject).
-        if let Some(asset) = self.doc.assets.get(&g.asset)
+        let doc = self.doc;
+        if let Some(asset) = doc.assets.get(&g.asset)
             && asset.data.starts_with(b"%PDF")
         {
             let Some(size) = Size::from_wh(g.size.0.max(1e-3) as f32, g.size.1.max(1e-3) as f32) else { return };
-            let doc = self
-                .pdfs
-                .entry(g.asset)
-                .or_insert_with(|| krilla::pdf::Pdf::new(asset.data.clone()).ok().map(|p| krilla::pdf::PdfDocument::new(Arc::new(p))))
-                .clone();
-            match doc {
-                Some(doc) => {
-                    s.push_transform(&tf(g.xf));
-                    s.draw_pdf_page(&doc, size, asset.page as usize);
-                    s.pop();
+            let placed = match self.pdfs.get(&g.asset) {
+                Some(p) => p.clone(),
+                None => {
+                    let p = self.placed_pdf(asset);
+                    self.pdfs.insert(g.asset, p.clone());
+                    p
                 }
-                None => self.warn(format!("{}: can't read the placed PDF", asset.name)),
+            };
+            if let Some(placed) = placed {
+                s.push_transform(&tf(g.xf));
+                s.draw_pdf_page(&placed, size, asset.page as usize);
+                s.pop();
             }
             return;
         }
@@ -1176,6 +1240,19 @@ impl Exporter<'_> {
         s.draw_image(img, size);
         s.pop();
     }
+}
+
+/// `data` with its `%PDF-x.y` header (within the first 1024 bytes, where readers look for it)
+/// changed from `from` to `to`, both the same length. `None` when the header isn't `from`.
+fn relabel_pdf_header(data: &[u8], from: &[u8], to: &[u8]) -> Option<Vec<u8>> {
+    if from.len() != to.len() {
+        return None;
+    }
+    let head = data.get(..data.len().min(1024))?;
+    let at = head.windows(from.len()).position(|w| w == from)?;
+    let mut out = data.to_vec();
+    out.get_mut(at..at + to.len())?.copy_from_slice(to);
+    Some(out)
 }
 
 fn lossless(data: &Arc<Vec<u8>>, fmt: Option<image::ImageFormat>) -> Option<Image> {
