@@ -31,7 +31,7 @@ pub fn specs() -> Vec<CommandSpec> {
             st.selection.text = Some(TextSel { anchor: a, focus: b, ..t });
             ok()
         }),
-        cmd!(noundo "text.select", "Select Text", [], None, "{story, anchor, focus}", has_doc, |s, p| {
+        cmd!(noundo "text.select", "Select Text", [], None, "{story, anchor, focus} (UTF-8 byte offsets into the story text, as find.find reports them: á or — counts 2 or 3)", has_doc, |s, p| {
             let sid = StoryId(p.get("story").and_then(Value::as_u64).unwrap_or(0));
             let st = s.doc_mut()?;
             let text = &st.doc.story(sid).ok_or_else(|| bad("text.select", "no such story"))?.text;
