@@ -851,3 +851,49 @@ mod placed_pdf_print_tests {
         assert!(e.contains("logo.pdf is PDF 2.0") && e.contains("PDF 1.6"), "{e}");
     }
 }
+
+#[cfg(test)]
+mod print_group_tests {
+    use serde_json::json;
+
+    use crate::Session;
+    use crate::cmd::{base64_decode, base64_encode};
+
+    /// A one-page PDF 1.7 with a black box, as VectorCraft writes a logo.
+    fn logo() -> Vec<u8> {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"width": 100, "height": 50})).unwrap();
+        s.execute("frame.create", &json!({"rect": [10, 10, 90, 40]})).unwrap();
+        s.execute("object.fill", &json!({"swatch": "[Black]"})).unwrap();
+        let r = s.execute("file.exportPdf", &json!({})).unwrap();
+        base64_decode(r["base64"].as_str().unwrap())
+    }
+
+    fn page_with(pdf: &[u8]) -> Session {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("file.place", &json!({"base64": base64_encode(pdf), "name": "logo.pdf", "x": 72, "y": 72})).unwrap();
+        s
+    }
+
+    /// The placed PDF's transparency group blended in DeviceRGB in a print document
+    /// (`/Group<</Type/Group/S/Transparency/I true/CS/DeviceRGB>>`).
+    #[test]
+    fn print_transparency_groups_blend_in_cmyk() {
+        let mut s = page_with(&logo());
+        let text = |s: &mut Session| {
+            let r = s.execute("file.exportPdf", &json!({"compress": false})).unwrap();
+            String::from_utf8_lossy(&base64_decode(r["base64"].as_str().unwrap())).into_owned()
+        };
+        let t = text(&mut s);
+        assert!(t.contains("/S/Transparency/I true/CS/DeviceCMYK>>"), "CMYK group");
+        assert!(!t.contains("DeviceRGB"), "no RGB left");
+        // The file still reads, with the same page.
+        let r = s.execute("file.exportPdf", &json!({})).unwrap();
+        let bytes = base64_decode(r["base64"].as_str().unwrap());
+        assert_eq!(hayro_syntax::Pdf::new(bytes).unwrap().pages().len(), 1);
+        // An RGB blend space keeps RGB groups.
+        s.execute("edit.transparencyBlendSpace", &json!({"space": "rgb"})).unwrap();
+        assert!(text(&mut s).contains("/CS/DeviceRGB"));
+    }
+}

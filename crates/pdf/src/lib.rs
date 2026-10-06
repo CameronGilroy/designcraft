@@ -35,7 +35,7 @@ mod forms;
 mod pdfx;
 mod transitions;
 pub use export::{BookletKind, BookletOptions, booklet_pairs, export_booklet, export_pdf, export_pdf_with_report, merge_pdfs, sheet_spreads};
-pub use pdfx::{check_pdfx4, make_pdfx4};
+pub use pdfx::{check_pdfx4, cmyk_group_spaces, make_pdfx4};
 pub use transitions::{add_blend_space, add_catalog_entries, add_page_entries, add_transitions};
 
 /// PDF standard to target.

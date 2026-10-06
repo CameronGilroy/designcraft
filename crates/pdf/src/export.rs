@@ -204,6 +204,10 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
     }
     ex.check_placed_versions()?;
     let mut bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
+    // Transparency blends in the document's blend space: CMYK for print (and always in PDF/X).
+    if !ex.rgb_only && (doc.settings.blend_space == designcraft_doc::BlendSpace::Cmyk || opts.standard == Standard::PdfX4) {
+        crate::pdfx::cmyk_group_spaces(&mut bytes);
+    }
     let mut warnings = ex.warnings;
     // Form fields (Buttons and Forms) and, for interactive PDF, video and sound; not in PDF/X.
     let fields = crate::forms::collect(doc, &sheets);
@@ -360,7 +364,10 @@ pub fn export_booklet(doc: &Document, cache: &Cache, opts: &BookletOptions) -> R
         page.finish();
     }
     ex.check_placed_versions()?;
-    let bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
+    let mut bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
+    if doc.settings.blend_space == designcraft_doc::BlendSpace::Cmyk {
+        crate::pdfx::cmyk_group_spaces(&mut bytes);
+    }
     let mut warnings = ex.warnings;
     warnings.dedup();
     Ok(ExportReport { bytes, pages: pairs.len(), warnings })
