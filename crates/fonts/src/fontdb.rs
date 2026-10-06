@@ -351,6 +351,15 @@ pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
         if let Some(h) = &home {
             dirs.push(h.join("Library/Fonts"));
         }
+        // Fonts macOS ships as assets (PingFang, Yu Mincho, …): com_apple_MobileAsset_Font<N>.
+        for parent in ["/System/Library/AssetsV2", "/System/Library/AssetsV2/PreinstalledAssetsV2/InstallWithOs"] {
+            let Ok(entries) = std::fs::read_dir(parent) else { continue };
+            for e in entries.flatten() {
+                if e.file_name().to_string_lossy().starts_with("com_apple_MobileAsset_Font") {
+                    dirs.push(e.path());
+                }
+            }
+        }
     } else if cfg!(windows) {
         let root = std::env::var_os("WINDIR").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
         dirs.push(root.join("Fonts"));
