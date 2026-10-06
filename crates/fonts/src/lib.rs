@@ -10,6 +10,7 @@
 mod fontdb;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+mod vertical;
 
 pub use fontdb::{
     DOCUMENT_FONTS_FOLDER, DocumentFonts, FALLBACK_FAMILY, FaceRef, FontDb, FontFace, FontSource, MAX_DOCUMENT_FONT_BYTES, MAX_DOCUMENT_FONT_FILES,
@@ -57,13 +58,19 @@ pub fn japanese_ui_fonts(bold: bool) -> Vec<&'static CraftFont> {
 /// InDesign's default text font is a serif; ours is Source Serif 4.
 pub const DEFAULT_FAMILY: &str = "Source Serif 4";
 
-/// One shaped glyph, in font units.
+/// One shaped glyph, in font units (y up).
+///
+/// Horizontal runs ([`shape`]) advance by `x_advance` (`y_advance` is 0) and the offsets move the
+/// glyph from its pen position. Vertical runs ([`shape_vertical`]) advance down the line by
+/// `-y_advance` (`x_advance` is 0) and the offsets move the glyph from its vertical origin
+/// ([`FontFace::v_origin`]) on the line's centre, as `vpal` or `vkrn` place it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShapedGlyph {
     pub gid: u32,
     /// Byte offset (in the shaped string) of the cluster this glyph belongs to.
     pub cluster: usize,
     pub x_advance: i32,
+    pub y_advance: i32,
     pub x_offset: i32,
     pub y_offset: i32,
     pub safe_tatweel_before: bool,
@@ -205,6 +212,7 @@ fn shape_dir(
                 gid: info.glyph_id,
                 cluster: info.cluster as usize,
                 x_advance: pos.x_advance,
+                y_advance: 0,
                 x_offset: pos.x_offset,
                 y_offset: pos.y_offset,
                 safe_tatweel_before: info.safe_to_insert_tatweel(),
@@ -224,12 +232,77 @@ fn shape_dir(
                 gid: g.to_u32(),
                 cluster: i,
                 x_advance: adv.round() as i32,
+                y_advance: 0,
                 x_offset: 0,
                 y_offset: 0,
                 safe_tatweel_before: false,
                 rtl: false,
             });
         }
+    }
+    out
+}
+
+/// Shape upright text top to bottom (`text`, `features`, `map` and `context` as in
+/// [`shape_with_context`]): the shaper applies `vert` (vertical forms), and `vkrn` and `vpal` when
+/// `features` turn them on. Advances and origins are the face's vertical metrics
+/// ([`FontFace::v_advance`], [`FontFace::v_origin`]).
+pub fn shape_vertical(face: &FontFace, text: &str, features: &[Feature], map: impl Fn(char) -> char, context: ShapeContext<'_>) -> Vec<ShapedGlyph> {
+    let mut funcs = vertical::VerticalFuncs { face, metrics: vertical::VMetrics::new(face) };
+    let mut out = Vec::with_capacity(text.len());
+    let mut origins = Vec::with_capacity(text.len());
+    let shaped = face.hb().map(|hb| {
+        let shaper = face.shaper.shaper(&hb).instance(face.instance.as_ref()).build();
+        let mut buf = UnicodeBuffer::new();
+        for (i, c) in text.char_indices() {
+            buf.add(map(c), i as u32);
+        }
+        buf.set_pre_context(context.before);
+        buf.set_post_context(context.after);
+        if let Some(language) = context.language.and_then(|t| t.parse::<Language>().ok()) {
+            buf.set_language(language);
+        }
+        buf.guess_segment_properties();
+        buf.set_direction(Direction::TopToBottom);
+        let gb = shaper.shape(buf, ShapeOptions::new().features(features).font_funcs(Some(&mut funcs)));
+        for (info, pos) in gb.glyph_infos().iter().zip(gb.glyph_positions()) {
+            out.push(ShapedGlyph {
+                gid: info.glyph_id,
+                cluster: info.cluster as usize,
+                x_advance: pos.x_advance,
+                y_advance: pos.y_advance,
+                x_offset: pos.x_offset,
+                y_offset: pos.y_offset,
+                safe_tatweel_before: false,
+                rtl: false,
+            });
+        }
+    });
+    if shaped.is_none()
+        && let Some(f) = face.skrifa()
+    {
+        let cmap = f.charmap();
+        for (i, c) in text.char_indices() {
+            let gid = cmap.map(map(c)).unwrap_or_default().to_u32();
+            let (x, y) = funcs.origin(gid);
+            let adv = -(face.v_advance(gid).round() as i32);
+            out.push(ShapedGlyph {
+                gid,
+                cluster: i,
+                x_advance: 0,
+                y_advance: adv,
+                x_offset: -x,
+                y_offset: -y,
+                safe_tatweel_before: false,
+                rtl: false,
+            });
+        }
+    }
+    // The shaper hangs each glyph from its vertical origin; keep only what GPOS moved it by.
+    origins.extend(out.iter().map(|g| funcs.origin(g.gid)));
+    for (g, (x, y)) in out.iter_mut().zip(origins) {
+        g.x_offset = g.x_offset.saturating_add(x);
+        g.y_offset = g.y_offset.saturating_add(y);
     }
     out
 }

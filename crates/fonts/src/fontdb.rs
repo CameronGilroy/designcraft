@@ -113,6 +113,8 @@ pub struct FontFace {
     pub instance: Option<harfrust::ShaperInstance>,
     /// Basic Multilingual Plane coverage bitset, built on first use.
     bmp: std::sync::OnceLock<Box<[u64]>>,
+    /// The ideographic em box, read on first use.
+    em: std::sync::OnceLock<(f64, f64)>,
 }
 
 /// A cheap `Copy` handle to a face. Faces are never unloaded, so the handle lives for the rest of
@@ -240,6 +242,22 @@ impl FontFace {
             .and_then(|f| f.glyph_metrics(Size::unscaled(), self.location()).advance_width(GlyphId::new(gid)))
             .map(|a| a as f64)
             .unwrap_or(self.upem * 0.5)
+    }
+    /// Vertical advance (down the line) of glyph `gid` in font units: `vmtx`, else one em.
+    pub fn v_advance(&self, gid: u32) -> f64 {
+        crate::vertical::VMetrics::new(self).advance(GlyphId::new(gid))
+    }
+    /// Height of glyph `gid`'s vertical origin above its baseline in font units: `VORG`, else its
+    /// top plus its `vmtx` top side bearing, else the em box top. Across, the origin is at half the
+    /// horizontal advance. Upright glyphs in vertical text hang from it on the line's centre.
+    pub fn v_origin(&self, gid: u32) -> f64 {
+        crate::vertical::VMetrics::new(self).origin(GlyphId::new(gid))
+    }
+    /// The ideographic em box (top, bottom) in font units, y up (Japanese fonts: typically 880,
+    /// -120): `BASE` `idtp`/`ideo`, else the OS/2 typo ascender/descender, else the ascender and
+    /// descender, the last two centred on one em.
+    pub fn em_box(&self) -> (f64, f64) {
+        *self.em.get_or_init(|| crate::vertical::em_box(self))
     }
     /// Glyph id for `c` (0 = .notdef).
     pub fn glyph_for(&self, c: char) -> u32 {
@@ -625,6 +643,7 @@ fn make_face(bytes: FontBytes, source: FontSource, index: u32, family: String, s
         bytes,
         index,
         bmp: std::sync::OnceLock::new(),
+        em: std::sync::OnceLock::new(),
     })
 }
 
@@ -1176,3 +1195,7 @@ mod tests_fallback;
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "tests_docfonts.rs"]
 mod tests_docfonts;
+
+#[cfg(test)]
+#[path = "tests_vertical.rs"]
+mod tests_vertical;
