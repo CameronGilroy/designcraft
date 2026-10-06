@@ -105,6 +105,19 @@ cargo run --release -p designcraft-cli -- commands         # list every command
 cargo xtask ci                                             # fmt, clippy, tests, assets, layering, wasm
 ```
 
+Japanese text (UI and documents) uses fonts from
+[storytold/craft-fonts](https://github.com/storytold/craft-fonts), an optional build input (font
+files are never committed here; see craftrules
+[`standards/fonts.md`](https://github.com/storytold/craftrules/blob/main/standards/fonts.md)):
+
+```sh
+git clone https://github.com/storytold/craft-fonts ../craft-fonts
+CRAFT_FONTS_DIR="$PWD/../craft-fonts" cargo run --release -p designcraft   # absolute path
+```
+
+Without it, Japanese falls back to the system's fonts (none on the web). Release builds always
+include it.
+
 To drive a running app, send JSON lines to `127.0.0.1:7979`. The protocol is described in
 [`docs/control-protocol.md`](docs/control-protocol.md).
 
@@ -189,7 +202,8 @@ Copyright (c) 2026 ArtCraft Team and the DesignCraft contributors. Required noti
 Bundled fonts, icons, images and other assets keep their own open licenses; each one is listed
 with its author, source and license in [ASSETS.md](ASSETS.md).
 
-The bundled fonts are under the SIL Open Font License; all UI icons are drawn in code and are original.
+The bundled fonts, and the craft-fonts fonts embedded by release builds, are under the SIL Open
+Font License; all UI icons are drawn in code and are original.
 
 The ArtCraft name, wordmark and logos in [`docs/brand/`](docs/brand/) are trademarks of the
 ArtCraft Team and are not covered by this license. They may be used only unmodified, and only as
