@@ -1435,19 +1435,16 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
                 app.run("window.uiScale", json!({"scale": v / 100.0}))?;
             }
             if d.fields.contains_key("snap.alignEdges") {
-                app.ui.align_edges = d.b("snap.alignEdges");
-            }
-            if d.fields.contains_key("snap.alignCenters") {
-                app.ui.align_centers = d.b("snap.alignCenters");
-            }
-            if d.fields.contains_key("snap.dimensions") {
-                app.ui.smart_dimensions = d.b("snap.dimensions");
-            }
-            if d.fields.contains_key("snap.spacing") {
-                app.ui.smart_spacing = d.b("snap.spacing");
-            }
-            if let Some(zone) = d.n("snap.zone").filter(|z| z.is_finite()) {
-                app.ui.snap_zone = if zone < 0.0 { 0.0 } else { zone };
+                let mut snap = json!({
+                    "alignEdges": d.b("snap.alignEdges"),
+                    "alignCenters": d.b("snap.alignCenters"),
+                    "smartDimensions": d.b("snap.dimensions"),
+                    "smartSpacing": d.b("snap.spacing"),
+                });
+                if let Some(zone) = d.n("snap.zone") {
+                    snap["zone"] = json!(zone);
+                }
+                app.run("view.snapPreferences", snap)?;
             }
             if !d.fields.contains_key("horizontalUnits") {
                 return Ok(Value::Null);

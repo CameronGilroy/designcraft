@@ -78,6 +78,11 @@ pub struct Tokens {
     pub section_divider: Color32,
     /// Panel tab strips, doc-tab bar, dock headers.
     pub tab_strip: Color32,
+    /// Smart guides and spacing marks drawn over the page.
+    pub smart_guide: Color32,
+    /// Measurement labels on the canvas (smart dimensions, gaps).
+    pub measure_bg: Color32,
+    pub measure_text: Color32,
 }
 
 fn hex(s: u32) -> Color32 {
@@ -117,6 +122,9 @@ impl Tokens {
             ruler_text: hex(0xd8d8d8),
             section_divider: hex(0x282828),
             tab_strip: hex(0x282828),
+            smart_guide: hex(0x00c853),
+            measure_bg: Color32::from_rgba_unmultiplied(70, 70, 70, 230),
+            measure_text: Color32::WHITE,
         };
         match b {
             Brightness::Dark => dark,
