@@ -888,12 +888,14 @@ mod print_group_tests {
         let t = text(&mut s);
         assert!(t.contains("/S/Transparency/I true/CS/DeviceCMYK>>"), "CMYK group");
         assert!(!t.contains("DeviceRGB"), "no RGB left");
+        assert!(!designcraft_pdf::has_rgb_groups(t.as_bytes()));
         // The file still reads, with the same page.
         let r = s.execute("file.exportPdf", &json!({})).unwrap();
         let bytes = base64_decode(r["base64"].as_str().unwrap());
         assert_eq!(hayro_syntax::Pdf::new(bytes).unwrap().pages().len(), 1);
         // An RGB blend space keeps RGB groups.
         s.execute("edit.transparencyBlendSpace", &json!({"space": "rgb"})).unwrap();
-        assert!(text(&mut s).contains("/CS/DeviceRGB"));
+        let t = text(&mut s);
+        assert!(t.contains("/CS/DeviceRGB") && designcraft_pdf::has_rgb_groups(t.as_bytes()));
     }
 }

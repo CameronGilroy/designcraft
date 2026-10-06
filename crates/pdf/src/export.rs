@@ -205,10 +205,14 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
     ex.check_placed_versions()?;
     let mut bytes = pdf.finish().map_err(|e| PdfError::Write(format!("{e:?}")))?;
     // Transparency blends in the document's blend space: CMYK for print (and always in PDF/X).
+    let mut warnings = ex.warnings;
     if !ex.rgb_only && (doc.settings.blend_space == designcraft_doc::BlendSpace::Cmyk || opts.standard == Standard::PdfX4) {
         crate::pdfx::cmyk_group_spaces(&mut bytes);
+        // The rewrite matches krilla's exact output; say so if a group got past it.
+        if opts.standard == Standard::PdfX4 && crate::pdfx::has_rgb_groups(&bytes) {
+            warnings.push("PDF/X-4: some transparency groups still blend in RGB".into());
+        }
     }
-    let mut warnings = ex.warnings;
     // Form fields (Buttons and Forms) and, for interactive PDF, video and sound; not in PDF/X.
     let fields = crate::forms::collect(doc, &sheets);
     let media = if opts.media { crate::forms::collect_media(doc, &sheets) } else { Vec::new() };

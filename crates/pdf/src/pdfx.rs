@@ -125,6 +125,13 @@ pub fn make_pdfx4(pdf: &[u8], title: &str) -> Option<Vec<u8>> {
 /// DeviceCMYK in place and at the same length (the optional `/Type/Group` gives the room), so
 /// every cross-reference offset stays valid. Only object dictionaries are touched, never stream
 /// data. Returns how many groups changed.
+/// Whether a transparency group dictionary still names DeviceRGB as its blending space.
+pub fn has_rgb_groups(pdf: &[u8]) -> bool {
+    pdf.windows(b"/CS/DeviceRGB".len()).enumerate().any(|(i, w)| {
+        w == b"/CS/DeviceRGB" && pdf.get(i.saturating_sub(64)..i).is_some_and(|before| before.windows(15).any(|b| b == b"/S/Transparency"))
+    })
+}
+
 pub fn cmyk_group_spaces(pdf: &mut [u8]) -> usize {
     const FORMS: [(&[u8], &[u8]); 2] = [
         (b"/Group<</Type/Group/S/Transparency/I true/CS/DeviceRGB>>", b"/Group<</S/Transparency/I true/CS/DeviceCMYK>>"),
