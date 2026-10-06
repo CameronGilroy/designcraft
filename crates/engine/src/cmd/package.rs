@@ -3,8 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use designcraft_compose::ComposedStory;
 use designcraft_doc::{AssetId, Document};
-use designcraft_fonts::{FontFace, FontSource};
+use designcraft_fonts::{FaceRef, FontFace, FontSource};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, cmd, has_doc, str_param};
@@ -17,7 +18,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Package…",
             ["File"],
             None,
-            "{dir: folder to create, idml?: true, pdf?: false, instructions?: text} — the document (its placed files relinked to Links/), Links/, the font files it uses in Document Fonts/ (unless their licence restricts it), an IDML copy, an optional PDF and a report → {dir, files, report}",
+            "{dir: folder to create, idml?: true, pdf?: false, instructions?: text} — the document (its placed files relinked to Links/), Links/, the font files that draw its text in Document Fonts/ (fallback fonts included; unless their licence restricts it), an IDML copy, an optional PDF and a report → {dir, files, report}",
             has_doc,
             package
         ),
@@ -110,6 +111,28 @@ fn copy_font(face: &FontFace, dir: &Path, copied: &mut Vec<PathBuf>, taken: &mut
     }
 }
 
+/// Add the faces that draw the visible glyphs of `cs` (table cells and footnotes included) to
+/// `out`, each once.
+fn drawn_faces(cs: &ComposedStory, depth: usize, out: &mut Vec<FaceRef>) {
+    // Cells and footnotes hold composed stories of their own; tables nest only so deep.
+    if depth > 16 {
+        return;
+    }
+    for f in &cs.frames {
+        for g in f.lines.iter().flat_map(|l| &l.glyphs).filter(|g| g.visible) {
+            if !out.iter().any(|o| o.id() == g.face.id()) {
+                out.push(g.face);
+            }
+        }
+        for c in f.tables.iter().flat_map(|t| &t.cells) {
+            drawn_faces(&c.text, depth + 1, out);
+        }
+        for n in &f.notes {
+            drawn_faces(&n.text, depth + 1, out);
+        }
+    }
+}
+
 fn package(s: &mut Session, p: &Value) -> Result<Value> {
     let dir = PathBuf::from(str_param(p, "dir").ok_or_else(|| bad("file.package", "missing `dir`"))?);
     let st = s.doc()?;
@@ -125,14 +148,25 @@ fn package(s: &mut Session, p: &Value) -> Result<Value> {
     // The font files, and what the report says about each font.
     let db = designcraft_fonts::FontDb::global().scoped(d.font_scope);
     let (fonts_dir, mut copied, mut taken) = (dir.join(designcraft_fonts::DOCUMENT_FONTS_FOLDER), Vec::new(), Vec::new());
-    let mut font_lines = Vec::new();
+    let (mut font_lines, mut named) = (Vec::new(), Vec::new());
     for f in fonts.as_array().into_iter().flatten() {
         let (family, style) = (f["family"].as_str().unwrap_or(""), f["style"].as_str().unwrap_or(""));
         let missing = f["missing"].as_bool().unwrap_or(false) || f["styleMissing"].as_bool().unwrap_or(false);
-        let note =
-            if missing { " — MISSING".to_string() } else { copy_font(&db.face(family, style), &fonts_dir, &mut copied, &mut taken, &mut files) };
+        // A missing font's text is drawn in its substitute, which isn't a fallback font.
+        let face = db.face(family, style);
+        named.push(face.id());
+        let note = if missing { " — MISSING".to_string() } else { copy_font(&face, &fonts_dir, &mut copied, &mut taken, &mut files) };
         font_lines.push(format!("  {family} {style}{note}\n"));
     }
+    // Fallback fonts: the faces that draw characters the named fonts lack.
+    let mut drawn = Vec::new();
+    for sid in d.stories.keys() {
+        drawn_faces(&s.cache.get(&d, *sid, None), 0, &mut drawn);
+    }
+    drawn.retain(|f| !named.contains(&f.id()));
+    drawn.sort_by(|a, b| (&a.family, &a.style).cmp(&(&b.family, &b.style)));
+    let fallback_lines: Vec<String> =
+        drawn.iter().map(|f| format!("  {} {}{}\n", f.family, f.style, copy_font(f, &fonts_dir, &mut copied, &mut taken, &mut files))).collect();
     if p.get("idml").and_then(Value::as_bool).unwrap_or(true) {
         let path = dir.join(format!("{title}.idml"));
         std::fs::write(&path, designcraft_idml::export_idml(&packed)).map_err(|e| EngineError::Other(format!("{}: {e}", path.display())))?;
@@ -151,6 +185,10 @@ fn package(s: &mut Session, p: &Value) -> Result<Value> {
     }
     r += "Fonts\n";
     r += &font_lines.concat();
+    if !fallback_lines.is_empty() {
+        r += "\nFallback fonts (for characters the fonts above lack)\n";
+        r += &fallback_lines.concat();
+    }
     r += "\nLinks\n";
     for l in links.as_array().into_iter().flatten() {
         r += &format!("  {} ({})\n", l["name"].as_str().unwrap_or(""), l["status"].as_str().unwrap_or(""));
@@ -258,6 +296,51 @@ mod tests {
         let len = std::fs::metadata(fonts.join("free.ttf")).unwrap().len();
         s.execute("file.package", &json!({"dir": dir.join("src").to_string_lossy(), "idml": false})).unwrap();
         assert_eq!(std::fs::metadata(fonts.join("free.ttf")).unwrap().len(), len);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn package_copies_the_fallback_fonts_that_draw_text() {
+        use designcraft_fonts::DOCUMENT_FONTS_FOLDER;
+        use designcraft_fonts::testing::{font_with, with_fs_type};
+        const NAMED: &str = "DocFont Fallback Named";
+        const HELPER: &str = "DocFont Fallback Helper";
+        const RESTRICTED: &str = "DocFont Fallback Restricted";
+        // Characters no other font has: the named font lacks both, the document's other fonts
+        // draw them.
+        let (helped, restricted) = ('\u{F0A41}', '\u{F0A42}');
+        let dir = std::env::temp_dir().join(format!("dc-package-fallback-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let fonts = dir.join("src").join(DOCUMENT_FONTS_FOLDER);
+        std::fs::create_dir_all(&fonts).unwrap();
+        std::fs::write(fonts.join("named.ttf"), font_with(NAMED, &['N']).unwrap()).unwrap();
+        std::fs::write(fonts.join("helper.ttf"), font_with(HELPER, &[helped]).unwrap()).unwrap();
+        std::fs::write(fonts.join("restricted.otf"), with_fs_type(font_with(RESTRICTED, &[restricted]).unwrap(), 0x0002).unwrap()).unwrap();
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let text = format!("N{helped}{restricted}");
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": text})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": text.len()})).unwrap();
+        s.execute("type.char", &json!({"fontFamily": NAMED, "fontStyle": "Regular"})).unwrap();
+        let src = dir.join("src").join("Fallback.designcraft");
+        s.execute("file.save", &json!({"path": src.to_string_lossy()})).unwrap();
+        let mut s = Session::new();
+        assert_eq!(s.execute("file.open", &json!({"path": src.to_string_lossy()})).unwrap()["documentFonts"], 3);
+
+        let out = dir.join("Pkg");
+        let r = s.execute("file.package", &json!({"dir": out.to_string_lossy(), "idml": false})).unwrap();
+        let packed_fonts = out.join(DOCUMENT_FONTS_FOLDER);
+        assert!(packed_fonts.join("named.ttf").exists());
+        assert!(packed_fonts.join("helper.ttf").exists(), "the fallback font that draws text is copied");
+        assert!(!packed_fonts.join("restricted.otf").exists(), "a restricted licence keeps a fallback font out too");
+        let report = r["report"].as_str().unwrap();
+        let fallback = report.split("Fallback fonts").nth(1).unwrap_or_else(|| panic!("{report}"));
+        assert!(fallback.contains(&format!("{HELPER} Regular\n")), "{report}");
+        assert!(fallback.contains(&format!("{RESTRICTED} Regular — not copied: its licence doesn't allow it")), "{report}");
+        assert!(!fallback.contains(NAMED), "{report}");
+        // The packaged document draws the same text with its fonts.
+        let doc = r["files"][0].as_str().unwrap().to_string();
+        assert_eq!(Session::new().execute("file.open", &json!({"path": doc})).unwrap()["documentFonts"], 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

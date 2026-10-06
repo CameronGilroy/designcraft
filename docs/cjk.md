@@ -42,7 +42,7 @@ presets or tables are copied. Our default mojikumi and kinsoku tables are built 
 | Ruby | group ruby only, fixed 50 % size, no options, doesn't affect leading |
 | Kenten | the IDML kinds and a custom character, drawn as characters; no position, size, alignment, colour or font |
 | Composite fonts | done: model, `style.compositeFont.*`, shaping, IDML, font list, replace and Preflight; no dialog |
-| CJK fonts | Japanese faces (Shippori Mincho first) from the optional craft-fonts build input; fallback by language (Japanese: the craft-fonts faces, then system fonts; Simplified and Traditional Chinese, Korean: system fonts); document fonts: the fonts of a `Document Fonts` folder beside an opened file belong to that document (composition, export, font menus), ahead of installed fonts of the same name, and are forgotten when it closes; Package copies the fonts used there (licence permitting). Font files stay in memory for the session (reopening a document reuses them) and aren't read on the web |
+| CJK fonts | Japanese faces (Shippori Mincho first) from the optional craft-fonts build input; fallback by language (Japanese: the craft-fonts faces, then system fonts; Simplified and Traditional Chinese, Korean: system fonts); document fonts: the fonts of a `Document Fonts` folder beside an opened file belong to that document (composition, export, font menus), ahead of installed fonts of the same name, and are forgotten when it closes; Package copies every font file that draws text, fallback fonts included (licence permitting). Font files stay in memory for the session (reopening a document reuses them) and aren't read on the web |
 | Everything else below | missing |
 
 Known bugs to fix first:
