@@ -80,6 +80,12 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.snapToGuides", "Snap to Guides", Some("Cmd+Shift+;"), "{}"),
     ("view.snapToDocumentGrid", "Snap to Document Grid", None, "{}"),
     ("view.smartGuides", "Smart Guides", None, "{}"),
+    (
+        "view.snapPreferences",
+        "Smart Guide Options",
+        None,
+        "{alignEdges?, alignCenters?, smartDimensions?, smartSpacing?: bool, zone?: px} — what smart guides snap to and how close; returns the current values",
+    ),
     ("view.baselineGrid", "Show/Hide Baseline Grid", Some("Cmd+Alt+'"), "{}"),
     ("view.textThreads", "Show/Hide Text Threads", Some("Cmd+Alt+Y"), "{}"),
     ("view.hiddenCharacters", "Show/Hide Hidden Characters", Some("Cmd+Alt+I"), "{}"),
@@ -1191,6 +1197,24 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
             app.ui.shortcuts.clear();
             Ok(Value::Null)
         }
+        "view.snapPreferences" => {
+            let b = |k: &str| p.get(k).and_then(Value::as_bool);
+            let ui = &mut app.ui;
+            ui.align_edges = b("alignEdges").unwrap_or(ui.align_edges);
+            ui.align_centers = b("alignCenters").unwrap_or(ui.align_centers);
+            ui.smart_dimensions = b("smartDimensions").unwrap_or(ui.smart_dimensions);
+            ui.smart_spacing = b("smartSpacing").unwrap_or(ui.smart_spacing);
+            if let Some(z) = p.get("zone").and_then(Value::as_f64).filter(|z| z.is_finite()) {
+                ui.snap_zone = z.max(0.0);
+            }
+            Ok(json!({
+                "alignEdges": ui.align_edges,
+                "alignCenters": ui.align_centers,
+                "smartDimensions": ui.smart_dimensions,
+                "smartSpacing": ui.smart_spacing,
+                "zone": ui.snap_zone,
+            }))
+        }
         "window.richBlack" => {
             app.ui.rich_black = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.rich_black);
             app.canvas.shown = None;
@@ -1950,6 +1974,18 @@ mod tests {
                 Item::Sep => {}
             }
         }
+    }
+
+    #[test]
+    fn snap_preferences_are_a_command() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        let r = run_ui(&mut app, "view.snapPreferences", &json!({"smartSpacing": false, "zone": 8})).unwrap().unwrap();
+        assert_eq!(r["smartSpacing"], false);
+        assert_eq!(r["alignEdges"], true, "unnamed switches keep their value");
+        assert_eq!(r["zone"], 8.0);
+        assert!(!app.ui.smart_spacing && (app.ui.snap_zone - 8.0).abs() < 1e-9);
+        let r = run_ui(&mut app, "view.snapPreferences", &json!({"zone": -3})).unwrap().unwrap();
+        assert_eq!(r["zone"], 0.0, "a negative zone turns snapping off");
     }
 
     #[test]
