@@ -367,6 +367,8 @@ pub struct DesignApp {
 
 impl DesignApp {
     pub fn new(session: Session, services: Services) -> Self {
+        // The font menus and the first file opened need the installed fonts: catalog them now.
+        designcraft_fonts::FontDb::global().scan_in_background();
         DesignApp {
             session,
             ui: UiState::default(),

@@ -9,7 +9,7 @@
 
 mod fontdb;
 
-pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, JAPANESE_FALLBACK, base_style, bundled};
+pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, JAPANESE_FALLBACK, base_style, bundled, system_font_dirs};
 pub use harfrust::Feature;
 use harfrust::{Direction, ShapeOptions, Tag, UnicodeBuffer};
 pub use kurbo::BezPath;
