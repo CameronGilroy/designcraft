@@ -1,0 +1,1241 @@
+{
+  "checked_on": "2026-10-07",
+  "scope": "Feature terminology verified against public Adobe InDesign help, with related labels made consistent. This is not a complete official UI string catalog. Unverified or ambiguous entries and DesignCraft-specific messages retain their existing translations.",
+  "arabic_scope": "Adobe documents English or French interfaces for its Arabic-capable editions. Arabic entries here follow Arabic help terminology, not an official Arabic application interface.",
+  "language_source": "https://helpx.adobe.com/indesign/desktop/get-started/system-and-product-info/available-languages.html",
+  "review_method": "English/localized control-name alignment was used only to find candidates. Changes were selected by meaning; differing document order, conflicting alternatives, prose accidentally styled as controls and unrelated matches were rejected. Existing wording was retained when already documented. Related-label entries adopt verified terms but do not claim their whole label is an exact Adobe UI string.",
+  "entries": [
+    {
+      "language": "ar",
+      "key": "Add Unnamed Colors",
+      "translation": "إضافة ألوان غير مُسماة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/define-and-manage-color-assets/create-and-define-new-swatches.html"
+    },
+    {
+      "language": "ar",
+      "key": "Advanced Type",
+      "translation": "كتابة متقدمة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/change-text-case.html"
+    },
+    {
+      "language": "ar",
+      "key": "Align From:",
+      "translation": "محاذاة من:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "ar",
+      "key": "Alignment",
+      "translation": "المحاذاة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/type-on-a-path/apply-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "All Caps",
+      "translation": "جميع الأحرف كبيرة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/change-text-case.html"
+    },
+    {
+      "language": "ar",
+      "key": "Apply Character Style",
+      "translation": "تطبيق نمط الحروف",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/text-styles/add-and-manage-text-styles-from-cc-libraries.html"
+    },
+    {
+      "language": "ar",
+      "key": "Apply Gradient",
+      "translation": "تطبيق التدرج اللوني",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/advanced-color-techniques/modify-and-adjust-gradients.html"
+    },
+    {
+      "language": "ar",
+      "key": "Ascent",
+      "translation": "الصعود",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-text-baseline.html"
+    },
+    {
+      "language": "ar",
+      "key": "Attributes",
+      "translation": "السمات",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/transform-and-arrange-objects/create-hidden-nonprinting-objects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Auto-Fit",
+      "translation": "الملاءمة التلقائية",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "ar",
+      "key": "Based On:",
+      "translation": "مبني على:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-object-styles/define-and-apply-object-styles.html"
+    },
+    {
+      "language": "ar",
+      "key": "Basic Feather",
+      "translation": "الحواف المنعمة الأساسية",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Bevel and Emboss",
+      "translation": "القطع المشطوف والنقش البارز",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Change",
+      "translation": "تغيير",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/find-replace-objects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Change All",
+      "translation": "تغيير الكل",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/find-replace-text.html"
+    },
+    {
+      "language": "ar",
+      "key": "Change Case",
+      "translation": "تغيير الحالة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/change-text-case.html"
+    },
+    {
+      "language": "ar",
+      "key": "Change To",
+      "translation": "تغيير إلى",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/find-replace-text.html"
+    },
+    {
+      "language": "ar",
+      "key": "Change to:",
+      "translation": "تغيير إلى:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/find-replace-text.html"
+    },
+    {
+      "language": "ar",
+      "key": "Character Style:",
+      "translation": "نمط الحروف:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-drop-caps-text-positioning.html"
+    },
+    {
+      "language": "ar",
+      "key": "Characters",
+      "translation": "الأحرف",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/composition-and-text-wrapping/apply-and-manage-text-formatting.html"
+    },
+    {
+      "language": "ar",
+      "key": "Color Picker",
+      "translation": "أداة اختيار الألوان",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/define-and-manage-color-assets/apply-colors-to-text-objects-and-backgrounds.html"
+    },
+    {
+      "language": "ar",
+      "key": "Columns",
+      "translation": "الأعمدة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-manage-text-frames/change-text-frame-properties.html"
+    },
+    {
+      "language": "ar",
+      "key": "Composition",
+      "translation": "التركيب",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/composition-and-text-wrapping/apply-text-wrap.html"
+    },
+    {
+      "language": "ar",
+      "key": "Custom Tracking/Kerning",
+      "translation": "التتبع/التقنين المخصص",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/highlight-text-spacing.html"
+    },
+    {
+      "language": "ar",
+      "key": "Delete Swatch",
+      "translation": "حذف عينة الألوان",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/define-and-manage-color-assets/create-mixed-ink-swatches-and-groups.html"
+    },
+    {
+      "language": "ar",
+      "key": "Desired",
+      "translation": "المرغوب",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-text-spacing.html"
+    },
+    {
+      "language": "ar",
+      "key": "Directional Feather",
+      "translation": "الحواف المنعمة الاتجاهية",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Document Presets",
+      "translation": "الإعدادات المسبقة للمستند",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/create-and-organize-pages/create-documents/create-documents-with-presets.html"
+    },
+    {
+      "language": "ar",
+      "key": "Drop Shadow",
+      "translation": "إسقاط الظل",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Edit Story",
+      "translation": "تحرير القصة",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/language-and-proofing/arabic-and-hebrew/change-text-direction.html"
+    },
+    {
+      "language": "ar",
+      "key": "Edit in Story Editor",
+      "translation": "تحرير في محرر القصة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-manage-text-frames/open-and-use-story-editor.html"
+    },
+    {
+      "language": "ar",
+      "key": "Fast Display",
+      "translation": "العرض السريع",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/advanced-color-techniques/change-transparency-display-settings.html"
+    },
+    {
+      "language": "ar",
+      "key": "Fill Frame Proportionally",
+      "translation": "ملء الإطار بشكل متناسب",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "ar",
+      "key": "Find Next",
+      "translation": "البحث عن التالي",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/find-replace-text.html"
+    },
+    {
+      "language": "ar",
+      "key": "Find What",
+      "translation": "البحث عن",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/find-replace-text.html"
+    },
+    {
+      "language": "ar",
+      "key": "Find/Change",
+      "translation": "البحث/التغيير",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/find-replace-objects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Find/Change…",
+      "translation": "البحث/التغيير…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/find-replace-objects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Find/Replace Font",
+      "translation": "البحث عن الخط/استبداله",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/fonts/find-and-replace-fonts.html"
+    },
+    {
+      "language": "ar",
+      "key": "Find/Replace Font…",
+      "translation": "البحث عن الخط/استبداله…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/fonts/find-and-replace-fonts.html"
+    },
+    {
+      "language": "ar",
+      "key": "Fit Content Proportionally",
+      "translation": "ملاءمة المحتوى بشكل متناسب",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "ar",
+      "key": "Fit Content to Frame",
+      "translation": "ملاءمة المحتوى مع الإطار",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "ar",
+      "key": "Fit Frame to Content",
+      "translation": "ملاءمة الإطار مع المحتوى",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "ar",
+      "key": "Fit Page in Window",
+      "translation": "ملاءمة الصفحة في النافذة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/get-started/settings-and-preferences/zoom-and-view-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Fit Spread in Window",
+      "translation": "ملاءمة الصفحة المزدوجة في النافذة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/get-started/settings-and-preferences/zoom-and-view-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Flattener Preview",
+      "translation": "معاينة التسطيح",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/advanced-color-techniques/transparency-flattener-preset-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Get Story",
+      "translation": "جلب القصة",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/language-and-proofing/arabic-and-hebrew/change-text-direction.html"
+    },
+    {
+      "language": "ar",
+      "key": "Glyph Scaling:",
+      "translation": "قياس الحروف الرسومية:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/control-glyphing-scaling.html"
+    },
+    {
+      "language": "ar",
+      "key": "Gradient",
+      "translation": "التدرج اللوني",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/advanced-color-techniques/modify-and-adjust-gradients.html"
+    },
+    {
+      "language": "ar",
+      "key": "Gradient Feather",
+      "translation": "الحواف المنعمة المتدرجة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "H&J Violations",
+      "translation": "انتهاكات H&J",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/highlight-text-spacing.html"
+    },
+    {
+      "language": "ar",
+      "key": "Height",
+      "translation": "الارتفاع",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/create-and-organize-pages/create-documents/change-document-setup.html"
+    },
+    {
+      "language": "ar",
+      "key": "Highlight",
+      "translation": "الإبراز",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/highlight-text-spacing.html"
+    },
+    {
+      "language": "ar",
+      "key": "Hyphen Limit:",
+      "translation": "الحد الأقصى للواصلات:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/composition-and-text-wrapping/control-hyphenation-and-word-breaks.html"
+    },
+    {
+      "language": "ar",
+      "key": "Inner Glow",
+      "translation": "التوهج الداخلي",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Inner Shadow",
+      "translation": "الظل الداخلي",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Insert White Space",
+      "translation": "إدراج مسافة بيضاء",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-text-spacing.html"
+    },
+    {
+      "language": "ar",
+      "key": "Kerning",
+      "translation": "التقنين",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/highlight-text-spacing.html"
+    },
+    {
+      "language": "ar",
+      "key": "Layers",
+      "translation": "الطبقات",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/stack-objects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Leading",
+      "translation": "المسافة بين الأسطر",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-text-baseline.html"
+    },
+    {
+      "language": "ar",
+      "key": "Leading:",
+      "translation": "المسافة بين الأسطر:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-text-baseline.html"
+    },
+    {
+      "language": "ar",
+      "key": "Location:",
+      "translation": "الموقع:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/advanced-color-techniques/create-and-name-gradient-swatches.html"
+    },
+    {
+      "language": "ar",
+      "key": "Margins and Columns…",
+      "translation": "الهوامش والأعمدة…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/create-and-organize-pages/create-documents/change-document-setup.html"
+    },
+    {
+      "language": "ar",
+      "key": "Metrics",
+      "translation": "المقاييس",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-kerning.html"
+    },
+    {
+      "language": "ar",
+      "key": "Mobile",
+      "translation": "جوال",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/create-and-organize-pages/create-documents/create-new-documents.html"
+    },
+    {
+      "language": "ar",
+      "key": "More Options",
+      "translation": "خيارات أكثر",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/change-text-case.html"
+    },
+    {
+      "language": "ar",
+      "key": "Name",
+      "translation": "الاسم",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/advanced-color-techniques/transparency-flattener-preset-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Opacity",
+      "translation": "العتامة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Outer Glow",
+      "translation": "التوهج الخارجي",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Overprint Fill",
+      "translation": "طباعة فوقية للتعبئة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-tables-and-data/strokes-and-fills/table-stroke-and-fill-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Overprint Stroke",
+      "translation": "طباعة فوقية للحد",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-manage-text-frames/set-column-rules.html"
+    },
+    {
+      "language": "ar",
+      "key": "Place",
+      "translation": "وضع",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Place Loaded Graphic",
+      "translation": "وضع الرسم المحمل",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Place PDF",
+      "translation": "وضع PDF",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Place Snippet",
+      "translation": "وضع مقتطف",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Place and Link",
+      "translation": "وضع وربط",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Place with Import Options…",
+      "translation": "وضع مع خيارات الاستيراد…",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Place…",
+      "translation": "وضع…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Position",
+      "translation": "الموضع",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/transform-and-arrange-objects/transform-anchored-objects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Quick Actions",
+      "translation": "الإجراءات السريعة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/text-styles/auto-style-text-and-paragraphs.html"
+    },
+    {
+      "language": "ar",
+      "key": "Remove Document",
+      "translation": "إزالة المستند",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/create-and-organize-pages/create-and-manage-book-files/remove-replace-documents.html"
+    },
+    {
+      "language": "ar",
+      "key": "Replace With",
+      "translation": "الاستبدال بـ",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/fonts/find-and-replace-fonts.html"
+    },
+    {
+      "language": "ar",
+      "key": "Satin",
+      "translation": "الساتان",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-transparency-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Set Story Text",
+      "translation": "تعيين نص القصة",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/language-and-proofing/arabic-and-hebrew/change-text-direction.html"
+    },
+    {
+      "language": "ar",
+      "key": "Shading",
+      "translation": "التظليل",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/composition-and-text-wrapping/apply-paragraph-borders-and-backgrounds.html"
+    },
+    {
+      "language": "ar",
+      "key": "Size",
+      "translation": "الحجم",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/apply-object-export-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Small Caps",
+      "translation": "الأحرف الكبيرة المصغّرة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/change-text-case.html"
+    },
+    {
+      "language": "ar",
+      "key": "Smart Text Reflow",
+      "translation": "التدفق الذكي للنص",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/set-up-smart-text-reflow.html"
+    },
+    {
+      "language": "ar",
+      "key": "Space After",
+      "translation": "المسافة بعد",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/composition-and-text-wrapping/add-or-remove-paragraph-rules.html"
+    },
+    {
+      "language": "ar",
+      "key": "Space After:",
+      "translation": "المسافة بعد:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/composition-and-text-wrapping/add-or-remove-paragraph-rules.html"
+    },
+    {
+      "language": "ar",
+      "key": "Space Before",
+      "translation": "المسافة قبل",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/type-on-a-path/apply-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Space Before:",
+      "translation": "المسافة قبل:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/type-on-a-path/apply-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Stop Color:",
+      "translation": "لون الإيقاف:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/advanced-color-techniques/create-and-name-gradient-swatches.html"
+    },
+    {
+      "language": "ar",
+      "key": "Story",
+      "translation": "القصة",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/language-and-proofing/arabic-and-hebrew/change-text-direction.html"
+    },
+    {
+      "language": "ar",
+      "key": "Story Direction",
+      "translation": "اتجاه القصة",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/language-and-proofing/arabic-and-hebrew/change-text-direction.html"
+    },
+    {
+      "language": "ar",
+      "key": "Story Editor",
+      "translation": "محرر القصة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-manage-text-frames/open-and-use-story-editor.html"
+    },
+    {
+      "language": "ar",
+      "key": "Story Editor Display",
+      "translation": "عرض محرر القصة",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-manage-text-frames/open-and-use-story-editor.html"
+    },
+    {
+      "language": "ar",
+      "key": "Style Mapping",
+      "translation": "ربط الأنماط",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "ar",
+      "key": "Superscript",
+      "translation": "النص المرتفع",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/character-formatting/apply-drop-caps-text-positioning.html"
+    },
+    {
+      "language": "ar",
+      "key": "Text Frame",
+      "translation": "إطار النص",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-graphics-and-media/manage-object-styles/define-and-apply-object-styles.html"
+    },
+    {
+      "language": "ar",
+      "key": "Tracking",
+      "translation": "التتبع",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/highlight-text-spacing.html"
+    },
+    {
+      "language": "ar",
+      "key": "Tracking:",
+      "translation": "التتبع:",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/highlight-text-spacing.html"
+    },
+    {
+      "language": "ar",
+      "key": "Transparency Blend Space",
+      "translation": "مساحة مزج الشفافية",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/apply-color/advanced-color-techniques/control-blending-with-isolation-and-knockouts.html"
+    },
+    {
+      "language": "ar",
+      "key": "Type on a Path",
+      "translation": "الكتابة على مسار",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/type-on-a-path/apply-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Type on a Path Options…",
+      "translation": "خيارات الكتابة على مسار…",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/type-on-a-path/apply-effects.html"
+    },
+    {
+      "language": "ar",
+      "key": "Width",
+      "translation": "العرض",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/add-and-manage-text/add-and-manage-text-frames/change-text-frame-properties.html"
+    },
+    {
+      "language": "ar",
+      "key": "story",
+      "translation": "القصة",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/language-and-proofing/arabic-and-hebrew/change-text-direction.html"
+    },
+    {
+      "language": "ar",
+      "key": "x Height",
+      "translation": "ارتفاع x",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/mena_ar/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-text-baseline.html"
+    },
+    {
+      "language": "zh",
+      "key": "After First:",
+      "translation": "连字符前最少字符数：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/composition-and-text-wrapping/control-hyphenation-and-word-breaks.html"
+    },
+    {
+      "language": "zh",
+      "key": "Align From:",
+      "translation": "对齐自：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "zh",
+      "key": "Align to baseline grid",
+      "translation": "对齐基线网格",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/character-formatting/adjust-line-spacing-with-leading.html"
+    },
+    {
+      "language": "zh",
+      "key": "Allow Selected Spread to Shuffle",
+      "translation": "允许所选跨页随机排布",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/create-and-organize-pages/create-documents/create-multi-page-spreads.html"
+    },
+    {
+      "language": "zh",
+      "key": "Apply Table Style",
+      "translation": "应用表样式",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "zh",
+      "key": "Ascent",
+      "translation": "上升高度",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-text-baseline.html"
+    },
+    {
+      "language": "zh",
+      "key": "Before Last:",
+      "translation": "连字符后最少字符数：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/composition-and-text-wrapping/control-hyphenation-and-word-breaks.html"
+    },
+    {
+      "language": "zh",
+      "key": "Body Rows",
+      "translation": "表体行",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-tables-and-data/table-and-cell-styles/table-and-cell-styles.html"
+    },
+    {
+      "language": "zh",
+      "key": "Bring Forward",
+      "translation": "向前移动",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/stack-objects.html"
+    },
+    {
+      "language": "zh",
+      "key": "Captions",
+      "translation": "题注",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/indexes-and-references/references-and-bookmarks/create-image-captions.html"
+    },
+    {
+      "language": "zh",
+      "key": "Convert to Liquid Guide",
+      "translation": "转换为自适应参考线",
+      "basis": "documented feature terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/using/alternate-layouts-liquid-layouts.html"
+    },
+    {
+      "language": "zh",
+      "key": "Custom Tracking/Kerning",
+      "translation": "自定义字距调整/字距微调",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/composition-and-text-wrapping/set-text-composition.html"
+    },
+    {
+      "language": "zh",
+      "key": "Dimensions Include Stroke Weight",
+      "translation": "尺寸包括描边粗细",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/transform-and-arrange-objects/object-transformation-settings-options.html"
+    },
+    {
+      "language": "zh",
+      "key": "Discretionary Ligatures",
+      "translation": "自由连字",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/character-formatting/apply-ligatures-to-letter-pairs.html"
+    },
+    {
+      "language": "zh",
+      "key": "Entire Pasteboard",
+      "translation": "完整粘贴板",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/get-started/settings-and-preferences/zoom-and-view-options.html"
+    },
+    {
+      "language": "zh",
+      "key": "Fill with Placeholder Text",
+      "translation": "用占位符文本填充",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/add-and-import-text/add-text-to-documents.html"
+    },
+    {
+      "language": "zh",
+      "key": "First Object Above",
+      "translation": "上方第一个对象",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/select-nested-overlapping-objects.html"
+    },
+    {
+      "language": "zh",
+      "key": "Fit Content Proportionally",
+      "translation": "按比例适合内容",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "zh",
+      "key": "Fit Frame to Content",
+      "translation": "使框架适合内容",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/fit-object-to-frame.html"
+    },
+    {
+      "language": "zh",
+      "key": "Generate Static Caption",
+      "translation": "生成静态题注",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/indexes-and-references/references-and-bookmarks/create-image-captions.html"
+    },
+    {
+      "language": "zh",
+      "key": "Glyph Scaling:",
+      "translation": "字形缩放比例：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/control-glyphing-scaling.html"
+    },
+    {
+      "language": "zh",
+      "key": "Guides & Pasteboard",
+      "translation": "参考线和粘贴板",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/create-and-organize-pages/create-documents/change-document-setup.html"
+    },
+    {
+      "language": "zh",
+      "key": "High Quality",
+      "translation": "高品质",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/get-started/settings-and-preferences/keyboard-shortcuts.html"
+    },
+    {
+      "language": "zh",
+      "key": "High Quality Display",
+      "translation": "高品质显示",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/get-started/settings-and-preferences/keyboard-shortcuts.html"
+    },
+    {
+      "language": "zh",
+      "key": "Hyphen Limit:",
+      "translation": "连字符限制：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/composition-and-text-wrapping/control-hyphenation-and-word-breaks.html"
+    },
+    {
+      "language": "zh",
+      "key": "Info",
+      "translation": "信息",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/add-and-manage-text-frames/word-character-count.html"
+    },
+    {
+      "language": "zh",
+      "key": "Interactive",
+      "translation": "交互式",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/indexes-and-references/references-and-bookmarks/arrange-group-sort-bookmarks.html"
+    },
+    {
+      "language": "zh",
+      "key": "Kenten",
+      "translation": "圈点",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/language-and-proofing/chinese-japanese-and-korean/apply-kenten-to-text.html"
+    },
+    {
+      "language": "zh",
+      "key": "Line",
+      "translation": "直线",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/add-and-manage-text-frames/set-column-rules.html"
+    },
+    {
+      "language": "zh",
+      "key": "Liquid Layout",
+      "translation": "自适应版面",
+      "basis": "documented feature terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/using/alternate-layouts-liquid-layouts.html"
+    },
+    {
+      "language": "zh",
+      "key": "Liquid Page Rule",
+      "translation": "自适应页面规则",
+      "basis": "documented feature terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/using/alternate-layouts-liquid-layouts.html"
+    },
+    {
+      "language": "zh",
+      "key": "Liquid guides",
+      "translation": "自适应参考线",
+      "basis": "documented feature terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/using/alternate-layouts-liquid-layouts.html"
+    },
+    {
+      "language": "zh",
+      "key": "Mobile",
+      "translation": "移动设备",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/create-and-organize-pages/create-documents/create-documents-with-presets.html"
+    },
+    {
+      "language": "zh",
+      "key": "New Page Reference…",
+      "translation": "新建页面引用…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/indexes-and-references/create-an-index/create-index-entries.html"
+    },
+    {
+      "language": "zh",
+      "key": "New Table Style…",
+      "translation": "新建表样式…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-tables-and-data/table-and-cell-styles/table-and-cell-styles.html"
+    },
+    {
+      "language": "zh",
+      "key": "Next Object Above",
+      "translation": "上方下一个对象",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/select-nested-overlapping-objects.html"
+    },
+    {
+      "language": "zh",
+      "key": "Next Object Below",
+      "translation": "下方下一个对象",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/select-nested-overlapping-objects.html"
+    },
+    {
+      "language": "zh",
+      "key": "Nonprinting",
+      "translation": "非打印",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/transform-and-arrange-objects/create-hidden-nonprinting-objects.html"
+    },
+    {
+      "language": "zh",
+      "key": "Numbering & Section Options…",
+      "translation": "页码和章节选项…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/create-and-organize-pages/page-numbers-chapters-and-sections/add-page-numbers-and-markers.html"
+    },
+    {
+      "language": "zh",
+      "key": "Object Liquid Settings",
+      "translation": "对象自适应设置",
+      "basis": "consistent terminology in related label",
+      "source": "https://helpx.adobe.com/cn/indesign/using/alternate-layouts-liquid-layouts.html"
+    },
+    {
+      "language": "zh",
+      "key": "Paste without Formatting",
+      "translation": "粘贴时不包含格式",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/add-and-import-text/add-text-to-documents.html"
+    },
+    {
+      "language": "zh",
+      "key": "Remove Styles and Formatting from Text and Tables",
+      "translation": "从文本和表格中删除样式和格式",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "zh",
+      "key": "Revert",
+      "translation": "还原",
+      "basis": "documented menu control terminology (Edit > Undo / File > Revert)",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/get-started/settings-and-preferences/undo-redo-edits.html"
+    },
+    {
+      "language": "zh",
+      "key": "Ruby",
+      "translation": "旁注",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/language-and-proofing/chinese-japanese-and-korean/add-and-format-ruby-text-annotations.html"
+    },
+    {
+      "language": "zh",
+      "key": "Ruby:",
+      "translation": "旁注：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/language-and-proofing/chinese-japanese-and-korean/add-and-format-ruby-text-annotations.html"
+    },
+    {
+      "language": "zh",
+      "key": "Ruby…",
+      "translation": "旁注…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/language-and-proofing/chinese-japanese-and-korean/add-and-format-ruby-text-annotations.html"
+    },
+    {
+      "language": "zh",
+      "key": "Send Backward",
+      "translation": "向后移动",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/manage-frames-and-objects/stack-objects.html"
+    },
+    {
+      "language": "zh",
+      "key": "Show All on Spread",
+      "translation": "在跨页上全部显示",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/transform-and-arrange-objects/create-hidden-nonprinting-objects.html"
+    },
+    {
+      "language": "zh",
+      "key": "Show Prefix/Suffix in:",
+      "translation": "显示前缀/后缀位置：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/indexes-and-references/footnotes-and-endnotes/change-footnote-numbering-and-layout-options.html"
+    },
+    {
+      "language": "zh",
+      "key": "Show Tag Markers",
+      "translation": "显示标签标志符",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/conditional-and-variable-text/marker-types.html"
+    },
+    {
+      "language": "zh",
+      "key": "Snap to Document Grid",
+      "translation": "靠齐文档网格",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/layout-and-grid-tools/grids/snap-objects-to-grids.html"
+    },
+    {
+      "language": "zh",
+      "key": "Snap to Guides",
+      "translation": "靠齐参考线",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/layout-and-grid-tools/grids/snap-objects-to-grids.html"
+    },
+    {
+      "language": "zh",
+      "key": "Snap to Zone",
+      "translation": "靠齐区域",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/layout-and-grid-tools/grids/snap-objects-to-grids.html"
+    },
+    {
+      "language": "zh",
+      "key": "Span Footnotes Across Columns",
+      "translation": "跨栏分布脚注",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/indexes-and-references/footnotes-and-endnotes/span-footnotes.html"
+    },
+    {
+      "language": "zh",
+      "key": "Start at:",
+      "translation": "起始编号：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/indexes-and-references/footnotes-and-endnotes/change-endnote-numbering-and-layout.html"
+    },
+    {
+      "language": "zh",
+      "key": "Stop Color:",
+      "translation": "停止点颜色：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/apply-color/advanced-color-techniques/create-and-name-gradient-swatches.html"
+    },
+    {
+      "language": "zh",
+      "key": "Substituted Fonts",
+      "translation": "替换字体",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/composition-and-text-wrapping/set-text-composition.html"
+    },
+    {
+      "language": "zh",
+      "key": "Table Options",
+      "translation": "表选项",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-tables-and-data/table-and-cell-styles/override-table-style.html"
+    },
+    {
+      "language": "zh",
+      "key": "Table Style",
+      "translation": "表样式",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "zh",
+      "key": "Table Style Options…",
+      "translation": "表样式选项…",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-tables-and-data/table-and-cell-styles/table-and-cell-styles.html"
+    },
+    {
+      "language": "zh",
+      "key": "Tate-Chu-Yoko",
+      "translation": "纵中横",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/language-and-proofing/chinese-japanese-and-korean/apply-tate-chu-yoko-in-vertical-text.html"
+    },
+    {
+      "language": "zh",
+      "key": "Track Changes",
+      "translation": "修订",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-and-manage-text/add-and-import-text/import-options.html"
+    },
+    {
+      "language": "zh",
+      "key": "Tracking",
+      "translation": "字距调整",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-tracking.html"
+    },
+    {
+      "language": "zh",
+      "key": "Tracking:",
+      "translation": "字距调整：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-tracking.html"
+    },
+    {
+      "language": "zh",
+      "key": "Transformations are Totals",
+      "translation": "变换为总计",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/add-graphics-and-media/transform-and-arrange-objects/object-transformation-settings-options.html"
+    },
+    {
+      "language": "zh",
+      "key": "Transparency Flattener Presets",
+      "translation": "透明度拼合器预设",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/apply-color/advanced-color-techniques/create-custom-transparency-flattener-presets.html"
+    },
+    {
+      "language": "zh",
+      "key": "Undo",
+      "translation": "还原",
+      "basis": "documented menu control terminology (Edit > Undo / File > Revert)",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/get-started/settings-and-preferences/undo-redo-edits.html"
+    },
+    {
+      "language": "zh",
+      "key": "Units & Increments",
+      "translation": "单位和增量",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/tabs-indents-and-spacing/adjust-kerning.html"
+    },
+    {
+      "language": "zh",
+      "key": "Words with at Least:",
+      "translation": "单词最少字符数：",
+      "basis": "documented control terminology",
+      "source": "https://helpx.adobe.com/cn/indesign/desktop/format-and-style-text/composition-and-text-wrapping/control-hyphenation-and-word-breaks.html"
+    }
+  ]
+}
