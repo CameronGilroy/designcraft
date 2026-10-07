@@ -206,7 +206,7 @@ same references), and from the app's JSON control channel. See [docs/agents.md](
 | M6 | Files & export (native, IDML, PDF, PNG/JPEG) | in progress (IDML ✅, PDF export) |
 | M7 | Long documents (sections, TOC, index, footnotes, books) | in progress (sections, TOC, text variables/running heads, hyperlinks, bookmarks, footnotes, cross-references, index) |
 | M8 | Tables | ✅ core (table/cell styles, rotation, diagonal lines pending) |
-| M9 | Performance (MT composition, tiles) | in progress (glyph path cache, culling, parallel compose 6.7× faster, perf harness) |
+| M9 | Performance (MT composition, tiles) | in progress (glyph path cache, bounded RTL label layout cache, culling, parallel compose 6.7× faster, perf harness) |
 | M10 | Find/Change, spelling, Preflight | in progress (Find/Change ✅, spelling ✅, Preflight) |
 | M11 | Layout power features (liquid/alternate layouts, data merge) | started (data merge, step & repeat, snippets) |
 | M12 | Interactive & digital (EPUB, HTML, interactive PDF) | started (EPUB, PDF links/bookmarks) |
