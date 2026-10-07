@@ -3,6 +3,8 @@
 //! Chinese and Arabic feature terminology is checked against public Adobe help where documented;
 //! project-specific labels are original. Sources and scope: `docs/localization-terminology.json`.
 
+use std::{collections::HashMap, sync::OnceLock};
+
 mod ar;
 
 /// Supported interface languages: (code, name in that language).
@@ -2635,14 +2637,13 @@ fn column(lang: &str) -> Option<usize> {
 
 /// `s` in `lang` (English, or the string itself, when there's no translation).
 pub fn tr<'a>(lang: &str, s: &'a str) -> &'a str {
+    static TRANSLATIONS: OnceLock<HashMap<&'static str, [&'static str; 5]>> = OnceLock::new();
+    static ARABIC: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     if lang == "ar" {
-        return ar::TABLE.iter().find(|(en, _)| *en == s).map_or(s, |(_, t)| *t);
+        return ARABIC.get_or_init(|| ar::TABLE.iter().copied().collect()).get(s).copied().unwrap_or(s);
     }
     let Some(c) = column(lang) else { return s };
-    match TABLE.iter().find(|(en, _)| *en == s) {
-        Some((_, t)) => t[c],
-        None => s,
-    }
+    TRANSLATIONS.get_or_init(|| TABLE.iter().copied().collect()).get(s).and_then(|row| row.get(c)).copied().unwrap_or(s)
 }
 
 /// Localize reserved built-in style names only; user-defined names are document data.
@@ -2664,6 +2665,23 @@ pub fn workspace_name<'a>(lang: &str, name: &'a str) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_lookup_preserves_every_translation_across_language_switches() {
+        for (key, translations) in TABLE {
+            for (lang, expected) in ["de", "fr", "es", "ja", "zh"].into_iter().zip(translations) {
+                assert_eq!(tr(lang, key), *expected, "{lang}: {key}");
+            }
+            assert_eq!(tr("", key), *key);
+        }
+        for (key, expected) in ar::TABLE {
+            assert_eq!(tr("ar", key), *expected, "ar: {key}");
+        }
+        let unknown = String::from("A user-defined untranslated label");
+        for lang in ["ar", "zh", "ja", "de", "fr", "es", "", "unknown"] {
+            assert!(std::ptr::eq(tr(lang, &unknown), unknown.as_str()));
+        }
+    }
 
     #[test]
     fn translates_known_strings_and_keeps_the_rest() {

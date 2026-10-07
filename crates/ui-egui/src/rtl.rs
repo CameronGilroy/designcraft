@@ -3,13 +3,40 @@
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{Align, Align2, Color32, FontFamily, FontId, Galley, Pos2, Rect, WidgetText};
 use std::{ops::Range, sync::Arc};
-use unicode_bidi::BidiInfo;
+use unicode_bidi::{BidiClass, BidiInfo, bidi_class};
 use unicode_segmentation::UnicodeSegmentation;
+
+/// Allocation-free preflight: ordinary Latin, CJK and emoji labels need no bidi analysis.
+/// Include directional controls so explicit embeddings/overrides keep their existing behavior.
+fn may_have_rtl(text: &str) -> bool {
+    !text.is_ascii()
+        && text.chars().any(|c| {
+            matches!(
+                bidi_class(c),
+                BidiClass::R
+                    | BidiClass::AL
+                    | BidiClass::AN
+                    | BidiClass::LRE
+                    | BidiClass::RLE
+                    | BidiClass::LRO
+                    | BidiClass::RLO
+                    | BidiClass::PDF
+                    | BidiClass::LRI
+                    | BidiClass::RLI
+                    | BidiClass::FSI
+                    | BidiClass::PDI
+            )
+        })
+}
+
+fn has_rtl(text: &str) -> bool {
+    may_have_rtl(text) && BidiInfo::new(text, None).has_rtl()
+}
 
 /// Resolve translated labels through bidi, without changing IDs, commands or stored text.
 pub fn widget(ui: &egui::Ui, text: impl Into<WidgetText>) -> WidgetText {
     let text = text.into();
-    if text.text().is_ascii() || !BidiInfo::new(text.text(), None).has_rtl() {
+    if !has_rtl(text.text()) {
         return text;
     }
     let mut job = (*text.into_layout_job(ui.style(), egui::FontSelection::Default, Align::Center)).clone();
@@ -21,7 +48,7 @@ pub fn widget(ui: &egui::Ui, text: impl Into<WidgetText>) -> WidgetText {
 /// Accessibility still receives the original logical string through Galley::job.
 pub fn label(ui: &mut egui::Ui, text: impl Into<WidgetText>) -> egui::Response {
     let text = text.into();
-    let rtl = !text.text().is_ascii() && BidiInfo::new(text.text(), None).has_rtl();
+    let rtl = has_rtl(text.text());
     if !rtl {
         return ui.label(text);
     }
@@ -112,7 +139,7 @@ fn visual_line(job: &LayoutJob, bidi: &BidiInfo<'_>, line: Range<usize>) -> Layo
 }
 
 fn layout(ctx: &egui::Context, mut job: LayoutJob) -> Arc<Galley> {
-    if job.text.is_ascii() || !BidiInfo::new(&job.text, None).has_rtl() {
+    if !has_rtl(&job.text) {
         return ctx.fonts_mut(|fonts| fonts.layout_job(job));
     }
     let original = Arc::new(job.clone());
@@ -217,6 +244,32 @@ mod tests {
 
     fn displayed(galley: &Galley) -> String {
         galley.rows.iter().flat_map(|row| row.glyphs.iter().filter(|g| g.advance_width > 0.0).map(|g| g.chr)).collect()
+    }
+
+    #[test]
+    fn ordinary_multilingual_labels_skip_bidi_analysis() {
+        for text in ["", "File (123)", "Édition", "中文排版", "スウォッチ", "e\u{301}", "🎨 🙂"] {
+            assert!(!may_have_rtl(text), "{text:?}");
+            assert!(!BidiInfo::new(text, None).has_rtl(), "{text:?}");
+        }
+        for text in ["ملف", "עברית", "PDF ملف 123", "\u{1e900}", "\u{200f}", "\u{202e}abc\u{202c}", "\u{2067}abc\u{2069}", "١٢٣"] {
+            assert!(may_have_rtl(text), "{text:?}");
+            assert_eq!(has_rtl(text), BidiInfo::new(text, None).has_rtl(), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn non_rtl_widgets_keep_native_text_and_formatting() {
+        with_fonts(|ctx| {
+            egui::Area::new(egui::Id::new("rtl-fast-path-test")).show(ctx, |ui| {
+                for text in ["中文", "日本語", "Édition", "🎨"] {
+                    let rendered = widget(ui, egui::RichText::new(text).strong());
+                    assert!(matches!(rendered, WidgetText::RichText(_)));
+                    assert_eq!(rendered.text(), text);
+                    assert!(label(ui, text).rect.is_finite());
+                }
+            });
+        });
     }
 
     #[test]
