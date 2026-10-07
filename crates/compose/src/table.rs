@@ -370,10 +370,12 @@ fn emit(
                 graphic: cell.graphic.clone(),
             });
             // Edges: every cell draws its top and left; the fragment's bottom/right cells their bottom/right.
-            // The table border replaces outer edges.
+            // The table border replaces outer edges unless the cell explicitly overrides it.
             let at_top = (y - top).abs() < 1e-6;
             let at_bottom = (y1 - bottom).abs() < 1e-6;
-            let edge = |i: usize, outer: bool| if outer { o.border.clone() } else { cell.strokes[i].clone() };
+            let edge = |i: usize, outer: bool| {
+                if outer && !cell.border_overrides[i] { o.border.clone() } else { cell.strokes[i].clone() }
+            };
             let mut push = |a: Point, b: Point, s: CellStroke| {
                 if s.is_visible() {
                     strokes.push(StrokeSeg { a, b, stroke: s });
@@ -467,5 +469,54 @@ pub fn cell_caret(cs: &ComposedStory, table: u64, row: usize, col: usize, pos: u
     match crate::caret(&c.text, pos) {
         Some((_, x, bl, a, d)) => Some((fi, x + c.origin.x, bl + c.origin.y, a, d)),
         None => Some((fi, c.origin.x, c.origin.y + 10.0, 9.0, 3.0)),
+    }
+}
+
+#[cfg(test)]
+mod border_tests {
+    use super::*;
+    use designcraft_doc::{CellRange, ParaFormat, SpreadRef, build::NewDocument};
+
+    fn compose_table(table: Table) -> ComposedStory {
+        let mut doc = Document::new(&NewDocument::default());
+        let layer = doc.default_layer();
+        let (_, sid) = doc.add_text_frame(SpreadRef::Doc(0), Rect::new(0.0, 0.0, 120.0, 200.0), layer, "", ParaFormat::default()).unwrap();
+        doc.story_mut(sid).unwrap().insert_table(0, table);
+        crate::compose_story(&doc, sid, &ComposeOptions::default())
+    }
+
+    #[test]
+    fn explicit_cell_edges_override_table_border_without_changing_native_defaults() {
+        let mut table = Table::new(77, 1, 1, 0, 0, 100.0);
+        table.options.border.weight = 2.0;
+        table.cell_mut(0, 0).unwrap().strokes = std::array::from_fn(|_| CellStroke::none());
+        let native = compose_table(table.clone());
+        let strokes = &native.frames[0].tables[0].strokes;
+        assert_eq!(strokes.len(), 4, "default cells still use all four table borders");
+        assert!(strokes.iter().all(|s| s.stroke.weight == 2.0));
+
+        let cell = table.cell_mut(0, 0).unwrap();
+        cell.border_overrides = [true, true, true, false];
+        cell.strokes[2] = CellStroke { weight: 3.0, ..Default::default() };
+        let composed = compose_table(table);
+        let fragment = &composed.frames[0].tables[0];
+        assert_eq!(fragment.strokes.len(), 2, "top and left None overrides suppress borders");
+        let bottom = fragment.strokes.iter().find(|s| s.a.y == fragment.rect.y1 && s.b.y == fragment.rect.y1).unwrap();
+        assert_eq!(bottom.stroke.weight, 3.0);
+        let right = fragment.strokes.iter().find(|s| s.a.x == fragment.rect.x1 && s.b.x == fragment.rect.x1).unwrap();
+        assert_eq!(right.stroke.weight, 2.0, "unoverridden right edge keeps the table border");
+    }
+
+    #[test]
+    fn merged_cell_keeps_explicit_border_suppression() {
+        let mut table = Table::new(77, 2, 2, 0, 0, 100.0);
+        table.merge(CellRange::new(0, 0, 1, 1)).unwrap();
+        let cell = table.cell_mut(0, 0).unwrap();
+        cell.border_overrides = [true; 4];
+        cell.strokes = std::array::from_fn(|_| CellStroke::none());
+        let composed = compose_table(table);
+        let fragment = &composed.frames[0].tables[0];
+        assert_eq!(fragment.cells.len(), 1);
+        assert!(fragment.strokes.is_empty());
     }
 }

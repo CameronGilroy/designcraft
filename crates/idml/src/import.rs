@@ -1442,6 +1442,9 @@ impl<'r> Importer<'r> {
             for (i, side) in ["TopEdge", "LeftEdge", "BottomEdge", "RightEdge"].iter().enumerate() {
                 let base = cell.strokes[i].clone();
                 cell.strokes[i] = stroke(self, ce, side, &base);
+                // A positive edge priority records a local cell override, including an
+                // explicit None stroke. Keep it when this edge meets the table perimeter.
+                cell.border_overrides[i] = ce.num(&format!("{side}StrokePriority")).is_some_and(|priority| priority > 0.0);
             }
             if let Some(slot) = t.cell_mut(r, c) {
                 *slot = cell;

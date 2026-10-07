@@ -2038,6 +2038,9 @@ impl<'a> Ex<'a> {
                     .attr("RotationAngle", num(cell.rotation));
                 for (i, side) in ["TopEdge", "LeftEdge", "BottomEdge", "RightEdge"].iter().enumerate() {
                     self.cell_stroke_attrs(&mut ce, side, &cell.strokes[i]);
+                    if cell.border_overrides[i] {
+                        ce.set(&format!("{side}StrokePriority"), 1);
+                    }
                 }
                 for psr in self.story_paras(&cell.text) {
                     ce.push(psr);
