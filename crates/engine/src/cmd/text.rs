@@ -478,46 +478,29 @@ fn smart_quotes(s: &Session, text: &str) -> String {
     out
 }
 
-/// Typographer's quotes of a language: [double open, double close, single open, single close].
+/// Typographer's quotes of a language (a name or locale code, see
+/// [`designcraft_doc::language_tag`]): [double open, double close, single open, single close].
 pub fn quote_marks(language: &str) -> [char; 4] {
-    // Chinese and Japanese go by the tag, which accepts every spelling of their names.
-    match designcraft_doc::language_tag(language) {
-        Some("zh-Hans") => return ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}'],
-        Some("zh" | "zh-Hant" | "ja") => return ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}'],
+    const ENGLISH: [char; 4] = ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}'];
+    let Some(tag) = designcraft_doc::language_tag(language) else { return ENGLISH };
+    // Swiss German, French and Italian use guillemets.
+    if tag.ends_with("-CH") {
+        return ['\u{00AB}', '\u{00BB}', '\u{2039}', '\u{203A}'];
+    }
+    match tag {
+        "zh-Hans" => return ENGLISH,
+        "zh" | "zh-Hant" => return ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}'],
         _ => {}
     }
-    let l = language.to_ascii_lowercase();
-    if l.starts_with("german: swiss") || l.contains("swiss") {
-        ['\u{00AB}', '\u{00BB}', '\u{2039}', '\u{203A}']
-    } else if l.starts_with("german")
-        || l.starts_with("czech")
-        || l.starts_with("slovak")
-        || l.starts_with("bulgarian")
-        || l.starts_with("lithuanian")
-    {
-        ['\u{201E}', '\u{201C}', '\u{201A}', '\u{2018}']
-    } else if l.starts_with("french")
-        || l.starts_with("russian")
-        || l.starts_with("ukrainian")
-        || l.starts_with("norwegian")
-        || l.starts_with("greek")
-    {
-        ['\u{00AB}', '\u{00BB}', '\u{2039}', '\u{203A}']
-    } else if l.starts_with("spanish") || l.starts_with("italian") || l.starts_with("portuguese") || l.starts_with("catalan") {
-        ['\u{00AB}', '\u{00BB}', '\u{201C}', '\u{201D}']
-    } else if l.starts_with("dutch")
-        || l.starts_with("polish")
-        || l.starts_with("romanian")
-        || l.starts_with("hungarian")
-        || l.starts_with("croatian")
-    {
-        ['\u{201E}', '\u{201D}', '\u{201A}', '\u{2019}']
-    } else if l.starts_with("swedish") || l.starts_with("finnish") {
-        ['\u{201D}', '\u{201D}', '\u{2019}', '\u{2019}']
-    } else if l.starts_with("danish") {
-        ['\u{00BB}', '\u{00AB}', '\u{203A}', '\u{2039}']
-    } else {
-        ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}']
+    match designcraft_doc::language_subtag(tag) {
+        "de" | "cs" | "sk" | "bg" | "lt" => ['\u{201E}', '\u{201C}', '\u{201A}', '\u{2018}'],
+        "fr" | "ru" | "uk" | "no" | "nb" | "nn" | "el" => ['\u{00AB}', '\u{00BB}', '\u{2039}', '\u{203A}'],
+        "es" | "it" | "pt" | "ca" => ['\u{00AB}', '\u{00BB}', '\u{201C}', '\u{201D}'],
+        "nl" | "pl" | "ro" | "hu" | "hr" => ['\u{201E}', '\u{201D}', '\u{201A}', '\u{2019}'],
+        "sv" | "fi" => ['\u{201D}', '\u{201D}', '\u{2019}', '\u{2019}'],
+        "da" => ['\u{00BB}', '\u{00AB}', '\u{203A}', '\u{2039}'],
+        "ja" => ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}'],
+        _ => ENGLISH,
     }
 }
 
@@ -1344,6 +1327,38 @@ mod language_tests {
         assert_eq!(quote_marks("ja_JP"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
         for l in ["Japanese", "Korean", "Chinese", "Chinese: Simplified", "Chinese: Traditional"] {
             assert!(!designcraft_compose::is_english(l), "{l}: no English hyphenation or spelling");
+        }
+    }
+
+    #[test]
+    fn locale_coded_languages_take_their_quotes_and_rules() {
+        use super::quote_marks;
+        const GERMAN: [char; 4] = ['\u{201E}', '\u{201C}', '\u{201A}', '\u{2018}'];
+        const DUTCH: [char; 4] = ['\u{201E}', '\u{201D}', '\u{201A}', '\u{2019}'];
+        const GUILLEMETS: [char; 4] = ['\u{00AB}', '\u{00BB}', '\u{2039}', '\u{203A}'];
+        const SPANISH: [char; 4] = ['\u{00AB}', '\u{00BB}', '\u{201C}', '\u{201D}'];
+        const ENGLISH: [char; 4] = ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}'];
+        const CORNERS: [char; 4] = ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}'];
+        for (language, quotes, english) in [
+            ("de_DE_2006", GERMAN, false),
+            ("German: 2006 Reform", GERMAN, false),
+            ("de_CH_2006", GUILLEMETS, false),
+            ("German: Swiss 2006 Reform", GUILLEMETS, false),
+            ("nl_NL_2005", DUTCH, false),
+            ("Dutch: 2005 Reform", DUTCH, false),
+            ("English: USA", ENGLISH, true),
+            ("English: UK", ENGLISH, true),
+            ("en_GB", ENGLISH, true),
+            ("Spanish: Castilian", SPANISH, false),
+            ("es_ES", SPANISH, false),
+            ("French", GUILLEMETS, false),
+            ("fr_FR", GUILLEMETS, false),
+            ("nb_NO", GUILLEMETS, false),
+            ("ja_JP", CORNERS, false),
+            ("[No Language]", ENGLISH, false),
+        ] {
+            assert_eq!(quote_marks(language), quotes, "{language}");
+            assert_eq!(designcraft_compose::is_english(language), english, "{language}");
         }
     }
 

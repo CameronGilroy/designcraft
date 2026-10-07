@@ -191,12 +191,16 @@ impl Digits {
 }
 
 /// The BCP 47 tag of a language name as InDesign and IDML write it ("English: USA", "Chinese:
-/// Simplified"), for the shaper's localized forms (`locl`). A variant we don't know falls back to
-/// its language ("English: Australian" → `en`); an unknown language (or "[No Language]") has none.
-/// Case and punctuation don't matter, and Chinese, Japanese and Korean also go by their other
-/// common spellings and locale codes ("Simplified Chinese", "Chinese (Traditional)", "zh_CN",
-/// "zh-Hant", "ja_JP", "ko-KR").
+/// Simplified", or a locale code such as "de_DE_2006"), for the shaper's localized forms (`locl`)
+/// and everything that depends on the language (quotes, hyphenation and spelling, line breaking,
+/// fallback fonts). A variant we don't know falls back to its language ("English: Australian" →
+/// `en`); an unknown language (or "[No Language]") has none. Case, punctuation and IDML's `$ID/`
+/// don't matter. Locale codes (`ll`, `ll_CC`, `ll-CC`, with a reform year after them as in
+/// `de_DE_2006`) are their tag (`de-DE`), and Chinese also goes by its other common spellings
+/// ("Simplified Chinese", "Chinese (Traditional)", "zh_CN", "zh-Hant").
 pub fn language_tag(language: &str) -> Option<&'static str> {
+    let language = language.trim();
+    let language = language.strip_prefix("$ID/").unwrap_or(language);
     let l = language.to_lowercase();
     let words: Vec<&str> = l.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
     let first = words.first().copied().unwrap_or("");
@@ -215,11 +219,17 @@ pub fn language_tag(language: &str) -> Option<&'static str> {
             "zh"
         });
     }
+    if let Some(tag) = locale_code(&words) {
+        return intern_tag(tag);
+    }
     let variant = match words.join(" ").as_str() {
         "english usa" => Some("en-US"),
         "english uk" => Some("en-GB"),
         "english canadian" => Some("en-CA"),
         "german swiss 2006 reform" | "german swiss" => Some("de-CH"),
+        "french swiss" => Some("fr-CH"),
+        "italian swiss" => Some("it-CH"),
+        "spanish castilian" => Some("es-ES"),
         "french canadian" => Some("fr-CA"),
         "portuguese brazilian" => Some("pt-BR"),
         "norwegian bokmål" | "norwegian bokmal" => Some("nb"),
@@ -256,14 +266,55 @@ pub fn language_tag(language: &str) -> Option<&'static str> {
         "serbian" => "sr",
         "macedonian" => "mk",
         "turkish" => "tr",
-        "japanese" | "ja" => "ja",
-        "korean" | "ko" => "ko",
+        "japanese" => "ja",
+        "korean" => "ko",
         "arabic" => "ar",
         "persian" | "farsi" => "fa",
         "urdu" => "ur",
         "hebrew" => "he",
         _ => return None,
     })
+}
+
+/// The tag of a locale code split into lowercase `words`: a language (2 or 3 letters), then
+/// optionally a region (2 letters or 3 digits) and a reform year (4 digits) → `ll` or `ll-CC`.
+fn locale_code(words: &[&str]) -> Option<String> {
+    let letters = |w: &str, n: std::ops::RangeInclusive<usize>| n.contains(&w.len()) && w.bytes().all(|b| b.is_ascii_lowercase());
+    let digits = |w: &str, n: usize| w.len() == n && w.bytes().all(|b| b.is_ascii_digit());
+    match *words {
+        [lang] if letters(lang, 2..=3) => Some(lang.to_string()),
+        [lang, region] | [lang, region, _] if letters(lang, 2..=3) && (letters(region, 2..=2) || digits(region, 3)) => {
+            if let [_, _, year] = *words
+                && !digits(year, 4)
+            {
+                return None;
+            }
+            Some(format!("{lang}-{}", region.to_ascii_uppercase()))
+        }
+        _ => None,
+    }
+}
+
+/// `tag` as a `&'static str`: each distinct tag is kept once for the process. Language names come
+/// from documents, so at most [`MAX_TAGS`] are kept; past that a new tag is unknown (`None`).
+fn intern_tag(tag: String) -> Option<&'static str> {
+    const MAX_TAGS: usize = 512;
+    static TAGS: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+    let mut tags = TAGS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(t) = tags.iter().find(|t| **t == tag) {
+        return Some(t);
+    }
+    if tags.len() >= MAX_TAGS {
+        return None;
+    }
+    let t: &'static str = Box::leak(tag.into_boxed_str());
+    tags.push(t);
+    Some(t)
+}
+
+/// The language subtag of a BCP 47 tag (`de-DE` → `de`, `zh-Hant` → `zh`).
+pub fn language_subtag(tag: &str) -> &str {
+    tag.split('-').next().unwrap_or(tag)
 }
 
 /// A tracked change on text.
@@ -825,11 +876,11 @@ mod tests {
             ("zh", Some("zh")),
             ("Japanese", Some("ja")),
             ("ja", Some("ja")),
-            ("ja_JP", Some("ja")),
-            ("ja-JP", Some("ja")),
+            ("ja_JP", Some("ja-JP")),
+            ("ja-JP", Some("ja-JP")),
             ("Korean", Some("ko")),
-            ("ko_KR", Some("ko")),
-            ("ko-KR", Some("ko")),
+            ("ko_KR", Some("ko-KR")),
+            ("ko-KR", Some("ko-KR")),
             ("English: USA", Some("en-US")),
             ("German: Swiss 2006 Reform", Some("de-CH")),
             ("Norwegian: Bokmål", Some("nb")),
@@ -837,6 +888,45 @@ mod tests {
         ] {
             assert_eq!(language_tag(name), tag, "{name}");
         }
+    }
+
+    #[test]
+    fn locale_codes_map_to_their_tags() {
+        for (name, tag) in [
+            // As InDesign-exported IDML writes them (AppliedLanguage).
+            ("$ID/de_DE_2006", Some("de-DE")),
+            ("$ID/nl_NL_2005", Some("nl-NL")),
+            ("$ID/English: USA", Some("en-US")),
+            ("$ID/English: UK", Some("en-GB")),
+            ("$ID/Spanish: Castilian", Some("es-ES")),
+            ("$ID/French", Some("fr")),
+            // As IDML import keeps them.
+            ("de_DE_2006", Some("de-DE")),
+            ("nl_NL_2005", Some("nl-NL")),
+            ("Spanish: Castilian", Some("es-ES")),
+            ("French", Some("fr")),
+            // Other locale codes.
+            ("de-DE", Some("de-DE")),
+            ("de_CH_2006", Some("de-CH")),
+            ("pt_BR", Some("pt-BR")),
+            ("en_us", Some("en-US")),
+            ("es_419", Some("es-419")),
+            ("fil_PH", Some("fil-PH")),
+            ("sv", Some("sv")),
+            ("ja", Some("ja")),
+            // Not codes.
+            ("de_DE_2006_x", None),
+            ("d_DE", None),
+            ("de_D", None),
+            ("de_DE_06", None),
+            ("1e_DE", None),
+            ("[No Language]", None),
+        ] {
+            assert_eq!(language_tag(name), tag, "{name}");
+        }
+        assert_eq!(language_subtag("de-DE"), "de");
+        assert_eq!(language_subtag("zh-Hant"), "zh");
+        assert_eq!(language_subtag("ko"), "ko");
     }
 
     #[test]

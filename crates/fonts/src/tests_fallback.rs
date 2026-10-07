@@ -48,8 +48,10 @@ fn ideographs_follow_the_language() {
     assert_eq!(family(&db, HAN, Some("zh")).as_deref(), Some("Songti SC"), "plain Chinese is Simplified");
     assert_eq!(family(&db, HAN, Some("zh-Hant")).as_deref(), Some("Songti TC"));
     assert_eq!(family(&db, HAN, Some("ko")).as_deref(), Some("AppleMyungjo"));
+    assert_eq!(family(&db, HAN, Some("ko-KR")).as_deref(), Some("AppleMyungjo"), "the language decides, whatever the region");
     let ja = japanese_chain_with(&["Hiragino Mincho ProN"])[0];
     assert_eq!(family(&db, HAN, Some("ja")).as_deref(), Some(ja), "the craft-fonts faces lead the Japanese chain, then system fonts");
+    assert_eq!(family(&db, HAN, Some("ja-JP")).as_deref(), Some(ja));
     // CJK punctuation follows the language too.
     let db = db_with(&[("Other CJK", &['、']), ("Songti SC", &['、'])]);
     assert_eq!(family(&db, '、', Some("zh-Hans")).as_deref(), Some("Songti SC"));

@@ -190,7 +190,7 @@ fn korean_letter(g: &Glyph) -> bool {
     let c = g.ch as u32;
     let hangul = matches!(c, 0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF);
     let han = matches!(c, 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x3FFFF);
-    hangul || (han && g.lang == Some("ko"))
+    hangul || (han && g.lang.is_some_and(|t| designcraft_doc::language_subtag(t) == "ko"))
 }
 
 /// Is the place between glyphs `a` and `b` one where CJK text may break (next to an ideograph, kana

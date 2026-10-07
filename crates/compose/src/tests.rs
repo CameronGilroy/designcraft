@@ -1683,6 +1683,14 @@ fn korean_character_breaks_on_request() {
 }
 
 #[test]
+fn korean_by_its_locale_code_breaks_at_spaces() {
+    let para = ParaAttrs { composer: Some(designcraft_doc::Composer::SingleLine), ..Default::default() };
+    let (d, sid) = korean_doc(KO_HANJA, "ko_KR", para);
+    let mid = lines_starting_mid_word(&d, sid, KO_HANJA);
+    assert!(mid.is_empty(), "{mid:?}");
+}
+
+#[test]
 fn hanja_in_korean_text_breaks_at_spaces() {
     let para = ParaAttrs { composer: Some(designcraft_doc::Composer::SingleLine), ..Default::default() };
     let (d, sid) = korean_doc(KO_HANJA, "Korean", para.clone());

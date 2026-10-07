@@ -475,11 +475,13 @@ fn cjk_chain(c: char, language: Option<&str>) -> Option<&'static [&'static str]>
         | 0x20000..=0x3FFFF => {}
         _ => return None,
     }
-    match language? {
+    // The language decides, whatever the region (`ja-JP`, `ko-KR`).
+    let language = language?;
+    match language.split('-').next()? {
         "ja" => Some(japanese_chain()),
         "ko" => Some(KOREAN_FALLBACKS),
-        "zh" | "zh-Hans" => Some(SIMPLIFIED_CHINESE_FALLBACKS),
-        "zh-Hant" => Some(TRADITIONAL_CHINESE_FALLBACKS),
+        "zh" if language.starts_with("zh-Hant") => Some(TRADITIONAL_CHINESE_FALLBACKS),
+        "zh" => Some(SIMPLIFIED_CHINESE_FALLBACKS),
         _ => None,
     }
 }

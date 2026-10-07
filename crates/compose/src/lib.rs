@@ -2018,9 +2018,11 @@ type LimitsKey = (usize, usize, usize, bool);
 
 /// Mark glyphs after which a hyphen may be inserted (dictionary/pattern points within the
 /// paragraph's limits; words with discretionary hyphens break only there).
-/// Whether a language uses the English hyphenation and spelling dictionaries.
+/// Whether a language (a name or locale code, see [`designcraft_doc::language_tag`]) uses the
+/// English hyphenation and spelling dictionaries.
 pub fn is_english(language: &str) -> bool {
-    language.starts_with("English")
+    // InDesign's English names first: composition asks this for every run.
+    language.starts_with("English") || designcraft_doc::language_tag(language).is_some_and(|t| designcraft_doc::language_subtag(t) == "en")
 }
 
 /// Byte ranges of paragraph `prange` set in a language other than English (no English
