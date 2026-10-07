@@ -12,6 +12,8 @@ use skrifa::raw::FileRef;
 use skrifa::string::StringId;
 use skrifa::{GlyphId, MetadataProvider};
 
+use crate::group::{FamilyInfo, FontGroup};
+
 /// The family used when a requested family is unknown (the UI sans).
 pub const FALLBACK_FAMILY: &str = "Source Sans 3";
 
@@ -117,6 +119,8 @@ pub struct FontFace {
     bmp: std::sync::OnceLock<Box<[u64]>>,
     /// The ideographic em box, read on first use.
     em: std::sync::OnceLock<(f64, f64)>,
+    /// The font menu group and native family name, read on first use.
+    group: std::sync::OnceLock<(FontGroup, Option<String>)>,
 }
 
 /// A cheap `Copy` handle to a face. Faces are never unloaded, so the handle lives for the rest of
@@ -261,6 +265,12 @@ impl FontFace {
     pub fn em_box(&self) -> (f64, f64) {
         *self.em.get_or_init(|| crate::vertical::em_box(self))
     }
+    /// The font menu group the font is for and, for a CJK group, its family name in that language
+    /// (see [`crate::FamilyInfo`]); read from the font once.
+    pub fn menu_group(&self) -> (FontGroup, Option<&str>) {
+        let (g, n) = self.group.get_or_init(|| self.skrifa().map(|f| crate::group::classify(&f, &self.family)).unwrap_or_default());
+        (*g, n.as_deref())
+    }
     /// Glyph id for `c` (0 = .notdef).
     pub fn glyph_for(&self, c: char) -> u32 {
         self.skrifa().and_then(|f| f.charmap().map(c)).map(|g| g.to_u32()).unwrap_or(0)
@@ -291,6 +301,19 @@ struct CatalogEntry {
     family: String,
     style: String,
     path: std::path::PathBuf,
+    /// The font menu group and native family name, read by the scan.
+    group: FontGroup,
+    native: Option<String>,
+}
+
+/// What the scan reads of one face in a font file: its names and font menu group.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, PartialEq)]
+struct ScannedFace {
+    family: String,
+    style: String,
+    group: FontGroup,
+    native: Option<String>,
 }
 
 /// Process-wide font database: the fonts every document shares (bundled, installed, added), and
@@ -483,15 +506,19 @@ fn face_names(f: &skrifa::FontRef<'_>) -> Option<(String, String)> {
     Some((family, style))
 }
 
-/// (family, style) of every face in the font file at `path`, reading only its table directories
-/// and `name` tables: a scan opens hundreds of font files, many of them megabytes long. A
-/// variable font is cataloged under its default style; its named instances appear once it loads.
+/// The names and font menu group of every face in the font file at `path`, reading only its table
+/// directories and the tables that name and classify it (`name`, `OS/2`, `meta`; `cmap` only for a
+/// font that declares no language or code page): a scan opens hundreds of font files, many of them
+/// megabytes long. A variable font is cataloged under its default style; its named instances
+/// appear once it loads.
 #[cfg(not(target_arch = "wasm32"))]
-fn file_face_names(path: &std::path::Path) -> Vec<(String, String)> {
+fn file_face_names(path: &std::path::Path) -> Vec<ScannedFace> {
     use std::io::{Read, Seek, SeekFrom};
     /// Caps on what a (possibly damaged) file can make the scan read.
     const MAX_FACES: u32 = 256;
     const MAX_NAME_TABLE: u32 = 1 << 20;
+    const MAX_SMALL_TABLE: u32 = 64 << 10;
+    const MAX_CMAP: u32 = 4 << 20;
     let Ok(mut file) = std::fs::File::open(path) else { return vec![] };
     let mut read_at = |offset: u64, len: usize| -> Option<Vec<u8>> {
         let mut buf = vec![0; len];
@@ -514,22 +541,31 @@ fn file_face_names(path: &std::path::Path) -> Vec<(String, String)> {
             let dir = read_at(start.into(), 12)?;
             let tables = u16::from_be_bytes(dir.get(4..6)?.try_into().ok()?) as usize;
             let records = read_at(u64::from(start) + 12, tables * 16)?;
-            let rec = records.as_chunks::<16>().0.iter().find(|r| r.starts_with(b"name"))?;
-            let (offset, len) = (be32(rec, 8)?, be32(rec, 12)?);
-            if len > MAX_NAME_TABLE {
-                return None;
-            }
-            let table = read_at(offset.into(), len as usize)?;
-            // A one-table font holding just the `name` table, to read it as the font itself would.
-            let mut font = Vec::with_capacity(28 + table.len());
-            font.extend_from_slice(&0x0001_0000_u32.to_be_bytes());
-            font.extend_from_slice(&[0, 1, 0, 16, 0, 0, 0, 0]);
-            font.extend_from_slice(b"name");
-            for v in [0, 28, len] {
-                font.extend_from_slice(&u32::to_be_bytes(v));
-            }
-            font.extend_from_slice(&table);
-            face_names(&skrifa::FontRef::new(&font).ok()?)
+            // Table `tag`, unless missing or over `max` bytes.
+            let mut table = |tag: &[u8; 4], max: u32| -> Option<([u8; 4], Vec<u8>)> {
+                let rec = records.as_chunks::<16>().0.iter().find(|r| r.starts_with(tag))?;
+                let (offset, len) = (be32(rec, 8)?, be32(rec, 12)?);
+                if len > max {
+                    return None;
+                }
+                Some((*tag, read_at(offset.into(), len as usize)?))
+            };
+            // A font holding just these tables, to read them as the font itself would.
+            let mut found = vec![table(b"name", MAX_NAME_TABLE)?];
+            found.extend(table(b"OS/2", MAX_SMALL_TABLE));
+            found.extend(table(b"meta", MAX_SMALL_TABLE));
+            let font = crate::group::sfnt(found.clone())?;
+            let f = skrifa::FontRef::new(&font).ok()?;
+            let (family, style) = face_names(&f)?;
+            let (group, native) = match crate::group::declared_group(&f) {
+                Some(g) => (g, crate::group::classify(&f, &family).1),
+                None => {
+                    found.extend(table(b"cmap", MAX_CMAP));
+                    let font = crate::group::sfnt(found)?;
+                    crate::group::classify(&skrifa::FontRef::new(&font).ok()?, &family)
+                }
+            };
+            Some(ScannedFace { family, style, group, native })
         })
         .collect()
 }
@@ -663,6 +699,7 @@ fn make_face(bytes: FontBytes, source: FontSource, index: u32, family: String, s
         index,
         bmp: std::sync::OnceLock::new(),
         em: std::sync::OnceLock::new(),
+        group: std::sync::OnceLock::new(),
     })
 }
 
@@ -869,8 +906,8 @@ impl FontDb {
                 if !matches!(ext.as_deref(), Some("ttf" | "otf" | "ttc" | "otc")) {
                     continue;
                 }
-                for (family, style) in file_face_names(&p) {
-                    found.push(CatalogEntry { family, style, path: p.clone() });
+                for f in file_face_names(&p) {
+                    found.push(CatalogEntry { family: f.family, style: f.style, path: p.clone(), group: f.group, native: f.native });
                 }
             }
         }
@@ -1150,6 +1187,26 @@ impl ScopedFonts<'_> {
         v
     }
 
+    /// The available families as the font menus list them (see [`ScopedFonts::families`]), each
+    /// with its group and native name, unsorted ([`crate::sort_for_menu`] orders them).
+    pub fn family_infos(&self) -> Vec<FamilyInfo> {
+        let mut out: Vec<FamilyInfo> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for f in self.own().iter().chain(self.db.read_faces().iter()) {
+            if seen.insert(f.family.to_lowercase()) {
+                let (group, native) = f.menu_group();
+                out.push(FamilyInfo { family: f.family.clone(), group, native: native.map(str::to_string) });
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        for c in self.db.read_catalog().iter() {
+            if seen.insert(c.family.to_lowercase()) {
+                out.push(FamilyInfo { family: c.family.clone(), group: c.group, native: c.native.clone() });
+            }
+        }
+        out
+    }
+
     /// Style names available for `family` (Regular first, then by weight).
     pub fn styles(&self, family: &str) -> Vec<String> {
         let mut v: Vec<(bool, f32, String)> = self
@@ -1214,9 +1271,15 @@ impl ScopedFonts<'_> {
             .collect()
     }
 
-    /// Glyph outline in font units, y-down (flipped), cached per (face, glyph).
+    /// Glyph outline in font units, y-down (flipped), cached per (face, glyph); see
+    /// [`FontDb::outline`].
     pub fn outline(&self, face: &FontFace, gid: u32) -> Arc<BezPath> {
         self.db.outline(face, gid)
+    }
+
+    /// See [`FontDb::missing_box`].
+    pub fn missing_box(&self, face: &FontFace) -> Option<BezPath> {
+        self.db.missing_box(face)
     }
 
     /// `Style {wght:650,wdth:90}`: the named style's font at those axis values, made on first use.

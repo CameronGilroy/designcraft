@@ -971,6 +971,7 @@ pub(super) const TABLE: &[(&str, &str)] = &[
     ("Interface", "الواجهة"),
     ("Advanced Type", "إعدادات النص المتقدمة"),
     ("Composition", "تنضيد النص"),
+    ("Show Font Names in English", "إظهار أسماء الخطوط بالإنجليزية"),
     ("Missing Glyphs", "الحروف الناقصة"),
     ("Draw Missing Glyphs from Fallback Fonts", "رسم الحروف الناقصة بخطوط بديلة"),
     ("Units & Increments", "الوحدات والزيادات"),

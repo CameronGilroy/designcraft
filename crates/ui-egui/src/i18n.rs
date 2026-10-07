@@ -2559,6 +2559,16 @@ const TABLE: &[(&str, [&str; 5])] = &[
     ("Interface", ["Interface", "Interface", "Interface", "Interface", "界面"]),
     ("Advanced Type", ["Advanced Type", "Advanced Type", "Advanced Type", "Advanced Type", "高级文字"]),
     ("Composition", ["Composition", "Composition", "Composition", "Composition", "排版"]),
+    (
+        "Show Font Names in English",
+        [
+            "Schriftnamen auf Englisch anzeigen",
+            "Afficher les noms de police en anglais",
+            "Mostrar nombres de fuentes en inglés",
+            "フォント名を英語で表示",
+            "以英文显示字体名称",
+        ],
+    ),
     ("Missing Glyphs", ["Fehlende Glyphen", "Glyphes manquants", "Glifos que faltan", "欠落グリフ", "缺失字形"]),
     (
         "Draw Missing Glyphs from Fallback Fonts",

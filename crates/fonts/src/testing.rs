@@ -210,3 +210,54 @@ pub fn with_empty_notdef(mut font: Vec<u8>) -> Option<Vec<u8>> {
     font.get_mut(loca..loca + width)?.copy_from_slice(&end);
     Some(font)
 }
+
+/// `font` with its `name` table replaced by `records`: (platform, encoding, language, name id,
+/// text). Text is written as UTF-16BE on the Unicode and Windows platforms, as its bytes on the
+/// Macintosh platform. `None` if `font` can't be read.
+pub fn with_names(font: &[u8], records: &[(u16, u16, u16, u16, &str)]) -> Option<Vec<u8>> {
+    let strings: Vec<Vec<u8>> =
+        records.iter().map(|r| if r.0 == 1 { r.4.as_bytes().to_vec() } else { r.4.encode_utf16().flat_map(u16::to_be_bytes).collect() }).collect();
+    let count = u16::try_from(records.len()).ok()?;
+    let mut name = Vec::new();
+    for v in [0u16, count, 6 + 12 * count] {
+        name.extend_from_slice(&v.to_be_bytes());
+    }
+    let mut at = 0usize;
+    for (r, s) in records.iter().zip(&strings) {
+        for v in [r.0, r.1, r.2, r.3, u16::try_from(s.len()).ok()?, u16::try_from(at).ok()?] {
+            name.extend_from_slice(&v.to_be_bytes());
+        }
+        at += s.len();
+    }
+    strings.iter().for_each(|s| name.extend_from_slice(s));
+    with_tables(font, vec![(*b"name", name)])
+}
+
+/// `font` with its OS/2 `ulCodePageRange1` and `ulCodePageRange2` set (the font's OS/2 table must
+/// be version 1 or later). `None` if it has none.
+pub fn with_code_pages(font: Vec<u8>, range1: u32, range2: u32) -> Option<Vec<u8>> {
+    let font = with_table_u16(font, b"OS/2", 78, (range1 >> 16) as u16)?;
+    let font = with_table_u16(font, b"OS/2", 80, range1 as u16)?;
+    let font = with_table_u16(font, b"OS/2", 82, (range2 >> 16) as u16)?;
+    with_table_u16(font, b"OS/2", 84, range2 as u16)
+}
+
+/// `font` with a `meta` table holding `dlng` and `slng` script and language tag lists (as written,
+/// comma-separated), each when given. `None` if `font` can't be read.
+pub fn with_meta(font: &[u8], dlng: Option<&str>, slng: Option<&str>) -> Option<Vec<u8>> {
+    let maps: Vec<(&[u8; 4], &str)> = [(b"dlng", dlng), (b"slng", slng)].into_iter().filter_map(|(t, v)| Some((t, v?))).collect();
+    let count = u32::try_from(maps.len()).ok()?;
+    let mut meta = Vec::new();
+    for v in [1u32, 0, 0, count] {
+        meta.extend_from_slice(&v.to_be_bytes());
+    }
+    let mut at = 16 + 12 * maps.len();
+    for (tag, v) in &maps {
+        meta.extend_from_slice(*tag);
+        meta.extend_from_slice(&u32::try_from(at).ok()?.to_be_bytes());
+        meta.extend_from_slice(&u32::try_from(v.len()).ok()?.to_be_bytes());
+        at += v.len();
+    }
+    maps.iter().for_each(|(_, v)| meta.extend_from_slice(v.as_bytes()));
+    with_tables(font, vec![(*b"meta", meta)])
+}

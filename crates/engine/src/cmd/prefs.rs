@@ -48,7 +48,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Preferences",
             [],
             None,
-            "{showHiddenCharacters?, typographersQuotes?, polygonSides?, starInset?, scaleStrokes?, dimensionsIncludeStroke?, transformationsAreTotals?, absolutePageNumbers?, highlightHj?, highlightKeeps?, highlightCustomTracking?, highlightSubstitutedFonts?, richBlackOutput?, favoriteFonts?: [family]} → all application preferences",
+            "{showHiddenCharacters?, typographersQuotes?, polygonSides?, starInset?, scaleStrokes?, dimensionsIncludeStroke?, transformationsAreTotals?, absolutePageNumbers?, highlightHj?, highlightKeeps?, highlightCustomTracking?, highlightSubstitutedFonts?, richBlackOutput?, favoriteFonts?: [family], showFontNamesInEnglish?} → all application preferences",
             super::always,
             |s, p| {
                 let cur = serde_json::to_value(&s.prefs).map_err(|e| bad("prefs.set", e.to_string()))?;
@@ -120,6 +120,9 @@ mod tests {
         let r = s.execute("prefs.set", &json!({"scaleStrokes": false})).unwrap();
         assert_eq!(r["scaleStrokes"], false);
         assert!(!s.prefs.scale_strokes);
+        assert_eq!(r["showFontNamesInEnglish"], false, "native CJK font names by default");
+        s.execute("prefs.set", &json!({"showFontNamesInEnglish": true})).unwrap();
+        assert!(s.prefs.show_font_names_in_english);
         assert!(s.execute("prefs.set", &json!({"nope": 1})).is_err());
         s.execute("file.new", &json!({})).unwrap();
         let r = s

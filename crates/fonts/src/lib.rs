@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 mod fontdb;
+mod group;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 mod vertical;
@@ -16,6 +17,7 @@ pub use fontdb::{
     DOCUMENT_FONTS_FOLDER, DocumentFonts, FALLBACK_FAMILY, FaceRef, FontDb, FontFace, FontSource, MAX_DOCUMENT_FONT_BYTES, MAX_DOCUMENT_FONT_FILES,
     MAX_DOCUMENT_FONTS_TOTAL, ScopedFonts, base_style, bundled, system_font_dirs,
 };
+pub use group::{FamilyInfo, FontGroup, sort_for_menu};
 pub use harfrust::Feature;
 use harfrust::{Direction, Language, ShapeOptions, Tag, UnicodeBuffer};
 pub use kurbo::BezPath;

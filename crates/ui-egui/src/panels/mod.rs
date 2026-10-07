@@ -108,6 +108,44 @@ pub fn fonts(app: &DesignApp) -> designcraft_fonts::ScopedFonts<'static> {
     designcraft_fonts::FontDb::global().scoped(font_scope(app))
 }
 
+/// The font menus' families in menu order: Western (and other scripts) first, then Japanese,
+/// Simplified Chinese, Traditional Chinese and Korean, each alphabetical by the name shown (CJK
+/// families by their native names unless Show Font Names in English).
+pub fn font_menu(app: &DesignApp) -> Vec<designcraft_fonts::FamilyInfo> {
+    let mut v = fonts(app).family_infos();
+    designcraft_fonts::sort_for_menu(&mut v, app.session.prefs.show_font_names_in_english);
+    v
+}
+
+/// The name the font menus show for `family` (its native name, see [`font_menu`]).
+pub fn font_label(app: &DesignApp, menu: &[designcraft_fonts::FamilyInfo], family: &str) -> String {
+    let english = app.session.prefs.show_font_names_in_english;
+    menu.iter().find(|f| f.family == family).map_or(family, |f| f.label(english)).to_string()
+}
+
+/// `menu` as rows of a popup or combo box: the name shown (the English name on hover when they
+/// differ), a separator between groups. Returns the family clicked.
+pub fn font_menu_rows(app: &DesignApp, ui: &mut egui::Ui, menu: &[designcraft_fonts::FamilyInfo], current: &str) -> Option<String> {
+    let english = app.session.prefs.show_font_names_in_english;
+    let mut pick = None;
+    let mut group = None;
+    for f in menu {
+        if group.is_some_and(|g| g != f.group) {
+            ui.separator();
+        }
+        group = Some(f.group);
+        let label = f.label(english);
+        let mut resp = ui.selectable_label(f.family == current, label);
+        if label != f.family {
+            resp = resp.on_hover_text(&f.family);
+        }
+        if resp.clicked() {
+            pick = Some(f.family.clone());
+        }
+    }
+    pick
+}
+
 /// The active document's font scope (0 without a document or fonts of its own).
 pub fn font_scope(app: &DesignApp) -> u32 {
     app.session.active().map_or(0, |d| d.doc.font_scope)
@@ -201,16 +239,22 @@ fn paint_star(p: &egui::Painter, c: egui::Pos2, r: f32, filled: bool, color: egu
 /// that family.
 pub fn font_family_picker(app: &mut DesignApp, ui: &mut egui::Ui, current: &str, width: f32) {
     let (fonts, scope) = (fonts(app), font_scope(app));
-    let fams = fonts.families();
+    let menu = font_menu(app);
+    let english = app.session.prefs.show_font_names_in_english;
+    let shown_current = font_label(app, &menu, current);
     let mut favs = app.session.prefs.favorite_fonts.clone();
     let mut pick = None;
     let mut favs_changed = false;
     let state_id = egui::Id::new("font_menu_state");
     let (mut query, mut only_favs): (String, bool) = ui.data(|d| d.get_temp(state_id)).unwrap_or_default();
     let t = crate::theme::Tokens::get(ui.ctx());
-    egui::ComboBox::from_id_salt("font_family").selected_text(if current.is_empty() { "—" } else { current }).width(width).height(420.0).show_ui(
-        ui,
-        |ui| {
+    egui::ComboBox::from_id_salt("font_family")
+        .selected_text(if current.is_empty() { "—" } else { &shown_current })
+        .width(width)
+        .height(420.0)
+        // The search field, Favorites and the stars keep the menu open; picking a font closes it.
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show_ui(ui, |ui| {
             ui.set_min_width(300.0);
             ui.horizontal(|ui| {
                 ui.add(
@@ -224,12 +268,23 @@ pub fn font_family_picker(app: &mut DesignApp, ui: &mut egui::Ui, current: &str,
             });
             let q = query.to_lowercase();
             let ppp = ui.ctx().pixels_per_point();
-            let shown: Vec<&String> =
-                fams.iter().filter(|f| (q.is_empty() || f.to_lowercase().contains(&q)) && (!only_favs || favs.contains(f))).collect();
-            for f in shown {
-                let (row, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::click());
+            let shown: Vec<&designcraft_fonts::FamilyInfo> =
+                menu.iter().filter(|f| f.matches(&q) && (!only_favs || favs.contains(&f.family))).collect();
+            let mut group = None;
+            for info in shown {
+                // A separator between the Western fonts and each CJK language's.
+                if group.is_some_and(|g| g != info.group) {
+                    ui.separator();
+                }
+                group = Some(info.group);
+                let f = &info.family;
+                let label = info.label(english);
+                let (row, mut resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::click());
                 if !ui.is_rect_visible(row) {
                     continue;
+                }
+                if label != f {
+                    resp = resp.on_hover_text(f);
                 }
                 if f == current {
                     ui.painter().rect_filled(row, 0.0, t.row_selected);
@@ -249,7 +304,7 @@ pub fn font_family_picker(app: &mut DesignApp, ui: &mut egui::Ui, current: &str,
                     }
                     favs_changed = true;
                 }
-                ui.painter().text(row.min + egui::vec2(22.0, 12.0), egui::Align2::LEFT_CENTER, f, egui::FontId::proportional(12.0), t.text);
+                ui.painter().text(row.min + egui::vec2(22.0, 12.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), t.text);
                 // The name in its own face (rendered once per family and scale).
                 let key = egui::Id::new(("font_preview", f, scope, (ppp * 100.0) as u32, t.text.to_array()));
                 let tex: Option<egui::TextureHandle> = ui.data(|d| d.get_temp(key));
@@ -270,10 +325,10 @@ pub fn font_family_picker(app: &mut DesignApp, ui: &mut egui::Ui, current: &str,
                 );
                 if resp.clicked() {
                     pick = Some(f.clone());
+                    ui.close();
                 }
             }
-        },
-    );
+        });
     ui.data_mut(|d| d.insert_temp(state_id, (query, only_favs)));
     if favs_changed {
         let _ = app.run("prefs.set", json!({ "favoriteFonts": favs }));
@@ -314,5 +369,31 @@ pub fn para_style_picker(app: &mut DesignApp, ui: &mut egui::Ui, current: &str, 
     });
     if let Some(n) = pick {
         let _ = app.run("style.paragraph.apply", json!({"name": n, "clearOverrides": false}));
+    }
+}
+
+#[cfg(test)]
+mod font_menu_tests {
+    use designcraft_fonts::FontGroup;
+    use designcraft_fonts::testing::{font_with, with_names};
+
+    use super::*;
+
+    #[test]
+    fn cjk_fonts_follow_the_western_ones_under_their_native_names() {
+        const FAMILY: &str = "DC UI Test Mincho";
+        let font = font_with(FAMILY, &['a']).unwrap();
+        let font = with_names(&font, &[(3, 1, 0x409, 1, FAMILY), (3, 1, 0x409, 2, "Regular"), (3, 1, 0x0411, 1, "UIテスト明朝")]).unwrap();
+        designcraft_fonts::FontDb::global().add_font(font);
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        let menu = font_menu(&app);
+        let at = menu.iter().position(|f| f.family == FAMILY).unwrap();
+        assert_eq!(menu[at].group, FontGroup::Japanese);
+        assert!(menu[..at].iter().any(|f| f.family == designcraft_fonts::DEFAULT_FAMILY), "Western fonts first");
+        assert!(menu.windows(2).all(|w| w[0].group <= w[1].group), "grouped");
+        assert_eq!(font_label(&app, &menu, FAMILY), "UIテスト明朝");
+        assert_eq!(font_label(&app, &menu, designcraft_fonts::DEFAULT_FAMILY), designcraft_fonts::DEFAULT_FAMILY);
+        app.run("prefs.set", json!({"showFontNamesInEnglish": true})).unwrap();
+        assert_eq!(font_label(&app, &font_menu(&app), FAMILY), FAMILY);
     }
 }

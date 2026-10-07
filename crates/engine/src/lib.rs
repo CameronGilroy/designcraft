@@ -171,6 +171,9 @@ pub struct Prefs {
     pub rich_black_output: bool,
     /// Font menu favourites (family names).
     pub favorite_fonts: Vec<String>,
+    /// Preferences › Type › Show Font Names in English: the font menus show CJK families by their
+    /// English names instead of their native ones. Documents store the English name either way.
+    pub show_font_names_in_english: bool,
     /// Preferences › Type › Smart Text Reflow: pages follow the primary text frame's story
     /// (added while it oversets, empty ones at the end removed).
     pub smart_text_reflow: bool,
@@ -224,6 +227,7 @@ impl Default for Prefs {
             highlight_substituted_fonts: true,
             rich_black_output: false,
             favorite_fonts: Vec::new(),
+            show_font_names_in_english: false,
             smart_text_reflow: true,
             autocorrect: false,
             autocorrect_list: default_autocorrect(),

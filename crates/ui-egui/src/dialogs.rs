@@ -518,6 +518,7 @@ fn preferences(app: &crate::DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
                 "type" => {
                     crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "Type Options")).font(semibold(12.0)));
                     check(ui, d, "typographersQuotes", crate::i18n::tr(&app.ui.language, "Use Typographer's Quotes"));
+                    check(ui, d, "showFontNamesInEnglish", crate::i18n::tr(&app.ui.language, "Show Font Names in English"));
                     ui.add_space(6.0);
                     ui.label(crate::rtl::widget(
                         ui,
@@ -1513,7 +1514,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
         "preferences" => {
             app.run(
                 "prefs.set",
-                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "highlightHj": d.b("highlightHj"), "highlightKeeps": d.b("highlightKeeps"), "highlightCustomTracking": d.b("highlightCustomTracking"), "highlightSubstitutedFonts": d.b("highlightSubstitutedFonts"), "richBlackOutput": d.b("richBlackOutput"), "typographersQuotes": d.b("typographersQuotes"), "smartTextReflow": d.b("smartTextReflow"),
+                json!({"scaleStrokes": d.b("scaleStrokes"), "dimensionsIncludeStroke": d.b("dimensionsIncludeStroke"), "transformationsAreTotals": d.b("transformationsAreTotals"), "absolutePageNumbers": d.b("absolutePageNumbers"), "highlightHj": d.b("highlightHj"), "highlightKeeps": d.b("highlightKeeps"), "highlightCustomTracking": d.b("highlightCustomTracking"), "highlightSubstitutedFonts": d.b("highlightSubstitutedFonts"), "richBlackOutput": d.b("richBlackOutput"), "typographersQuotes": d.b("typographersQuotes"), "showFontNamesInEnglish": d.b("showFontNamesInEnglish"), "smartTextReflow": d.b("smartTextReflow"),
                     "autocorrect": d.b("autocorrect"), "showAddedText": d.b("showAddedText"), "showNoteAnchors": d.b("showNoteAnchors"),
                     "recoveryMinutes": d.n("recoveryMinutes").unwrap_or(0.5),
                     "autocorrectList": d.s("autocorrectText").lines().filter_map(|l| {
@@ -1970,14 +1971,13 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
             }
             "chars" => {
                 let fonts = crate::panels::fonts(app);
+                let menu = crate::panels::font_menu(app);
                 egui::Grid::new("psc").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     crate::rtl::label(ui, crate::i18n::tr(&app.ui.language, "Font Family:"));
                     let fam = cur(d, "c.fontFamily", &cv["fontFamily"]).as_str().unwrap_or("").to_string();
-                    egui::ComboBox::from_id_salt("psfam").selected_text(&fam).width(200.0).show_ui(ui, |ui| {
-                        for f in fonts.families() {
-                            if ui.selectable_label(f == fam, &f).clicked() {
-                                d.fields.insert("c.fontFamily".into(), json!(f));
-                            }
+                    egui::ComboBox::from_id_salt("psfam").selected_text(crate::panels::font_label(app, &menu, &fam)).width(200.0).show_ui(ui, |ui| {
+                        if let Some(f) = crate::panels::font_menu_rows(app, ui, &menu, &fam) {
+                            d.fields.insert("c.fontFamily".into(), json!(f));
                         }
                     });
                     ui.end_row();
@@ -2625,8 +2625,9 @@ fn find_font(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
     ui.add_space(8.0);
     crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "Replace With")).font(semibold(12.0)));
     let db = crate::panels::fonts(app);
-    let families = db.families();
-    let fam_opts: Vec<(&str, &str)> = families.iter().map(|f| (f.as_str(), f.as_str())).collect();
+    let menu = crate::panels::font_menu(app);
+    let english = app.session.prefs.show_font_names_in_english;
+    let fam_opts: Vec<(&str, &str)> = menu.iter().map(|f| (f.family.as_str(), f.label(english))).collect();
     egui::Grid::new("ff_to").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
         crate::rtl::label(ui, crate::i18n::tr(&app.ui.language, "Font Family:"));
         combo(ui, d, "toFamily", &fam_opts);

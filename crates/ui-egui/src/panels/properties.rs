@@ -987,7 +987,7 @@ fn character_section(app: &mut DesignApp, ui: &mut Ui) {
     let fw = full_width(ui);
     // Family dropdown with a search segment on the left.
     let fonts = super::fonts(app);
-    let fams = fonts.families();
+    let menu = super::font_menu(app);
     let resp = widgets::dropdown(ui, "", fw);
     let r = resp.rect;
     icons::paint(ui.painter(), Rect::from_min_size(r.min + vec2(3.0, 3.0), vec2(14.0, 14.0)), "search", t.icon);
@@ -995,7 +995,7 @@ fn character_section(app: &mut DesignApp, ui: &mut Ui) {
     ui.painter().text(
         r.min + vec2(30.0, 10.5),
         egui::Align2::LEFT_CENTER,
-        if fam.is_empty() { "—" } else { &fam },
+        if fam.is_empty() { "—".to_string() } else { super::font_label(app, &menu, &fam) },
         egui::FontId::proportional(11.5),
         t.text,
     );
@@ -1003,11 +1003,9 @@ fn character_section(app: &mut DesignApp, ui: &mut Ui) {
     egui::Popup::menu(&resp).show(|ui| {
         ui.set_min_width(fw);
         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-            for f in &fams {
-                if ui.selectable_label(*f == fam, f).clicked() {
-                    pick_fam = Some(f.clone());
-                    ui.close();
-                }
+            if let Some(f) = super::font_menu_rows(app, ui, &menu, &fam) {
+                pick_fam = Some(f);
+                ui.close();
             }
         });
     });
