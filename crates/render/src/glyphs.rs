@@ -65,9 +65,7 @@ pub fn text_line(db: &ScopedFonts<'_>, family: &str, style: &str, text: &str, he
     for g in &glyphs {
         let outline = db.outline(&face, g.gid);
         if !outline.elements().is_empty() && !(boxed && g.gid == 0) {
-            ctx.set_transform(
-                kurbo::Affine::translate((x + g.x_offset as f64 * k, baseline - g.y_offset as f64 * k)) * kurbo::Affine::scale_non_uniform(k, -k),
-            );
+            ctx.set_transform(kurbo::Affine::translate((x + g.x_offset as f64 * k, baseline - g.y_offset as f64 * k)) * kurbo::Affine::scale(k));
             ctx.fill_path(&outline);
         }
         x += g.x_advance as f64 * k;
@@ -105,5 +103,21 @@ mod tests {
         assert!(img.width > 30);
         let ink = (0..img.width).flat_map(|x| (0..img.height).map(move |y| (x, y))).filter(|&(x, y)| img.pixel(x, y)[3] > 128).count();
         assert!(ink > 40, "{ink}");
+    }
+
+    #[test]
+    fn text_line_draws_upright_and_whole() {
+        let db = designcraft_fonts::FontDb::global().scoped(0);
+        let img = text_line(&db, designcraft_fonts::DEFAULT_FAMILY, "Regular", "L", 40, [0, 0, 0, 255]);
+        let inked = |x: u32, y: u32| img.pixel(x, y)[3] > 128;
+        let row_ink = |y: u32| (0..img.width).filter(|&x| inked(x, y)).count();
+        let rows: Vec<u32> = (0..img.height).filter(|&y| row_ink(y) > 0).collect();
+        let (Some(&top), Some(&bottom)) = (rows.first(), rows.last()) else { panic!("no ink") };
+        // Nothing touches the edges: the letter isn't cut off.
+        assert!(top > 0 && bottom < img.height - 1, "clipped: ink rows {top}..={bottom} of {}", img.height);
+        assert!((0..img.height).all(|y| !inked(0, y) && !inked(img.width - 1, y)), "clipped at the sides");
+        // An upright L has its bar at the bottom: its widest ink row is in the lower half.
+        let widest = rows.iter().copied().max_by_key(|&y| row_ink(y)).unwrap_or(top);
+        assert!(widest > (top + bottom) / 2, "upside down: widest row {widest} in ink rows {top}..={bottom}");
     }
 }
