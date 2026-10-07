@@ -1,7 +1,7 @@
 //! Interface language (Edit › Interface Language): translations of menu titles, the most used
 //! menu items and panel names. Untranslated strings stay English.
 //! Chinese and Arabic feature terminology is checked against public Adobe help where documented;
-//! project-specific labels are original. Sources and scope: `docs/localization-terminology.json`.
+//! project-specific labels are original.
 
 use std::{collections::HashMap, sync::OnceLock};
 
