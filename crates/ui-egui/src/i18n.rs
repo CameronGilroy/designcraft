@@ -2,10 +2,19 @@
 //! menu items and panel names. Untranslated strings stay English. The translations are our own.
 
 mod ar;
+mod pt_br;
 
 /// Supported interface languages: (code, name in that language).
-pub const LANGUAGES: &[(&str, &str)] =
-    &[("", "English"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"), ("ja", "日本語"), ("zh", "简体中文"), ("ar", "العربية")];
+pub const LANGUAGES: &[(&str, &str)] = &[
+    ("", "English"),
+    ("de", "Deutsch"),
+    ("fr", "Français"),
+    ("es", "Español"),
+    ("ja", "日本語"),
+    ("zh", "简体中文"),
+    ("ar", "العربية"),
+    ("pt-br", "Português (Brasil)"),
+];
 
 /// English → [German, French, Spanish, Japanese, Simplified Chinese].
 const TABLE: &[(&str, [&str; 5])] = &[
@@ -2642,6 +2651,9 @@ pub fn tr<'a>(lang: &str, s: &'a str) -> &'a str {
     if lang == "ar" {
         return ar::TABLE.iter().find(|(en, _)| *en == s).map_or(s, |(_, t)| *t);
     }
+    if lang == "pt-br" {
+        return pt_br::TABLE.iter().find(|(en, _)| *en == s).map_or(s, |(_, t)| *t);
+    }
     let Some(c) = column(lang) else { return s };
     match TABLE.iter().find(|(en, _)| *en == s) {
         Some((_, t)) => t[c],
@@ -2677,9 +2689,16 @@ mod tests {
         assert_eq!(tr("", "File"), "File");
         assert_eq!(tr("ar", "File"), "ملف");
         assert_eq!(tr("ar", "Unknown label"), "Unknown label");
+        assert_eq!(tr("pt-br", "File"), "Arquivo");
+        assert_eq!(tr("pt-br", "New Document…"), "Novo documento…");
+        assert_eq!(tr("pt-br", "Unknown label"), "Unknown label");
         assert!(is_rtl("ar"));
         for (i, (en, translation)) in ar::TABLE.iter().enumerate() {
             assert!(ar::TABLE[..i].iter().all(|(key, _)| key != en), "duplicate {en}");
+            assert!(!translation.is_empty(), "{en}");
+        }
+        for (i, (en, translation)) in pt_br::TABLE.iter().enumerate() {
+            assert!(pt_br::TABLE[..i].iter().all(|(key, _)| key != en), "duplicate {en}");
             assert!(!translation.is_empty(), "{en}");
         }
         // Every row is unique and complete.

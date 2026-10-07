@@ -38,7 +38,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
         "app.language",
         "Interface Language",
         None,
-        "{lang: \"\"|de|fr|es|ja|zh|ar} — menus and panel names (the macOS menu bar follows on the next launch)",
+        "{lang: \"\"|de|fr|es|ja|zh|ar|pt-br} — menus and panel names (the macOS menu bar follows on the next launch)",
     ),
     (
         "app.flattener",
@@ -228,6 +228,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:app.language|日本語|{\"lang\": \"ja\"}",
             "ui:app.language|简体中文|{\"lang\": \"zh\"}",
             "ui:app.language|العربية|{\"lang\": \"ar\"}",
+            "ui:app.language|Português (Brasil)|{\"lang\": \"pt-br\"}",
             "<",
             ">Transparency Flattener Presets",
             "ui:app.flattener|None (keep transparency)|{\"preset\": \"\"}",
@@ -2096,6 +2097,17 @@ mod tests {
         for (title, _) in menu_tree() {
             assert_ne!(crate::i18n::tr("ja", title), title, "{title}");
         }
+
+        run_ui(&mut app, "app.language", &json!({"lang": "pt-br"})).unwrap().unwrap();
+        assert_eq!(app.ui.language, "pt-br");
+        assert_eq!(checked(&app, "app.language", &json!({"lang": "pt-br"})), Some(true));
+        for (title, _) in menu_tree() {
+            // "Layout" is the natural Brazilian Portuguese word, so it stays identical
+            // to English; every other title must be translated.
+            if title != "Layout" {
+                assert_ne!(crate::i18n::tr("pt-br", title), title, "{title}");
+            }
+        }
     }
 
     #[test]
@@ -2125,7 +2137,7 @@ mod tests {
         crate::dialogs::confirm(&mut app).unwrap();
         frame(&mut app);
         assert_eq!(app.session.documents().len(), 1);
-        for lang in ["zh", "", "ar"] {
+        for lang in ["zh", "", "ar", "pt-br"] {
             app.run("app.language", json!({"lang": lang})).unwrap();
             frame(&mut app);
         }
