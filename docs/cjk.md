@@ -34,6 +34,7 @@ presets or tables are copied. Our default mojikumi and kinsoku tables are built 
 | Vertical frames, upright CJK, rotated Latin | done (per frame; glyphs turned by transforms) |
 | `vert`/`vrt2` in vertical frames | done (applied to every run, Latin included); Horizontal Kana (`hkna`) becomes `vkna` |
 | Kinsoku | named (hard, soft, Chinese, Korean) and custom kinsoku sets, bunri-kinshi, rensuuji, hanging punctuation (regular, force); without a set, fixed no-start / no-end lists and a break anywhere between CJK characters; kinsoku type (push in / push out priorities) kept but not applied |
+| Korean line breaking | at spaces (Hangul everywhere, hanja in Korean text); per-paragraph character-based breaking (`koreanCharBreaks`); DesignCraft-only, not in IDML |
 | Mojikumi | tables and paragraph references kept through IDML; not applied (Preflight says so) |
 | Aki, tsume, jidori | done ([cjk-typography.md](cjk-typography.md)) |
 | Character alignment, leading model | em box top / centre / bottom, ICF from ascender and descender, roman baseline; aki above / below, centre (centre down as centre) |
@@ -46,7 +47,6 @@ presets or tables are copied. Our default mojikumi and kinsoku tables are built 
 
 Known bugs to fix first:
 
-- Korean breaks between every syllable (it should break at spaces by default).
 - Vertical advances are the horizontal ones and upright glyphs turn about a guessed centre
   (`adv × 0.38`), so proportional and non-square glyphs sit wrong in vertical text.
 - A justified CJK line has no stretch except Single Word Justification.

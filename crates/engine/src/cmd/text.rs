@@ -1377,3 +1377,22 @@ mod arabic_tests {
         assert_eq!(s.doc().unwrap().doc.story(sid).unwrap().direction, designcraft_doc::TextDirection::LeftToRight);
     }
 }
+
+#[cfg(test)]
+mod korean_breaks_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn korean_character_breaks_are_a_paragraph_attribute() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 200], "content": "text", "text": "한국어 문장"})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        s.execute("type.para", &json!({"attrs": {"koreanCharBreaks": true}})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.story(sid).unwrap().paras[0].para.korean_char_breaks, Some(true));
+        s.execute("style.paragraph.create", &json!({"name": "Korean", "para": {"koreanCharBreaks": true}})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.styles.para("Korean").unwrap().para.korean_char_breaks, Some(true));
+    }
+}

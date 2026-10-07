@@ -699,6 +699,9 @@ attr_set! {
         /// Preserved vendor policy; non-default policies require a dedicated composer.
         arabic_justification: String = String::new(),
         paragraph_kashida_width: Option<f64> = None,
+        /// Korean text breaks between any two syllables (character-based breaking); otherwise
+        /// it breaks at spaces, word by word.
+        korean_char_breaks: bool = false,
         // Keeps
         keep_with_next: u32 = 0,
         keep_lines_together: bool = false,

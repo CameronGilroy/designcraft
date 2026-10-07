@@ -59,6 +59,8 @@ pub struct Glyph {
     pub allow_kashidas: bool,
     pub safe_tatweel_before: bool,
     pub shaping_rtl: bool,
+    /// The character's language as a BCP 47 tag ([`designcraft_doc::language_tag`]).
+    pub lang: Option<&'static str>,
 }
 
 impl Glyph {
@@ -752,6 +754,7 @@ fn control_glyph(face: &Arc<FontFace>, p: &CharProps, auto_leading: TypeEnv, sty
         allow_kashidas: p.allow_kashidas,
         safe_tatweel_before: false,
         shaping_rtl: false,
+        lang: designcraft_doc::language_tag(&p.language),
     }
 }
 
@@ -851,6 +854,7 @@ fn shape_segment(
             allow_kashidas: p.allow_kashidas,
             safe_tatweel_before: sg.safe_tatweel_before,
             shaping_rtl: sg.rtl,
+            lang,
         });
     }
 }

@@ -335,6 +335,8 @@ pub(super) const TABLE: &[(&str, &str)] = &[
     ("Glyph Scaling:", "تحجيم الحروف:"),
     ("Insert Kashidas:", "إدراج الكشيدة:"),
     ("In justified Arabic text", "في النص العربي المضبوط"),
+    ("Korean Line Breaks:", "فواصل الأسطر الكورية:"),
+    ("Between syllables (not only at spaces)", "بين المقاطع (وليس عند المسافات فقط)"),
     ("Minimum Space Before First Footnote:", "أقل مسافة قبل الحاشية الأولى:"),
     ("Space Between Footnotes:", "المسافة بين الحواشي:"),
     ("Offset:", "الإزاحة:"),

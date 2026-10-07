@@ -2088,6 +2088,15 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
                         d.fields.insert("p.kashidas".into(), json!(k));
                     }
                     ui.end_row();
+                    crate::rtl::label(ui, crate::i18n::tr(&app.ui.language, "Korean Line Breaks:"));
+                    let mut kb = cur(d, "p.koreanCharBreaks", &pv["koreanCharBreaks"]).as_bool().unwrap_or(false);
+                    if ui
+                        .checkbox(&mut kb, crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "Between syllables (not only at spaces)")))
+                        .changed()
+                    {
+                        d.fields.insert("p.koreanCharBreaks".into(), json!(kb));
+                    }
+                    ui.end_row();
                 });
             }
             "color" => {

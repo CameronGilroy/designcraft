@@ -1128,6 +1128,7 @@ fn spacing_for(pp: &ParaProps, base_size: f64) -> Spacing {
         ragged_stretch: base_size * 2.0,
         hyph_zone: if pp.align.is_justified() { 0.0 } else { pp.hyph_zone },
         optical: pp.optical_margin,
+        korean_char_breaks: pp.korean_char_breaks,
     }
 }
 
@@ -1146,7 +1147,8 @@ fn apply_desired_spacing(glyphs: &mut [Glyph], pp: &ParaProps) {
         if let Some(next) = right.first() {
             let a = g.ch;
             let b = next.ch;
-            let cjk = upright_in_vertical(a) || upright_in_vertical(b);
+            // A kinsoku set rules where CJK text may break; Korean still breaks at spaces.
+            let cjk = breaker::cjk_pair(g, next, pp.korean_char_breaks);
             if g.break_after != Some(false) {
                 if let Some(set) = &pp.kinsoku {
                     if !set.allows(a, b) {

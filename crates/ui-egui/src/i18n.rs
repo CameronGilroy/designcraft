@@ -1916,6 +1916,17 @@ const TABLE: &[(&str, [&str; 5])] = &[
             "在两端对齐的阿拉伯语文本中",
         ],
     ),
+    ("Korean Line Breaks:", ["Korean Line Breaks:", "Korean Line Breaks:", "Korean Line Breaks:", "Korean Line Breaks:", "韩文换行："]),
+    (
+        "Between syllables (not only at spaces)",
+        [
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "在音节之间（不仅在空格处）",
+        ],
+    ),
     ("Binding:", ["Binding:", "Binding:", "Binding:", "Binding:", "装订方向："]),
     ("Ruby:", ["Ruby:", "Ruby:", "Ruby:", "Ruby:", "注音："]),
     (

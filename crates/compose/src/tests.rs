@@ -1493,3 +1493,99 @@ fn cjk_fallback_follows_the_language() {
     let (primary, han) = faces_of("English: USA");
     assert_eq!(Some(han.family.clone()), db.fallback_for('直', primary.id(), None).map(|f| f.family.clone()));
 }
+
+const KO_WORDS: &str = "한국어 문장은 띄어쓰기 단위로 줄을 바꿉니다 한국어 문장은 띄어쓰기 단위로 줄을 바꿉니다";
+const KO_HANJA: &str = "大韓民國 憲法은 國民의 權利를 保障한다 大韓民國 憲法은 國民의 權利를 保障한다";
+const KO_PUNCT: &str = "가나다라마。바사아자차」카타파하가、나다라마바。사아자차카」타파하가나、다라마바사。아자차카타」파하가나다、";
+/// Syllables for words wider than the frame.
+const KO_LONG: &str = "가나다라마바사아자차카타파하」";
+
+/// A Korean paragraph in a narrow frame (70 pt), set in a stand-in font covering the samples.
+fn korean_doc(text: &str, language: &str, para: ParaAttrs) -> (Document, StoryId) {
+    let chars: Vec<char> = [KO_WORDS, KO_HANJA, KO_PUNCT, KO_LONG].concat().chars().collect();
+    let font = designcraft_fonts::testing::font_with("DC Test Korean", &chars).unwrap();
+    designcraft_fonts::FontDb::global().add_font(font);
+    let (mut d, sid, _) = doc_with(text, Rect::new(36.0, 36.0, 106.0, 400.0), para);
+    d.story_mut(sid).unwrap().format_chars(0..text.len(), |f| {
+        f.over.font_family = Some("DC Test Korean".into());
+        f.over.language = Some(language.into());
+    });
+    (d, sid)
+}
+
+/// The lines (after the first) that start inside a space-separated word.
+fn lines_starting_mid_word(d: &Document, sid: StoryId, text: &str) -> Vec<String> {
+    let cs = compose_story(d, sid, &ComposeOptions::default());
+    let lines = all_lines(&cs);
+    assert!(lines.len() > 2, "wraps: {} lines", lines.len());
+    lines.iter().skip(1).filter(|l| !text[..l.range.start].ends_with(' ')).map(|l| text[l.range.clone()].to_string()).collect()
+}
+
+#[test]
+fn korean_breaks_at_spaces() {
+    for composer in [designcraft_doc::Composer::Paragraph, designcraft_doc::Composer::SingleLine] {
+        for align in [Align::Left, Align::LeftJustified] {
+            let para = ParaAttrs { composer: Some(composer), align: Some(align), ..Default::default() };
+            // By script: Hangul is set word by word whatever the language.
+            for language in ["Korean", "English: USA"] {
+                let (d, sid) = korean_doc(KO_WORDS, language, para.clone());
+                let mid = lines_starting_mid_word(&d, sid, KO_WORDS);
+                assert!(mid.is_empty(), "{composer:?} {align:?} {language}: {mid:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn korean_breaks_at_spaces_under_a_kinsoku_set() {
+    let set = designcraft_doc::cjk::Kinsoku::named("KoreanKinsoku");
+    assert!(set.is_some());
+    for composer in [designcraft_doc::Composer::Paragraph, designcraft_doc::Composer::SingleLine] {
+        let para = ParaAttrs { composer: Some(composer), kinsoku: Some(set.clone()), ..Default::default() };
+        let (d, sid) = korean_doc(KO_WORDS, "Korean", para.clone());
+        let mid = lines_starting_mid_word(&d, sid, KO_WORDS);
+        assert!(mid.is_empty(), "{composer:?}: {mid:?}");
+        let (d, sid) = korean_doc(KO_WORDS, "Korean", ParaAttrs { korean_char_breaks: Some(true), ..para });
+        assert!(!lines_starting_mid_word(&d, sid, KO_WORDS).is_empty(), "{composer:?}: breaks between syllables on request");
+    }
+}
+
+#[test]
+fn korean_character_breaks_on_request() {
+    let para = ParaAttrs { korean_char_breaks: Some(true), composer: Some(designcraft_doc::Composer::SingleLine), ..Default::default() };
+    let (d, sid) = korean_doc(KO_WORDS, "Korean", para);
+    assert!(!lines_starting_mid_word(&d, sid, KO_WORDS).is_empty(), "breaks between syllables");
+}
+
+#[test]
+fn hanja_in_korean_text_breaks_at_spaces() {
+    let para = ParaAttrs { composer: Some(designcraft_doc::Composer::SingleLine), ..Default::default() };
+    let (d, sid) = korean_doc(KO_HANJA, "Korean", para.clone());
+    let mid = lines_starting_mid_word(&d, sid, KO_HANJA);
+    assert!(mid.is_empty(), "{mid:?}");
+    // Han in Japanese text breaks between characters.
+    let (d, sid) = korean_doc(KO_HANJA, "Japanese", para);
+    assert!(!lines_starting_mid_word(&d, sid, KO_HANJA).is_empty());
+}
+
+#[test]
+fn korean_lines_keep_kinsoku() {
+    // Words of 9 to 14 syllables and a closing bracket: in one of them the bracket is what
+    // overflows the frame.
+    let syllables: Vec<char> = KO_LONG.chars().collect();
+    let long = (9..=14).map(|n| format!("{}」 가나", syllables[..n].iter().collect::<String>()));
+    for text in std::iter::once(KO_PUNCT.to_string()).chain(long) {
+        let text = text.as_str();
+        for char_breaks in [false, true] {
+            for composer in [designcraft_doc::Composer::Paragraph, designcraft_doc::Composer::SingleLine] {
+                let para = ParaAttrs { korean_char_breaks: Some(char_breaks), composer: Some(composer), ..Default::default() };
+                let (d, sid) = korean_doc(text, "Korean", para);
+                let cs = compose_story(&d, sid, &ComposeOptions::default());
+                let lines = all_lines(&cs);
+                assert!(lines.len() > 1, "wraps");
+                let texts: Vec<&str> = lines.iter().map(|l| &text[l.range.clone()]).collect();
+                assert!(texts.iter().all(|t| !t.starts_with(['、', '。', '」'])), "kinsoku ({char_breaks}, {composer:?}): {texts:?}");
+            }
+        }
+    }
+}
