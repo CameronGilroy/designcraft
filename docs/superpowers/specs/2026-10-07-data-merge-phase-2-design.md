@@ -51,30 +51,31 @@ Sort runs after the filter. It is stable. Equal keys fall through to the next so
 
 ## Drawn grid
 
-A grid is a document item. Its children are the prototype cell. The document may contain one grid, and that grid must sit on a document page. The template may have other pages, including facing pages.
+A grid is a document item. Its children are the prototype cell. A document may contain any number of grids. Every grid must sit on a document page. Several grids may sit on the same page. The template may have other pages, including facing pages.
 
 The grid rectangle, cell size, and gutter are in the item's inner space. The item's transform places every cell on the page, so a rotated or scaled grid repeats along its own axes. Cell width is `(width - gutter * (columns - 1)) / columns`, and cell height uses the same formula. Rows and columns are at least 1, and their product is at most 500. Gutter is finite and at least 0.
 
 The origin is `topLeft` (default), `topRight`, `bottomLeft`, or `bottomRight`. Arrange is `rows` (default) or `columns`. Flow starts at the origin cell and walks in that arrange direction, reversing an axis when the corner requires it. Children are stored relative to the origin cell's top-left corner. They are not clipped to the cell.
 
-Record offset skips that many records of the combined list. Default 0. Record advance steps between cells. Default 1. Advance 0 repeats one record in every cell of that grid page, then takes the next record on the next grid page.
+Record offset and record advance belong to each grid. Offset skips that many records in front of that grid, the first time it is visited. Default 0. Later visits do not skip again. Advance steps between that grid's cells. Default 1. Advance 0 repeats one record in every cell of that visit, then moves one record forward.
 
-A cycle is one copy of the template, in page order. The origin cell's record fills every page that is not the grid page, and it fills every item on the grid page that is not a child of the grid. The children repeat once per cell. A page is produced only when the origin cell has a record. Later cells on that page may be empty. The merged document contains ordinary copies. It does not contain a grid item.
+Grids are visited in document order: pages from first to last, and on a page the stored item order, earlier items first. They share one cursor into the combined list. A visit consumes records for that grid's cells, including records that advance skips. The next grid continues at the cursor.
 
-Preview record N, 1-based in the combined list, fills the origin cell from that record, the following cells from the following advance steps, and the other pages from record N. A step that falls past the end of the list leaves that cell blank. Offset is not applied during preview. Advance 0 fills every cell from record N.
+A cycle is one copy of the template, in page order, and one visit to each grid. The record in the first grid's origin cell fills every item that is not a child of a grid. Each grid's children repeat once per cell of that grid. A cycle is produced only when the first grid's origin cell has a record. Later cells and later grids in that cycle may be empty. The merged document contains ordinary copies. It does not contain a grid item.
+
+Preview record N, 1-based in the combined list, starts that same walk at record N and visits each grid once. It does not repeat the template, and it does not apply offsets. A step past the end of the list leaves that cell blank. Advance 0 fills every cell of that grid from the record under the cursor, then moves one record forward before the next grid. Items that are not children of a grid show record N.
 
 With no grid item, merge behaves as in phase 1. `per_page` multiple still requires one non-facing page and still packs the frames that are already on that page.
 
 These are errors and add no document:
 
-- More than one grid item.
 - A grid on a parent page, or a grid that does not sit on a document page.
-- `per_page` multiple while a grid item exists.
+- `per_page` multiple while any grid item exists.
 - Rows or columns below 1, or a product above 500.
 - A gutter that is not finite or is negative.
 - A cell width or height that is not finite or is not positive.
 - An unknown origin or arrange value.
-- A record offset that leaves no record for the first origin cell.
+- A record offset on the first grid that leaves its origin cell empty before any cycle is produced.
 
 ## Commands
 
@@ -86,10 +87,11 @@ New and changed commands:
 - `data.source.enabled`: `{ id, enabled }`.
 - `data.source.filter`: `{ id, match, rules }`.
 - `data.source.sort`: `{ id, fields }`, where each field is `{ field, direction }`. A missing direction means `asc`.
-- `data.grid.create`: the same `rect` as `frame.create`, on the active page. Optional rows, columns, gutter, `recordOffset`, `recordAdvance`, origin, and arrange. Defaults are 2, 2, 0, 0, 1, `topLeft`, and `rows`. Creating a grid when one already exists is an error and adds no item. Items whose bounds are contained in the origin cell become children, with positions rewritten relative to that cell. An item that only overlaps the cell stays on the page.
-- `data.grid.set`: changes those properties on the grid item. No grid is an error.
-- `data.grid.adopt`: parents the current selection into the origin cell. Items on another page, or the grid item itself, are an error and the grid is unchanged.
-- `data.grid.release`: puts the children back on the page as ordinary items and deletes the grid. No grid is an error.
+- `data.grid.create`: the same `rect` as `frame.create`, on the active page. Optional rows, columns, gutter, `recordOffset`, `recordAdvance`, origin, and arrange. Defaults are 2, 2, 0, 0, 1, `topLeft`, and `rows`. A document may already contain grids. Items whose bounds are contained in the new grid's origin cell become children, with positions rewritten relative to that cell. An item that only overlaps the cell stays on the page. Another grid is not adopted.
+- `data.grid.set`, `data.grid.adopt`, and `data.grid.release` take the grid item `id`. The id may be omitted when the document has exactly one grid. It is required when the document has more than one. An unknown id is an error.
+- `data.grid.set`: changes that grid's properties.
+- `data.grid.adopt`: parents the current selection into that grid's origin cell. Items on another page, the grid itself, or a different grid are an error and the grid is unchanged.
+- `data.grid.release`: puts that grid's children back on the page as ordinary items and deletes that grid. Other grids stay.
 
 Grid commands and the source edits above are undoable. Merge still adds a new document. The template undo stack gains no merge step.
 
@@ -97,7 +99,7 @@ Grid commands and the source edits above are undoable. Merge still adds a new do
 
 The Data Merge panel lists every source with an enable checkbox, its name, its status, and its row count after filter and sort. Select Data Source adds a file. The desktop open dialog for this purpose also offers `.json`. Update and Remove act on the selected source. That source has a match-all or match-any filter and a sort list. Fields are grouped under their source. Preview and the stepper use the combined list. Create Merged Document calls `data.merge` with an empty parameter object.
 
-A Create Grid button calls `data.grid.create` with the page's margin box as the rectangle. When a grid is selected, the panel edits its rows, columns, gutter, offset, advance, origin, and arrange. New strings go through the existing i18n table. Colors come from `theme::Tokens`.
+A Create Grid button calls `data.grid.create` with the active page's margin box as the rectangle. Pressing it again adds another grid. When a grid is selected, the panel edits that grid's rows, columns, gutter, offset, advance, origin, and arrange. New strings go through the existing i18n table. Colors come from `theme::Tokens`.
 
 On the web, and from the control channel, the caller passes `json` the same way it passes `csv`, `rows`, or `bytes`. There is no file dialog there.
 
@@ -105,11 +107,11 @@ On the web, and from the control channel, the caller passes `json` the same way 
 
 Errors return `Result`, attach nothing, and add no document. Warnings ride on a successful merge. Phase 1 errors and warnings still apply.
 
-Phase 2 errors: bad JSON, a nested JSON value, an unknown filter or sort field, a bad operator, match, direction, origin, or arrange, a nested rule value, no enabled source, an empty combined list, an unknown source id, a missing id when several sources exist, a placeholder field that is not on the named source, more than one grid, creating a grid while one exists, set or release when no grid exists, a grid off a document page, pack-to-fit combined with a grid, a bad row, column, or gutter value, a cell that is not positive, an offset that leaves the first origin cell empty, and adopting the grid itself or items from another page.
+Phase 2 errors: bad JSON, a nested JSON value, an unknown filter or sort field, a bad operator, match, direction, origin, or arrange, a nested rule value, no enabled source, an empty combined list, an unknown source id, a missing id when several sources exist, a placeholder field that is not on the named source, an unknown grid id, a missing grid id when several grids exist, a grid off a document page, pack-to-fit combined with any grid, a bad row, column, or gutter value, a cell that is not positive, an offset on the first grid that leaves its origin cell empty before any cycle, and adopting a grid or items from another page.
 
 Phase 2 warnings: an extra JSON key. Blank placeholders and empty grid cells are not warnings.
 
-No `unwrap`, `expect`, `panic`, or `unsafe` in the new code. Sizes use checked arithmetic. The existing row and column caps still bound a source. The 500-cell cap bounds one grid page.
+No `unwrap`, `expect`, `panic`, or `unsafe` in the new code. Sizes use checked arithmetic. The existing row and column caps still bound a source. The 500-cell cap bounds each grid.
 
 ## Tests
 
@@ -127,9 +129,11 @@ Engine tests, with synthetic strings and tiny files:
 - The same rectangle with origin `topRight` and arrange `rows` places the first four cells at `(172, 72)`, `(72, 72)`, `(172, 172)`, `(72, 172)`.
 - Advance 0 and two records write two grid pages, each cell on a page showing that page's one record.
 - Offset 1 with four records and a 2 by 2 grid starts at record 2 and leaves the last cell blank. Companion pages show record 2.
-- Two grid items, a grid on a parent page, pack-to-fit together with a grid, and a gutter that collapses a cell each add no document.
+- Two 2 by 1 grids on one page, advance 1, offset 0, and 6 records write two cycles. The first grid's rectangle is `[72, 72, 272, 172]` and its cells are records 1 and 2 at `(72, 72)` and `(172, 72)`. The second grid's rectangle is `[72, 200, 272, 300]` and its cells are records 3 and 4 at `(72, 200)` and `(172, 200)`. The second cycle places records 5 and 6 in the first grid and leaves the second grid blank.
+- A grid on page 1 and a grid on page 2 are visited in that page order. The page 2 grid receives the records the page 1 grid did not consume.
+- A grid on a parent page, pack-to-fit together with a grid, and a gutter that collapses a cell each add no document.
 - With no grid item, the phase 1 3-across tiling test still passes.
-- Preview record 2, with advance 1, shows that record in the origin cell and the following records in the following cells. A step past the last record is a blank cell.
+- Preview record 2, with one grid and advance 1, shows that record in the origin cell and the following records in the following cells. A step past the last record is a blank cell. With two grids, preview record 1 fills the first grid from record 1 and continues the same cursor into the second grid.
 
 UI: the panel groups fields by source, the enable checkbox calls `data.source.enabled`, and Create Merged Document calls `data.merge`. The desktop filter list for purpose `dataMerge` includes `json`. Wasm still accepts an inline `json` string.
 
