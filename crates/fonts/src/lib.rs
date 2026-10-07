@@ -11,7 +11,7 @@ mod fontdb;
 
 pub use fontdb::{FALLBACK_FAMILY, FaceRef, FontDb, FontFace, base_style, bundled, system_font_dirs};
 pub use harfrust::Feature;
-use harfrust::{Direction, ShapeOptions, Tag, UnicodeBuffer};
+use harfrust::{Direction, Language, ShapeOptions, Tag, UnicodeBuffer};
 pub use kurbo::BezPath;
 use skrifa::MetadataProvider;
 use skrifa::instance::Size;
@@ -113,23 +113,14 @@ fn direction_runs(text: &str) -> Vec<(std::ops::Range<usize>, bool, unicode_scri
     runs
 }
 
+/// What surrounds a run being shaped: the text before and after it (so Arabic letters join across a
+/// change of style) and its language, a BCP 47 tag such as `tr` or `zh-Hant` that picks the font's
+/// localized forms (OpenType `locl`; `None` or a tag the shaper can't read: the font's defaults).
 #[derive(Clone, Copy, Default)]
 pub struct ShapeContext<'a> {
     pub before: &'a str,
     pub after: &'a str,
-    pub language: &'a str,
-}
-
-/// Normalize the supported application language names while also accepting BCP 47 tags.
-pub fn language_tag(language: &str) -> &str {
-    match language.split(':').next().unwrap_or(language).trim() {
-        "Arabic" => "ar",
-        "Persian" | "Farsi" => "fa",
-        "Urdu" => "ur",
-        "Hebrew" => "he",
-        "English" => "en",
-        _ => language,
-    }
+    pub language: Option<&'a str>,
 }
 
 /// Shape `text` with `face`. `chars` lets callers substitute characters (e.g. uppercase for All
@@ -140,6 +131,7 @@ pub fn shape(face: &FontFace, text: &str, features: &[Feature], map: impl Fn(cha
     shape_with_context(face, text, features, map, ShapeContext::default())
 }
 
+/// [`shape`] `text` in its `context`: its language and the text around it.
 pub fn shape_with_context(
     face: &FontFace,
     text: &str,
@@ -196,7 +188,7 @@ fn shape_dir(
         if let Ok(script) = script.short_name().parse() {
             buf.set_script(script);
         }
-        if let Ok(language) = language_tag(context.language).parse() {
+        if let Some(language) = context.language.and_then(|t| t.parse::<Language>().ok()) {
             buf.set_language(language);
         }
         buf.set_flags(harfrust::BufferFlags::PRODUCE_SAFE_TO_INSERT_TATWEEL);
@@ -254,10 +246,6 @@ mod tests {
         assert_eq!(runs.len(), 2);
         assert_eq!(runs[0], (0..5, true, Script::Hebrew));
         assert_eq!(runs[1], (5..text.len(), true, Script::Arabic));
-        assert_eq!(language_tag("Arabic"), "ar");
-        assert_eq!(language_tag("Farsi"), "fa");
-        assert_eq!(language_tag("Urdu"), "ur");
-        assert_eq!(language_tag("ar-SA"), "ar-SA");
     }
 
     #[test]
@@ -295,6 +283,17 @@ mod tests {
         let off = shape(&face, "office", &[feature("-liga").unwrap()], |c| c);
         assert!(on.len() <= off.len());
         assert_eq!(off.len(), 6);
+    }
+
+    #[test]
+    fn language_picks_localized_forms() {
+        // Source Serif 4's `locl` has a Turkish `i`.
+        let face = FontDb::global().face(DEFAULT_FAMILY, "Regular");
+        let gid = |language| shape_with_context(&face, "i", &[], |c| c, ShapeContext { language, ..Default::default() })[0].gid;
+        assert_eq!(gid(None), face.glyph_for('i'));
+        assert_eq!(gid(Some("en-US")), face.glyph_for('i'));
+        assert_ne!(gid(Some("tr")), face.glyph_for('i'));
+        assert_eq!(gid(Some("not a tag")), face.glyph_for('i'));
     }
 
     #[test]

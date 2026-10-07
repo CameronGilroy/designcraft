@@ -1428,3 +1428,43 @@ fn arabic_character_overrides_mirror_brackets_using_final_levels() {
         }
     }
 }
+
+#[test]
+fn language_picks_localized_forms_through_the_word_cache() {
+    // Source Serif 4 has a Turkish `locl` form of `i`; the same words in English and Turkish
+    // (both shaped word by word through the cache) keep their own forms.
+    let text = "in in in in";
+    let (mut d, sid, _) = doc_with(text, Rect::new(36.0, 36.0, 500.0, 200.0), ParaAttrs::default());
+    d.story_mut(sid).unwrap().format_chars(6..text.len(), |f| f.over.language = Some("Turkish".into()));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let gid_at = |byte: usize| all_lines(&cs).iter().flat_map(|l| l.glyphs.iter()).find(|g| g.byte == byte).map(|g| g.gid).unwrap();
+    assert_eq!(gid_at(0), gid_at(3), "English i");
+    assert_eq!(gid_at(6), gid_at(9), "Turkish i");
+    assert_ne!(gid_at(0), gid_at(6), "Turkish i takes its localized form");
+    // A single word is shaped directly, in its language too.
+    let (mut d, sid, _) = doc_with("i", Rect::new(36.0, 36.0, 500.0, 200.0), ParaAttrs::default());
+    d.story_mut(sid).unwrap().format_chars(0..1, |f| f.over.language = Some("Turkish".into()));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    assert_eq!(all_lines(&cs)[0].glyphs[0].gid, gid_at(6), "Turkish i, shaped on its own");
+}
+
+#[test]
+fn chinese_and_japanese_take_their_localized_forms() {
+    // Noto Sans CJK SC (craft-fonts) draws 直 differently for Japanese (`locl`).
+    let Some(noto) = designcraft_fonts::CRAFT_FONTS.iter().find(|f| f.family == "Noto Sans CJK SC") else { return };
+    FontDb::global().add_font(noto.bytes.to_vec());
+    let gid = |language: &str| {
+        let (mut d, sid, _) = doc_with("直", Rect::new(36.0, 36.0, 300.0, 100.0), ParaAttrs::default());
+        d.story_mut(sid).unwrap().format_chars(0.."直".len(), |f| {
+            f.over.font_family = Some(noto.family.into());
+            f.over.language = Some(language.into());
+        });
+        let cs = compose_story(&d, sid, &ComposeOptions::default());
+        let g = &all_lines(&cs)[0].glyphs[0];
+        assert_eq!(g.face.family, noto.family);
+        g.gid
+    };
+    let chinese = gid("Chinese: Simplified");
+    assert_eq!(chinese, FontDb::global().face(noto.family, noto.style).glyph_for('直'));
+    assert_ne!(gid("Japanese"), chinese, "Japanese 直");
+}

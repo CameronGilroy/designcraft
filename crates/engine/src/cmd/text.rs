@@ -499,6 +499,8 @@ pub fn quote_marks(language: &str) -> [char; 4] {
         ['\u{201E}', '\u{201D}', '\u{201A}', '\u{2019}']
     } else if l.starts_with("swedish") || l.starts_with("finnish") {
         ['\u{201D}', '\u{201D}', '\u{2019}', '\u{2019}']
+    } else if l.starts_with("chinese: simplified") {
+        ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}']
     } else if l.starts_with("japanese") || l.starts_with("chinese") {
         ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']
     } else if l.starts_with("danish") {
@@ -1274,6 +1276,18 @@ mod language_tests {
         // German words aren't English misspellings.
         let st = s.execute("spelling.check", &json!({"story": sid})).unwrap();
         assert!(st.as_array().unwrap().is_empty(), "{st}");
+    }
+
+    #[test]
+    fn cjk_languages_have_their_quotes_and_no_english_rules() {
+        use super::quote_marks;
+        assert_eq!(quote_marks("Chinese: Simplified"), ['\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}']);
+        assert_eq!(quote_marks("Chinese: Traditional"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
+        assert_eq!(quote_marks("Chinese"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
+        assert_eq!(quote_marks("Japanese"), ['\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}']);
+        for l in ["Japanese", "Korean", "Chinese", "Chinese: Simplified", "Chinese: Traditional"] {
+            assert!(!designcraft_compose::is_english(l), "{l}: no English hyphenation or spelling");
+        }
     }
 }
 

@@ -1206,6 +1206,8 @@ const LANGUAGES: &[&str] = &[
     "Turkish",
     "Japanese",
     "Chinese",
+    "Chinese: Simplified",
+    "Chinese: Traditional",
     "Korean",
     "Arabic",
     "Hebrew",

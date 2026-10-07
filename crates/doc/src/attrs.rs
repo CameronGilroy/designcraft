@@ -190,6 +190,65 @@ impl Digits {
     }
 }
 
+/// The BCP 47 tag of a language name as InDesign and IDML write it ("English: USA", "Chinese:
+/// Simplified"), for the shaper's localized forms (`locl`). A variant we don't know falls back to
+/// its language ("English: Australian" → `en`); an unknown language (or "[No Language]") has none.
+pub fn language_tag(language: &str) -> Option<&'static str> {
+    let l = language.trim().to_ascii_lowercase();
+    let variant = match l.as_str() {
+        "english: usa" => Some("en-US"),
+        "english: uk" => Some("en-GB"),
+        "english: canadian" => Some("en-CA"),
+        "german: swiss 2006 reform" | "german: swiss" => Some("de-CH"),
+        "french: canadian" => Some("fr-CA"),
+        "portuguese: brazilian" => Some("pt-BR"),
+        "norwegian: bokmål" | "norwegian: bokmal" => Some("nb"),
+        "norwegian: nynorsk" => Some("nn"),
+        "chinese: simplified" => Some("zh-Hans"),
+        "chinese: traditional" => Some("zh-Hant"),
+        _ => None,
+    };
+    if variant.is_some() {
+        return variant;
+    }
+    Some(match l.split(':').next().unwrap_or("").trim() {
+        "english" => "en",
+        "german" => "de",
+        "french" => "fr",
+        "spanish" => "es",
+        "catalan" => "ca",
+        "italian" => "it",
+        "portuguese" => "pt",
+        "dutch" => "nl",
+        "danish" => "da",
+        "swedish" => "sv",
+        "norwegian" => "no",
+        "finnish" => "fi",
+        "polish" => "pl",
+        "czech" => "cs",
+        "slovak" => "sk",
+        "hungarian" => "hu",
+        "romanian" => "ro",
+        "croatian" => "hr",
+        "lithuanian" => "lt",
+        "greek" => "el",
+        "russian" => "ru",
+        "ukrainian" => "uk",
+        "bulgarian" => "bg",
+        "serbian" => "sr",
+        "macedonian" => "mk",
+        "turkish" => "tr",
+        "japanese" => "ja",
+        "korean" => "ko",
+        "chinese" => "zh",
+        "arabic" => "ar",
+        "persian" | "farsi" => "fa",
+        "urdu" => "ur",
+        "hebrew" => "he",
+        _ => return None,
+    })
+}
+
 /// A tracked change on text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -699,6 +758,26 @@ mod tests {
         assert_eq!(Digits::Native.map('5', "Thai"), '\u{0E55}');
         assert_eq!(Digits::Native.map('5', "English: USA"), '5');
         assert_eq!(Digits::Hindi.map('x', ""), 'x');
+    }
+
+    #[test]
+    fn language_names_map_to_bcp47_tags() {
+        assert_eq!(language_tag("English: USA"), Some("en-US"));
+        assert_eq!(language_tag("English: Australian"), Some("en"));
+        assert_eq!(language_tag("Turkish"), Some("tr"));
+        assert_eq!(language_tag("Japanese"), Some("ja"));
+        assert_eq!(language_tag("Korean"), Some("ko"));
+        assert_eq!(language_tag("Chinese"), Some("zh"));
+        assert_eq!(language_tag("Chinese: Simplified"), Some("zh-Hans"));
+        assert_eq!(language_tag("Chinese: Traditional"), Some("zh-Hant"));
+        assert_eq!(language_tag("Arabic"), Some("ar"));
+        assert_eq!(language_tag("Persian"), Some("fa"));
+        assert_eq!(language_tag("Farsi"), Some("fa"));
+        assert_eq!(language_tag("Urdu"), Some("ur"));
+        assert_eq!(language_tag("Hebrew"), Some("he"));
+        assert_eq!(language_tag("[No Language]"), None);
+        assert_eq!(language_tag("Klingon"), None);
+        assert_eq!(language_tag(""), None);
     }
 
     #[test]
