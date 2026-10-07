@@ -972,15 +972,13 @@ fn ruby_and_kenten_sit_over_their_text() {
 fn tate_chu_yoko_sets_digits_across_one_em() {
     let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
     let lid = d.default_layer();
-    let (fid, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 400.0), lid, "令和12年", ParaFormat::default()).unwrap();
+    let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 400.0), lid, "令和12年", ParaFormat::default()).unwrap();
     let at = "令和".len();
     d.story_mut(sid).unwrap().format_chars(at..at + 2, |f| f.over.tate_chu_yoko = Some(true));
     let glyphs = |d: &Document| compose_story(d, sid, &ComposeOptions::default()).frames[0].lines[0].glyphs.clone();
     // Horizontal text ignores it.
     assert!(glyphs(&d).iter().all(|g| g.tcy.is_none()));
-    if let Some(tf) = d.item_mut(fid).and_then(|i| i.text_frame_mut()) {
-        tf.options.vertical = true;
-    }
+    d.story_mut(sid).unwrap().vertical = true;
     let gs = glyphs(&d);
     let digits: Vec<_> = gs.iter().filter(|g| g.tcy.is_some()).collect();
     assert_eq!(digits.len(), 2);
@@ -1017,9 +1015,9 @@ fn vertical_frames_compose_in_the_turned_box() {
     let (fid, sid) =
         d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 400.0), lid, "縦書きの文章です。Latin", ParaFormat::default()).unwrap();
     if let Some(tf) = d.item_mut(fid).and_then(|i| i.text_frame_mut()) {
-        tf.options.vertical = true;
         tf.options.inset = [0.0; 4];
     }
+    d.story_mut(sid).unwrap().vertical = true;
     let cs = compose_story(&d, sid, &ComposeOptions::default());
     let ft = &cs.frames[0];
     assert!(ft.vertical);
@@ -1030,9 +1028,9 @@ fn vertical_frames_compose_in_the_turned_box() {
     assert!(l.glyphs.iter().filter(|g| g.len > 0).take(5).all(|g| g.upright));
     assert!(!l.glyphs.iter().rev().find(|g| g.len > 0).unwrap().upright, "Latin turns");
     // Text space → frame: the first line sits at the right edge and runs down.
-    let it = d.item(fid).unwrap();
-    let p0 = it.text_xf() * designcraft_geom::Point::new(l.glyphs[0].x, l.baseline);
-    let p1 = it.text_xf() * designcraft_geom::Point::new(l.glyphs[3].x, l.baseline);
+    let xf = d.text_xf(d.item(fid).unwrap());
+    let p0 = xf * designcraft_geom::Point::new(l.glyphs[0].x, l.baseline);
+    let p1 = xf * designcraft_geom::Point::new(l.glyphs[3].x, l.baseline);
     assert!(p0.x > 150.0 && p1.y > p0.y && (p1.x - p0.x).abs() < 1e-6, "{p0:?} {p1:?}");
 }
 
@@ -1643,9 +1641,9 @@ fn vertical_line(family: &str, text: &str, over: impl Fn(&mut designcraft_doc::C
     let lid = d.default_layer();
     let (fid, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 500.0), lid, text, ParaFormat::default()).unwrap();
     if let Some(tf) = d.item_mut(fid).and_then(|i| i.text_frame_mut()) {
-        tf.options.vertical = true;
         tf.options.inset = [0.0; 4];
     }
+    d.story_mut(sid).unwrap().vertical = true;
     d.story_mut(sid).unwrap().format_chars(0..text.len(), |f| {
         f.over.font_family = Some(family.into());
         f.over.size = Some(20.0);

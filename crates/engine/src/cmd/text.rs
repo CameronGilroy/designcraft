@@ -111,7 +111,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        cmd!(query "story.get", "Get Story", [], None, "{story? | frame?} → text, frames, paragraphs, overset", has_doc, |s, p| {
+        cmd!(query "story.get", "Get Story", [], None, "{story? | frame?} → text, frames, paragraphs, vertical, overset", has_doc, |s, p| {
             let st = s.doc()?;
             let sid = story_of(s, p).ok_or_else(|| bad("story.get", "no story"))?;
             let cs = s.cache.get(&st.doc, sid, None);
@@ -206,6 +206,15 @@ pub fn specs() -> Vec<CommandSpec> {
                 format_chars(s, &json!({"kenten": on}))
             }
         ),
+        cmd!(
+            "type.storyDirection",
+            "Story Direction",
+            [],
+            None,
+            "{vertical: bool} — the stories of the text selection or the selected frames: vertical lines run top to bottom and follow each other right to left, in every frame of the thread",
+            has_text_or_frames,
+            story_direction
+        ),
         cmd!("type.sizeUp", "Increase Point Size", [], Some("Cmd+Shift+."), "{}", has_text_or_frames, |s, _| step_size(s, 2.0)),
         cmd!("type.sizeDown", "Decrease Point Size", [], Some("Cmd+Shift+,"), "{}", has_text_or_frames, |s, _| step_size(s, -2.0)),
         cmd!(
@@ -257,7 +266,7 @@ fn hit_byte(s: &Session, frame: ItemId, pt: Point) -> Option<(StoryId, usize, Op
     let loc = st.doc.find(frame)?;
     let it = st.doc.item_at(&loc)?;
     let sid = it.text_frame()?.story;
-    let xf = st.doc.parent_xf(&loc) * it.text_xf();
+    let xf = st.doc.parent_xf(&loc) * st.doc.text_xf(it);
     let inner = xf.inverse() * pt;
     let cs = s.cache.get(&st.doc, sid, None);
     let fi = cs.frames.iter().position(|f| f.frame == frame)?;
@@ -594,6 +603,36 @@ fn word_bounds(s: &str, i: usize) -> (usize, usize) {
     let a = s[..i.min(s.len())].char_indices().rev().take_while(|(_, c)| is_word(*c)).last().map(|(k, _)| k).unwrap_or(i);
     let b = s[i.min(s.len())..].char_indices().find(|(_, c)| !is_word(*c)).map(|(k, _)| i + k).unwrap_or(s.len());
     (a, b)
+}
+
+/// Type ▸ Story Direction.
+fn story_direction(s: &mut Session, p: &Value) -> Result<Value> {
+    let vertical = p.get("vertical").and_then(Value::as_bool).ok_or_else(|| bad("type.storyDirection", "missing vertical"))?;
+    let st = s.doc()?;
+    let mut stories: Vec<StoryId> = st.selection.text.map(|t| t.story).into_iter().chain(st.selection.cells.map(|c| c.story)).collect();
+    for id in &st.selection.items {
+        if let Some(tf) = st.doc.item(*id).and_then(|i| i.text_frame())
+            && !stories.contains(&tf.story)
+        {
+            stories.push(tf.story);
+        }
+    }
+    s.edit(|d, _| {
+        set_story_direction(d, &stories, vertical);
+        Ok(json!({"stories": stories.len()}))
+    })
+}
+
+/// Set the direction of `stories` (all their frames turn together).
+pub(crate) fn set_story_direction(d: &mut designcraft_doc::Document, stories: &[StoryId], vertical: bool) {
+    for sid in stories {
+        if let Some(st) = d.story_mut(*sid)
+            && st.vertical != vertical
+        {
+            st.vertical = vertical;
+            st.rev += 1;
+        }
+    }
 }
 
 fn move_caret(s: &mut Session, p: &Value) -> Result<Value> {
@@ -1394,5 +1433,63 @@ mod korean_breaks_tests {
         assert_eq!(s.doc().unwrap().doc.story(sid).unwrap().paras[0].para.korean_char_breaks, Some(true));
         s.execute("style.paragraph.create", &json!({"name": "Korean", "para": {"koreanCharBreaks": true}})).unwrap();
         assert_eq!(s.doc().unwrap().doc.styles.para("Korean").unwrap().para.korean_char_breaks, Some(true));
+    }
+}
+
+#[cfg(test)]
+mod story_direction_tests {
+    use designcraft_doc::{ItemId, StoryId};
+    use serde_json::json;
+
+    use crate::Session;
+
+    fn frame(s: &mut Session, rect: [f64; 4], text: &str, vertical: bool) -> (ItemId, StoryId) {
+        let r = s.execute("frame.create", &json!({"rect": rect, "content": "text", "text": text, "caret": false, "vertical": vertical})).unwrap();
+        (ItemId(r["id"].as_u64().unwrap()), StoryId(r["story"].as_u64().unwrap()))
+    }
+
+    /// Which frames of the story are composed vertically, in thread order.
+    fn composed(s: &Session, sid: StoryId) -> Vec<bool> {
+        s.cache.get(&s.doc().unwrap().doc, sid, None).frames.iter().map(|f| f.vertical).collect()
+    }
+
+    #[test]
+    fn story_direction_turns_every_frame_of_the_story() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let (a, sid) = frame(&mut s, [72.0, 72.0, 200.0, 400.0], "縦書きの文章です。", false);
+        let (b, _) = frame(&mut s, [300.0, 72.0, 428.0, 400.0], "", false);
+        s.edit(|d, _| Ok(d.thread(a, b)?)).unwrap();
+        assert_eq!(composed(&s, sid), [false, false]);
+        // From the second frame selected, through Type ▸ Story Direction.
+        s.execute("selection.set", &json!({"ids": [b.0]})).unwrap();
+        s.execute("type.storyDirection", &json!({"vertical": true})).unwrap();
+        assert_eq!(composed(&s, sid), [true, true]);
+        // From a caret in the text.
+        s.execute("text.select", &json!({"story": sid.0, "anchor": 0, "focus": 0})).unwrap();
+        s.execute("type.storyDirection", &json!({"vertical": false})).unwrap();
+        assert_eq!(composed(&s, sid), [false, false]);
+        // The frame option sets the frame's story.
+        s.execute("object.textFrameOptions", &json!({"ids": [a.0], "vertical": true})).unwrap();
+        assert_eq!(composed(&s, sid), [true, true]);
+        // Undo puts it back.
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(composed(&s, sid), [false, false]);
+    }
+
+    #[test]
+    fn a_frame_threaded_onto_a_vertical_story_turns_vertical() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let (a, sid) = frame(&mut s, [72.0, 72.0, 200.0, 400.0], "縦書きの文章です。", true);
+        let (b, _) = frame(&mut s, [300.0, 72.0, 428.0, 400.0], "", false);
+        let c = s.execute("frame.create", &json!({"rect": [450, 72, 550, 400]})).unwrap();
+        let c = ItemId(c["id"].as_u64().unwrap());
+        s.edit(|d, _| {
+            d.thread(a, b)?;
+            Ok(d.thread(b, c)?)
+        })
+        .unwrap();
+        assert_eq!(composed(&s, sid), [true, true, true]);
     }
 }

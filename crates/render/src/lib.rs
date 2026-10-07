@@ -579,7 +579,7 @@ impl Renderer {
                 if let Some(ft) = cs.frame(it.id) {
                     match &tf.options.path {
                         Some(pt) => self.draw_path_text(ctx, f, &cs, ft, xf, bp, pt),
-                        None => self.draw_text(ctx, f, &cs, ft, xf * it.text_local()),
+                        None => self.draw_text(ctx, f, &cs, ft, xf * f.doc.text_local(it)),
                     }
                 }
             }

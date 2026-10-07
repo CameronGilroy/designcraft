@@ -277,6 +277,9 @@ pub struct FrameSpec {
     /// Text area (inner space, after inset).
     pub area: Rect,
     pub opts: TextFrameOptions,
+    /// Lines run top to bottom and follow each other right to left (the story is vertical); the
+    /// area is the turned box.
+    pub vertical: bool,
     pub exclusions: Vec<Exclusion>,
     pub page_name: Option<String>,
     /// Absolute document page the frame is on (None on parent pages).
@@ -398,7 +401,8 @@ pub fn frame_specs(doc: &Document, sid: StoryId) -> Vec<FrameSpec> {
             None => (item.text_area(), tf.options.clone()),
         };
         // Vertical type: composed in the turned box; wraps and page rects turned with it.
-        let (area, exclusions, grid, page_rect) = if tf.options.vertical && tf.options.path.is_none() {
+        let vertical = doc.frame_vertical(item);
+        let (area, exclusions, grid, page_rect) = if vertical {
             let v = designcraft_doc::vertical_text_xf(area).inverse();
             let ex = exclusions.into_iter().map(|e| Exclusion { rect: v.transform_rect_bbox(e.rect), ..e }).collect();
             let pr = page_rect.map(|(a, b)| (v.transform_rect_bbox(a), v.transform_rect_bbox(b)));
@@ -410,6 +414,7 @@ pub fn frame_specs(doc: &Document, sid: StoryId) -> Vec<FrameSpec> {
             id: fid,
             area,
             opts,
+            vertical,
             exclusions: if tf.options.path.is_some() { vec![] } else { exclusions },
             page_name,
             page,
@@ -445,7 +450,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
         .iter()
         .map(|f| {
             let mut columns = f.columns();
-            if story.direction == designcraft_doc::TextDirection::RightToLeft && !f.opts.vertical {
+            if story.direction == designcraft_doc::TextDirection::RightToLeft && !f.vertical {
                 columns.reverse();
             }
             columns
@@ -454,7 +459,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
     out.frames = frames
         .iter()
         .zip(&cols)
-        .map(|(f, columns)| FrameText { frame: f.id, vertical: f.opts.vertical, columns: columns.clone(), ..Default::default() })
+        .map(|(f, columns)| FrameText { frame: f.id, vertical: f.vertical, columns: columns.clone(), ..Default::default() })
         .collect();
     let mut cur = Cursor { fi: 0, col: 0, last_baseline: None, last_descent: 0.0, last_reference: 0.0, pending: 0.0 };
     let para_ranges = story.para_ranges();
@@ -547,7 +552,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
             section_marker: None,
             vars: var_values,
             hidden_conditions: doc.conditions.iter().filter(|c| !c.visible).map(|c| c.name.clone()).collect(),
-            vertical: cur_frame.is_some_and(|f| f.opts.vertical),
+            vertical: cur_frame.is_some_and(|f| f.vertical),
             ..Default::default()
         };
         if !story.endnotes.is_empty() {

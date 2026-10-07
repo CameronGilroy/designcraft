@@ -895,7 +895,7 @@ impl Exporter<'_> {
                     }
                 } else if let Some(ft) = cs.frame(it.id) {
                     let text = doc.story(tfr.story).map(|st| st.text.as_str()).unwrap_or("");
-                    let local = it.text_local();
+                    let local = doc.text_local(it);
                     if local != Affine::IDENTITY {
                         s.push_transform(&tf(local));
                     }

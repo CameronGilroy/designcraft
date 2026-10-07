@@ -1150,7 +1150,7 @@ fn cell_at(s: &Session, frame: designcraft_doc::ItemId, pt: designcraft_geom::Po
     let loc = st.doc.find(frame)?;
     let it = st.doc.item_at(&loc)?;
     let sid = it.text_frame()?.story;
-    let inner = (st.doc.parent_xf(&loc) * it.text_xf()).inverse() * pt;
+    let inner = (st.doc.parent_xf(&loc) * st.doc.text_xf(it)).inverse() * pt;
     let cs = s.cache.get(&st.doc, sid, None);
     let fi = cs.frames.iter().position(|f| f.frame == frame)?;
     let (table, row, col, _) = designcraft_compose::hit_cell(&cs, fi, inner)?;
@@ -1396,7 +1396,7 @@ mod sort_tests {
         let cells = &cs.frames[0].tables[0].cells;
         let centre = |r: usize| {
             let c = cells.iter().find(|c| c.row == r && c.col == 0).unwrap().rect.center();
-            d.item(fid).unwrap().text_xf() * c
+            d.text_xf(d.item(fid).unwrap()) * c
         };
         let (from, to) = (centre(0), centre(2));
         s.execute("table.select", &json!({"story": sid.0, "table": tid, "rows": [0, 0], "what": "row"})).unwrap();
