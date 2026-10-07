@@ -1371,7 +1371,8 @@ mod language_tests {
             .collect();
         assert!(stories.contains(r#"AppliedLanguage="$ID/Simplified Chinese""#), "{stories}");
         // The name comes back as written and sets the text as Simplified Chinese.
-        let back = designcraft_idml::import_idml(&idml).unwrap();
+        let mut back = designcraft_idml::import_idml(&idml).unwrap();
+        back.settings.glyph_fallback = true;
         let st = back.stories.values().find(|st| st.text.contains('直')).unwrap();
         let (_, base) = back.styles.resolve_para(&st.paras[0]);
         assert_eq!(back.styles.resolve_char(&base, st.char_format_at(0)).language, "Simplified Chinese");

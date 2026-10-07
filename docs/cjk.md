@@ -43,7 +43,8 @@ presets or tables are copied. Our default mojikumi and kinsoku tables are built 
 | Kenten | the IDML kinds and a custom character, drawn as characters; no position, size, alignment, colour or font |
 | Composite fonts | done: model, `style.compositeFont.*`, shaping, IDML, font list, replace and Preflight; no dialog |
 | Languages | Japanese, Korean, Simplified and Traditional Chinese reach the shaper (`locl`), font fallback, line breaking and typographer's quotes; IDML language names are kept as written and recognised in their common spellings and locale codes ("Simplified Chinese", "Chinese (Traditional)", `zh_CN`, `zh-Hant`, `ja_JP`, `ko-KR`) |
-| CJK fonts | Japanese faces (Shippori Mincho first) from the optional craft-fonts build input; fallback by language (Japanese: the craft-fonts faces, then system fonts; Simplified and Traditional Chinese, Korean: system fonts); document fonts: the fonts of a `Document Fonts` folder beside an opened file belong to that document (composition, export, font menus), ahead of installed fonts of the same name, and are forgotten when it closes; Package copies every font file that draws text, fallback fonts included (licence permitting). Font files stay in memory for the session (reopening a document reuses them) and aren't read on the web |
+| Missing glyphs | as in InDesign: characters the applied font lacks are drawn as its missing-glyph box (screen and PDF) and listed by Preflight; the document setting Draw Missing Glyphs from Fallback Fonts (Preferences › Composition, off in new documents and IDML imports, on in documents saved before it existed) draws them from fallback fonts instead |
+| CJK fonts | Japanese faces (Shippori Mincho first) from the optional craft-fonts build input, in the font menus for users to apply; fallback by language (with fallback fonts on) (Japanese: the craft-fonts faces, then system fonts; Simplified and Traditional Chinese, Korean: system fonts); document fonts: the fonts of a `Document Fonts` folder beside an opened file belong to that document (composition, export, font menus), ahead of installed fonts of the same name, and are forgotten when it closes; Package copies every font file that draws text, fallback fonts included (licence permitting). Font files stay in memory for the session (reopening a document reuses them) and aren't read on the web |
 | Everything else below | missing |
 
 Known bugs to fix first:
@@ -149,9 +150,13 @@ Jidori, tsume, aki before and after, em-box alignment and the other leading mode
   to IDML and listed, replaced and preflighted by their member fonts; PDF embeds the member fonts.
   Remaining: the Composite Fonts dialog, and the predefined character classes (kanji, kana,
   full-width symbols, punctuation, Latin, numerals) beside custom sets.
-- **Language-aware fallback**: Japanese, Simplified Chinese, Traditional Chinese and Korean each
-  have their own fallback chain of system fonts (Japanese: the craft-fonts Japanese faces first);
-  `locl` follows the character language (IDML language names).
+- **Missing glyphs**: InDesign doesn't substitute fonts per character: a character the applied
+  font lacks shows as the font's missing-glyph box, prints that way and is a Preflight error.
+  DesignCraft does the same, with a document setting (Draw Missing Glyphs from Fallback Fonts)
+  that draws such characters from fallback fonts instead.
+- **Language-aware fallback** (when that setting is on): Japanese, Simplified Chinese, Traditional
+  Chinese and Korean each have their own fallback chain of system fonts (Japanese: the craft-fonts
+  Japanese faces first); `locl` follows the character language (IDML language names).
 - **No CJK fonts in the repo.** CJK fonts are large (15–25 MB each even subset) and documents
   should name the fonts they use. The Japanese UI and document faces come from the optional
   craft-fonts build input when DesignCraft is built with it (release builds are).
@@ -260,9 +265,11 @@ Each follows what an InDesign user expects.
 4. **No CJK fonts in the repo**; documents carry theirs in `Document Fonts`, scoped to the
    document as in InDesign. DesignCraft embeds Japanese UI and document faces only when built with
    the optional craft-fonts input (release builds are).
-5. **Package copies every font that draws text**, fallback fonts included, so a package
-   reproduces what is on screen.
+5. **Package copies every font that draws text**, fallback fonts included (when the document
+   draws missing glyphs from them), so a package reproduces what is on screen.
 6. **Korean fallback is serif first** (Myungjo), as Chinese and Japanese fall back to Song and
    Mincho: the serif faces CJK editions of layout software default to.
 7. **Language names on IDML import** accept the common spellings of Simplified and Traditional
    Chinese, since the exact names InDesign writes are unconfirmed without a sample file.
+8. **Missing glyphs** are drawn as the font's box and reported, as in InDesign; drawing them from
+   fallback fonts is a per-document choice, on only for documents saved before it existed.

@@ -1,7 +1,10 @@
 //! Live preflight (the Preflight panel and the status-bar indicator): overset text, missing
-//! fonts, missing or low-resolution graphics, RGB content in print documents, empty text frames.
+//! fonts and glyphs, missing or low-resolution graphics, RGB content in print documents, empty
+//! text frames.
 
+use designcraft_compose::ComposedStory;
 use designcraft_doc::{Content, Document, Intent, Item, SpreadRef};
+use designcraft_fonts::FaceRef;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -32,6 +35,42 @@ fn page_of(d: &Document, sr: SpreadRef, it: &Item) -> Option<usize> {
     Some(d.first_page_of_spread(si) + sp.page_at_x(it.bounds().center().x).unwrap_or(0))
 }
 
+/// Characters a missing-glyph report names before "and N more".
+const MISSING_GLYPHS_LISTED: usize = 20;
+
+/// Add the characters drawn as their font's missing glyph (.notdef) in `cs`, composed from
+/// `text` (table cells and footnotes included), to `out` by face, each once. Text in a missing
+/// font is left to the missing-font report; generated text (list labels, page numbers) and
+/// markers have no character of their own to name.
+fn missing_glyphs(cs: &ComposedStory, text: &str, depth: usize, out: &mut Vec<(FaceRef, Vec<char>)>) {
+    // Cells and footnotes hold composed stories of their own; tables nest only so deep.
+    if depth > 16 {
+        return;
+    }
+    for f in &cs.frames {
+        for g in f.lines.iter().flat_map(|l| &l.glyphs).filter(|g| g.visible && g.gid == 0 && g.len > 0) {
+            if cs.styles.get(g.style as usize).is_none_or(|st| st.missing_font) {
+                continue;
+            }
+            let Some(c) = text.get(g.byte..).and_then(|t| t.chars().next()) else { continue };
+            if c.is_control() || c.is_whitespace() || ('\u{E000}'..='\u{E1FF}').contains(&c) {
+                continue;
+            }
+            match out.iter_mut().find(|(face, _)| *face == g.face) {
+                Some((_, chars)) if !chars.contains(&c) => chars.push(c),
+                Some(_) => {}
+                None => out.push((g.face, vec![c])),
+            }
+        }
+        for c in f.tables.iter().flat_map(|t| &t.cells) {
+            missing_glyphs(&c.text, &c.source, depth + 1, out);
+        }
+        for n in &f.notes {
+            missing_glyphs(&n.text, &n.source, depth + 1, out);
+        }
+    }
+}
+
 pub fn check(s: &Session, min_ppi: f64) -> Vec<Issue> {
     let Some(st) = s.active() else { return vec![] };
     let d = &st.doc;
@@ -40,8 +79,10 @@ pub fn check(s: &Session, min_ppi: f64) -> Vec<Issue> {
     let db = designcraft_fonts::FontDb::global().scoped(d.font_scope);
     let mut missing_fonts: Vec<String> = Vec::new();
     let mut unsupported_typography = std::collections::BTreeSet::new();
+    let mut missing: Vec<(FaceRef, Vec<char>)> = Vec::new();
     for story in d.stories.values() {
         let cs = s.cache.get(d, story.id, None);
+        missing_glyphs(&cs, &story.text, 0, &mut missing);
         if cs.is_overset() {
             let last = story.frames.last().copied();
             let page = last.and_then(|f| d.find(f).zip(d.item(f))).and_then(|(loc, it)| page_of(d, loc.spread, it));
@@ -107,6 +148,18 @@ pub fn check(s: &Session, min_ppi: f64) -> Vec<Issue> {
     }
     for message in unsupported_typography {
         out.push(Issue { severity: "warning", kind: "unsupportedTypography", message, item: None, page: None });
+    }
+    for (face, chars) in missing {
+        let listed: Vec<String> = chars.iter().take(MISSING_GLYPHS_LISTED).map(char::to_string).collect();
+        let more = chars.len().saturating_sub(MISSING_GLYPHS_LISTED);
+        let more = if more > 0 { format!(" and {more} more") } else { String::new() };
+        out.push(Issue {
+            severity: "error",
+            kind: "missingGlyphs",
+            message: format!("Missing glyphs in {} {}: {}{more}", face.family, face.style, listed.join(" ")),
+            item: None,
+            page: None,
+        });
     }
     // Items.
     for (si, sp) in d.spreads.iter().enumerate() {
@@ -223,5 +276,49 @@ mod arabic_tests {
         let typography: Vec<_> = issues.iter().filter(|i| i.kind == "unsupportedTypography").collect();
         assert_eq!(typography.len(), 3, "{typography:?}");
         assert!(typography.iter().all(|i| i.severity == "warning"));
+    }
+}
+
+#[cfg(test)]
+mod missing_glyph_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    fn missing_glyphs(s: &mut Session) -> Vec<(String, String)> {
+        let r = s.execute("preflight.run", &json!({})).unwrap();
+        r["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["kind"] == "missingGlyphs")
+            .map(|i| (i["severity"].as_str().unwrap().to_string(), i["message"].as_str().unwrap().to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn characters_drawn_as_missing_glyphs_are_listed() {
+        // Some font has them, for when fallback fonts are on.
+        designcraft_fonts::FontDb::global().add_font(designcraft_fonts::testing::font_with("DC Test Preflight Helper", &['日', '本', '語']).unwrap());
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "Hello 日本語 日本 and 語."})).unwrap();
+        let family = designcraft_fonts::DEFAULT_FAMILY;
+        assert_eq!(missing_glyphs(&mut s), [("error".to_string(), format!("Missing glyphs in {family} Regular: 日 本 語"))]);
+        // Drawn from fallback fonts: nothing missing.
+        s.execute("document.preferences", &json!({"glyphFallback": true})).unwrap();
+        assert!(missing_glyphs(&mut s).is_empty());
+    }
+
+    #[test]
+    fn a_long_list_of_missing_glyphs_is_cut_short() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        // 30 private-use characters no font has.
+        let text: String = (0..30).filter_map(|i| char::from_u32(0xF0B00 + i)).collect();
+        s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": text})).unwrap();
+        let found = missing_glyphs(&mut s);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].1.ends_with(" and 10 more"), "{}", found[0].1);
     }
 }

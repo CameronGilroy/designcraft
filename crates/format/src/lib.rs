@@ -274,6 +274,20 @@ mod tests {
     }
 
     #[test]
+    fn documents_saved_before_glyph_fallback_keep_their_fallback_fonts() {
+        let d = Document::new(&NewDocument::default());
+        assert!(!d.settings.glyph_fallback);
+        assert!(!load(&save(&d).unwrap()).unwrap().settings.glyph_fallback, "saved and read as off");
+        let mut on = d.clone();
+        on.settings.glyph_fallback = true;
+        assert!(load(&save(&on).unwrap()).unwrap().settings.glyph_fallback);
+        // Written before the setting existed: drawn from fallback fonts, as they were.
+        let mut v = serde_json::to_value(&d).unwrap();
+        v["settings"].as_object_mut().unwrap().remove("glyphFallback").unwrap();
+        assert!(load(&serde_json::to_vec(&v).unwrap()).unwrap().settings.glyph_fallback);
+    }
+
+    #[test]
     fn rejects_garbage_and_newer_versions() {
         assert!(load(b"nope").is_err());
         let mut buf = Cursor::new(Vec::new());

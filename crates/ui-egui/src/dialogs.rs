@@ -536,6 +536,11 @@ fn preferences(app: &crate::DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
                     check(ui, d, "highlightHj", crate::i18n::tr(&app.ui.language, "H&J Violations"));
                     check(ui, d, "highlightCustomTracking", crate::i18n::tr(&app.ui.language, "Custom Tracking/Kerning"));
                     check(ui, d, "highlightSubstitutedFonts", crate::i18n::tr(&app.ui.language, "Substituted Fonts"));
+                    if d.fields.contains_key("glyphFallback") {
+                        ui.add_space(6.0);
+                        crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "Missing Glyphs")).font(semibold(12.0)));
+                        check(ui, d, "glyphFallback", crate::i18n::tr(&app.ui.language, "Draw Missing Glyphs from Fallback Fonts"));
+                    }
                 }
                 "advancedType" => {
                     ui.label(crate::rtl::widget(
@@ -1591,6 +1596,7 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             }
             doc["advancedType"] = adv;
             doc["overprintBlack"] = json!(d.b("overprintBlack"));
+            doc["glyphFallback"] = json!(d.b("glyphFallback"));
             app.run("document.preferences", doc)
         }
         "newWorkspace" => app.run("window.newWorkspace", json!({"name": d.s("name")})),

@@ -2559,6 +2559,17 @@ const TABLE: &[(&str, [&str; 5])] = &[
     ("Interface", ["Interface", "Interface", "Interface", "Interface", "界面"]),
     ("Advanced Type", ["Advanced Type", "Advanced Type", "Advanced Type", "Advanced Type", "高级文字"]),
     ("Composition", ["Composition", "Composition", "Composition", "Composition", "排版"]),
+    ("Missing Glyphs", ["Fehlende Glyphen", "Glyphes manquants", "Glifos que faltan", "欠落グリフ", "缺失字形"]),
+    (
+        "Draw Missing Glyphs from Fallback Fonts",
+        [
+            "Fehlende Glyphen aus Ersatzschriften zeichnen",
+            "Dessiner les glyphes manquants avec des polices de substitution",
+            "Dibujar los glifos que faltan con fuentes alternativas",
+            "欠落グリフを代替フォントで表示",
+            "用后备字体绘制缺失字形",
+        ],
+    ),
     ("Units & Increments", ["Units & Increments", "Units & Increments", "Units & Increments", "Units & Increments", "单位与增量"]),
     ("Grids", ["Grids", "Grids", "Grids", "Grids", "网格"]),
     ("Guides & Pasteboard", ["Guides & Pasteboard", "Guides & Pasteboard", "Guides & Pasteboard", "Guides & Pasteboard", "参考线与粘贴板"]),

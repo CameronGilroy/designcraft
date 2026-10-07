@@ -892,6 +892,8 @@ fn check_kashida_justification(db: &FontDb, require_fallback: bool) {
         ..Default::default()
     };
     let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 260.0, 400.0), lid, text, pf).unwrap();
+    // The Arabic is drawn from a fallback font when the database has one.
+    d.settings.glyph_fallback = true;
     let composed = |d: &Document| compose_with_db(d, d.story(sid).unwrap(), &frame_specs(d, sid), &ComposeOptions::default(), db);
     let first = |d: &Document| composed(d).frames[0].lines[0].clone();
     let with = first(&d);
@@ -1276,6 +1278,7 @@ fn arabic_fallback_marks_stay_with_bases_and_custom_offsets_move_only_marks() {
     }
     let text = "بُبَ";
     let (mut d, sid, _) = doc_with(text, Rect::new(0.0, 0.0, 600.0, 200.0), ParaAttrs::default());
+    d.settings.glyph_fallback = true;
     let plain = compose_story(&d, sid, &ComposeOptions::default()).frames[0].lines[0].glyphs.clone();
     assert!(plain.iter().all(|g| g.face.id() == face.id()), "fallback must not split Arabic marks into the Latin face");
     assert!(plain.iter().all(|g| g.gid != 0));
@@ -1303,6 +1306,7 @@ fn arabic_fallback_marks_stay_with_bases_and_custom_offsets_move_only_marks() {
 fn arabic_joining_context_crosses_character_style_boundaries() {
     let text = "ببب";
     let (mut d, sid, _) = doc_with(text, Rect::new(0.0, 0.0, 600.0, 200.0), ParaAttrs::default());
+    d.settings.glyph_fallback = true;
     let plain = compose_story(&d, sid, &ComposeOptions::default()).frames[0].lines[0].glyphs.clone();
     if plain.iter().any(|g| g.gid == 0) {
         return;
@@ -1320,6 +1324,7 @@ fn arabic_character_kashida_switch_prevents_insertion() {
         Rect::new(0.0, 0.0, 160.0, 300.0),
         ParaAttrs { direction: Some(designcraft_doc::TextDirection::RightToLeft), align: Some(Align::RightJustified), ..Default::default() },
     );
+    d.settings.glyph_fallback = true;
     d.story_mut(sid).unwrap().format_chars(0..text.len(), |f| f.over.allow_kashidas = Some(false));
     let off = compose_story(&d, sid, &ComposeOptions::default());
     assert!(all_lines(&off).iter().all(|l| l.glyphs.iter().all(|g| g.len > 0 || g.face.glyph_for('\u{0640}') != g.gid)));
@@ -1342,6 +1347,7 @@ fn arabic_indic_digit_conversion_retains_original_utf8_ranges() {
 fn arabic_contextual_digits_follow_strong_text_across_style_changes() {
     let text = "ب 12 A 34";
     let (mut d, sid, _) = doc_with(text, Rect::new(0.0, 0.0, 300.0, 100.0), ParaAttrs::default());
+    d.settings.glyph_fallback = true;
     let arabic_digits = text.find('1').unwrap();
     d.story_mut(sid).unwrap().format_chars(arabic_digits..arabic_digits + 2, |f| f.over.fill = Some("Paper".into()));
     let cs = compose_story(&d, sid, &ComposeOptions::default());
@@ -1390,6 +1396,7 @@ fn arabic_kashida_moves_marks_with_their_cluster_and_respects_nonjoiners() {
         Rect::new(0.0, 0.0, 180.0, 100.0),
         ParaAttrs { direction: Some(designcraft_doc::TextDirection::RightToLeft), align: Some(Align::FullyJustified), ..Default::default() },
     );
+    d.settings.glyph_fallback = true;
     let with = compose_story(&d, sid, &ComposeOptions::default()).frames[0].lines[0].glyphs.clone();
     if with.iter().any(|g| g.gid == 0) {
         return;
@@ -1404,11 +1411,12 @@ fn arabic_kashida_moves_marks_with_their_cluster_and_respects_nonjoiners() {
         assert!(((a.x - first_a.x) - (b.x - first_b.x)).abs() < 1e-6, "marks detached from their cluster");
     }
     let text = "ب\u{200C}ب ب\u{200C}ب";
-    let (d, sid, _) = doc_with(
+    let (mut d, sid, _) = doc_with(
         text,
         Rect::new(0.0, 0.0, 180.0, 100.0),
         ParaAttrs { direction: Some(designcraft_doc::TextDirection::RightToLeft), align: Some(Align::FullyJustified), ..Default::default() },
     );
+    d.settings.glyph_fallback = true;
     let cs = compose_story(&d, sid, &ComposeOptions::default());
     assert!(cs.frames[0].lines[0].glyphs.iter().all(|g| g.gid != g.face.glyph_for('\u{0640}') || g.len > 0));
 }
@@ -1417,6 +1425,7 @@ fn arabic_kashida_moves_marks_with_their_cluster_and_respects_nonjoiners() {
 fn arabic_explicit_isolated_forms_disable_contextual_joining() {
     let text = "بب";
     let (mut d, sid, _) = doc_with(text, Rect::new(0.0, 0.0, 180.0, 100.0), ParaAttrs::default());
+    d.settings.glyph_fallback = true;
     d.story_mut(sid).unwrap().format_chars(0..text.len(), |f| f.over.positional_form = Some("Isolated".into()));
     let cs = compose_story(&d, sid, &ComposeOptions::default());
     let gs = &cs.frames[0].lines[0].glyphs;
@@ -1492,6 +1501,7 @@ fn cjk_fallback_follows_the_language() {
     // (face of the Latin letter, face of the ideograph)
     let faces_of = |language: &str| {
         let (mut d, sid, _) = doc_with("a直", Rect::new(36.0, 36.0, 300.0, 100.0), ParaAttrs::default());
+        d.settings.glyph_fallback = true;
         d.story_mut(sid).unwrap().format_chars(0..4, |f| f.over.language = Some(language.into()));
         let cs = compose_story(&d, sid, &ComposeOptions::default());
         let face_at = |byte: usize| all_lines(&cs).iter().flat_map(|l| l.glyphs.iter()).find(|g| g.byte == byte).map(|g| g.face).unwrap();
@@ -1504,6 +1514,49 @@ fn cjk_fallback_follows_the_language() {
     // Without a CJK language, the language-blind search.
     let (primary, han) = faces_of("English: USA");
     assert_eq!(Some(han.family.clone()), db.fallback_for('直', primary.id(), None).map(|f| f.family.clone()));
+}
+
+#[test]
+fn missing_glyphs_are_the_fonts_box_unless_fallback_is_on() {
+    use designcraft_fonts::testing::font_with;
+    // Some font draws 語 when fallback fonts are allowed (a system CJK font, or this stand-in).
+    designcraft_fonts::FontDb::global().add_font(font_with("DC Test Missing Glyph Helper", &['語']).unwrap());
+    let text = "a語";
+    let (mut d, sid, _) = doc_with(text, Rect::new(36.0, 36.0, 300.0, 100.0), ParaAttrs::default());
+    d.story_mut(sid).unwrap().format_chars(0..text.len(), |f| f.over.language = Some("Japanese".into()));
+    let glyph_at = |d: &Document, byte: usize| {
+        let cs = compose_story(d, sid, &ComposeOptions::default());
+        all_lines(&cs).iter().flat_map(|l| l.glyphs.iter()).find(|g| g.byte == byte).map(|g| (g.face, g.gid, g.adv)).unwrap()
+    };
+    assert!(!d.settings.glyph_fallback, "new documents draw missing glyphs as InDesign does");
+    let (face, gid, adv) = glyph_at(&d, 1);
+    assert_eq!((face.family.as_str(), gid), (designcraft_fonts::DEFAULT_FAMILY, 0), "Source Serif 4's .notdef");
+    assert!((adv - face.advance(0) * 12.0 / face.upem).abs() < 1e-6, "its advance: {adv}");
+    d.settings.glyph_fallback = true;
+    let (face, gid, _) = glyph_at(&d, 1);
+    assert_ne!(face.family, designcraft_fonts::DEFAULT_FAMILY);
+    assert_ne!(gid, 0, "a fallback font draws it");
+}
+
+#[test]
+fn kenten_missing_from_the_font_are_its_box_unless_fallback_is_on() {
+    use designcraft_fonts::testing::font_with;
+    // Some font draws the sesame dot when fallback fonts are allowed (a system font, or this one).
+    designcraft_fonts::FontDb::global().add_font(font_with("DC Test Kenten Helper", &['\u{FE45}']).unwrap());
+    let (mut d, sid, _) = doc_with("ab", Rect::new(36.0, 36.0, 300.0, 100.0), ParaAttrs::default());
+    let plain = compose_story(&d, sid, &ComposeOptions::default()).frames[0].lines[0].glyphs.len();
+    d.story_mut(sid).unwrap().format_chars(0..2, |f| f.over.kenten = Some(true));
+    let marks = |d: &Document| {
+        let cs = compose_story(d, sid, &ComposeOptions::default());
+        cs.frames[0].lines[0].glyphs[plain..].iter().map(|g| (g.face.family.clone(), g.gid)).collect::<Vec<_>>()
+    };
+    let missing = marks(&d);
+    assert_eq!(missing.len(), 2);
+    assert!(missing.iter().all(|(family, gid)| family == designcraft_fonts::DEFAULT_FAMILY && *gid == 0), "{missing:?}");
+    d.settings.glyph_fallback = true;
+    let drawn = marks(&d);
+    assert_eq!(drawn.len(), 2);
+    assert!(drawn.iter().all(|(family, gid)| family != designcraft_fonts::DEFAULT_FAMILY && *gid != 0), "{drawn:?}");
 }
 
 #[test]

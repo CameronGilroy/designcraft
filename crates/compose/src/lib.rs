@@ -584,7 +584,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
         }
         let sub_objects = sub.objects.clone();
         let mut table = StyleTable { styles: &mut styles_tab, missing: &mut missing_fonts };
-        let env = shape::TypeEnv { auto_leading: pp.auto_leading, adv: doc.settings.advanced_type };
+        let env = shape::TypeEnv { auto_leading: pp.auto_leading, adv: doc.settings.advanced_type, glyph_fallback: doc.settings.glyph_fallback };
         let mut sp = shape::shape_para(
             db,
             &doc.styles,
@@ -654,28 +654,30 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
                 );
             }
         }
+        // List labels take the default super/subscript settings.
+        let label_env = shape::TypeEnv { adv: Default::default(), ..env };
         match pp.list_type {
             designcraft_doc::ListType::Numbers if !pp.list_name.is_empty() => {
                 // A named list: carries on past other paragraphs (and from earlier stories).
                 let n = named_numbers.get(pi).copied().flatten().unwrap_or(1);
                 let label = format!("{}.{}", pp.number_style.format(n), pp.list_separator);
-                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
+                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, label_env, &mut table);
             }
             designcraft_doc::ListType::Numbers => {
                 list_counter = pp.start_at.map_or(list_counter + 1, |s| s.max(1));
                 let label = format!("{}.{}", pp.number_style.format(list_counter), pp.list_separator);
-                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
+                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, label_env, &mut table);
             }
             designcraft_doc::ListType::Bullets => {
                 let label = format!("{}{}", pp.bullet_char, pp.list_separator);
-                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
+                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, label_env, &mut table);
             }
             designcraft_doc::ListType::None => list_counter = 0,
         }
         if pi == 0
             && let Some(label) = &opts.label
         {
-            prepend_label(db, &mut sp.glyphs, label, prange.start, &base_chars, &pp, &mut table);
+            prepend_label(db, &mut sp.glyphs, label, prange.start, &base_chars, label_env, &mut table);
         }
         let mut glyphs = sp.glyphs;
         let bidi_text = bidi::paragraph_text(&mut glyphs, &story.text);
@@ -844,7 +846,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
                 let last = k + 1 == breaks.len();
                 let (mut placed, end_x, ratio) =
                     layout_line(&glyphs, s, e, b.hyphen, lx0, lx1, col.x0, &pp, &spacing, last, b.forced && !last, f.left_page, &bidi_info);
-                ruby::annotate(db, &styles_tab, &mut placed);
+                ruby::annotate(db, &styles_tab, &mut placed, doc.settings.glyph_fallback);
                 let range_end = if last { prange.end } else { glyphs.get(g0 + b.next).map(|g| g.byte).unwrap_or(prange.end) };
                 let range_start = glyphs.get(s).map(|g| g.byte).unwrap_or(prange.start).min(range_end);
                 let range_start = if line_no == 0 { prange.start } else { range_start };
@@ -1991,27 +1993,14 @@ fn prepend_label(
     label: &str,
     at: usize,
     base: &designcraft_doc::CharProps,
-    pp: &ParaProps,
+    env: shape::TypeEnv,
     table: &mut StyleTable<'_>,
 ) {
     // Shape the label as a tiny standalone story so it uses the paragraph's base character style.
     let mut tmp = Story::new(StoryId(0));
     tmp.insert(0, label);
     let styles = designcraft_doc::Styles::default();
-    let shaped = shape::shape_para(
-        db,
-        &styles,
-        &tmp,
-        0,
-        0..label.len(),
-        base,
-        shape::TypeEnv { auto_leading: pp.auto_leading, adv: Default::default() },
-        &SubstCtx::default(),
-        table,
-        &[],
-        &[],
-        &[],
-    );
+    let shaped = shape::shape_para(db, &styles, &tmp, 0, 0..label.len(), base, env, &SubstCtx::default(), table, &[], &[], &[]);
     let mut pre: Vec<Glyph> = shaped
         .glyphs
         .into_iter()

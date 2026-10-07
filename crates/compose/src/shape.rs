@@ -169,6 +169,13 @@ impl StyleTable<'_> {
         self.styles.push(rs);
         (self.styles.len() - 1) as u32
     }
+
+    /// `env` for text in run style `style`: a missing font's substitute draws the characters it
+    /// lacks from fallback fonts whatever the document's setting.
+    fn env_for(&self, env: TypeEnv, style: u32) -> TypeEnv {
+        let missing = self.styles.get(style as usize).is_some_and(|s| s.missing_font);
+        TypeEnv { glyph_fallback: env.glyph_fallback || missing, ..env }
+    }
 }
 
 /// Resolve and shape one paragraph.
@@ -246,6 +253,8 @@ pub(crate) fn shape_para(
     }
     for (a, b, props, fmt, resolved_base) in resolved {
         let style = table.intern(db, &props);
+        // A missing font's substitute stands in for the whole font: fallback fonts help it.
+        let auto_leading = table.env_for(auto_leading, style);
         let deleted = props.change == designcraft_doc::ChangeMark::Deleted;
         if deleted || (!props.conditions.is_empty() && props.conditions.iter().all(|c| sub.hidden_conditions.contains(c))) {
             // Hidden conditional text: zero-width, unbreakable, undrawn place-holders keep every
@@ -276,10 +285,12 @@ pub(crate) fn shape_para(
         rf.over.position = Some(sub.note_position);
         let rprops = styles.resolve_char(&resolved_base, &rf);
         let rstyle = table.intern(db, &rprops);
+        let renv = table.env_for(auto_leading, rstyle);
         let mut ef = fmt.clone();
         ef.over.position = Some(designcraft_doc::Position::Superscript);
         let eprops = styles.resolve_char(&resolved_base, &ef);
         let estyle = table.intern(db, &eprops);
+        let eenv = table.env_for(auto_leading, estyle);
         let mut k = a;
         for (i, m) in story.text[a..b].match_indices(is_ref) {
             let i = a + i;
@@ -288,9 +299,9 @@ pub(crate) fn shape_para(
             }
             let e = i + m.len();
             if m.starts_with(designcraft_doc::ENDNOTE_REF) {
-                shape_run(db, &story.text, i..e, &eprops, auto_leading, estyle, sub, &mut glyphs);
+                shape_run(db, &story.text, i..e, &eprops, eenv, estyle, sub, &mut glyphs);
             } else {
-                shape_run(db, &story.text, i..e, &rprops, auto_leading, rstyle, sub, &mut glyphs);
+                shape_run(db, &story.text, i..e, &rprops, renv, rstyle, sub, &mut glyphs);
             }
             k = e;
         }
@@ -478,8 +489,12 @@ fn shape_run_raw(
     out: &mut Vec<Glyph>,
 ) {
     let primary = db.face(&p.font_family, &p.font_style);
-    // The language picks the fallback for CJK characters the primary font lacks.
+    // The language picks the fallback for CJK characters the primary font lacks. Without
+    // fallback, the primary font sets them: the shaper gives its .notdef (glyph 0).
     let lang = designcraft_doc::language_tag(&p.language);
+    let fallback = |c: char| {
+        if auto_leading.glyph_fallback { db.fallback_for(c, primary.id(), lang).unwrap_or_else(|| primary.clone()) } else { primary.clone() }
+    };
     let strong = |c| match unicode_bidi::bidi_class(c) {
         unicode_bidi::BidiClass::AL => Some(true),
         unicode_bidi::BidiClass::L | unicode_bidi::BidiClass::R => Some(false),
@@ -515,8 +530,7 @@ fn shape_run_raw(
             if d != c {
                 flush(seg_start, i, &seg_face, out);
                 seg_start = i + c.len_utf8();
-                let face =
-                    if primary.covers(d) { primary.clone() } else { db.fallback_for(d, primary.id(), lang).unwrap_or_else(|| primary.clone()) };
+                let face = if primary.covers(d) { primary.clone() } else { fallback(d) };
                 shape_segment(db, text, i..i + c.len_utf8(), Some(d.encode_utf8(&mut [0; 4])), p, &face, auto_leading, style, out, sub.vertical);
                 continue;
             }
@@ -614,11 +628,7 @@ fn shape_run_raw(
             continue;
         }
         let covered = c.is_whitespace() || c.is_control() || c == SOFT_HYPHEN || primary.covers(c);
-        let face = if covered || is_mark(c) {
-            if is_mark(c) { seg_face.clone() } else { primary.clone() }
-        } else {
-            db.fallback_for(c, primary.id(), lang).unwrap_or_else(|| primary.clone())
-        };
+        let face = if covered || is_mark(c) { if is_mark(c) { seg_face.clone() } else { primary.clone() } } else { fallback(c) };
         if face.id() != seg_face.id() {
             flush(seg_start, i, &seg_face, out);
             seg_start = i;
@@ -724,6 +734,8 @@ fn metrics(face: &FontFace, p: &CharProps, auto_leading: TypeEnv) -> (f64, f64, 
 pub struct TypeEnv {
     pub auto_leading: f64,
     pub adv: designcraft_doc::AdvancedType,
+    /// Characters the font lacks are drawn from fallback fonts (else as its .notdef glyph).
+    pub glyph_fallback: bool,
 }
 
 /// Synthesised super/subscript: size and shift from Advanced Type (percent of the font size).

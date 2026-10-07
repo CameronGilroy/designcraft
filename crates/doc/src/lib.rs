@@ -340,6 +340,12 @@ pub struct DocSettings {
     pub overprint_black: bool,
     /// Type › Track Changes: edits are recorded as inserted / deleted text.
     pub track_changes: bool,
+    /// Preferences › Composition › Draw Missing Glyphs from Fallback Fonts: characters the
+    /// applied font lacks are drawn from other fonts. Off (InDesign's behaviour, and new
+    /// documents'), they are drawn as the font's missing-glyph box and Preflight lists them.
+    /// Documents saved before the setting existed read as on, the way they were drawn.
+    #[serde(default = "yes")]
+    pub glyph_fallback: bool,
 }
 
 impl Default for DocSettings {
@@ -371,6 +377,7 @@ impl Default for DocSettings {
             blend_space: BlendSpace::Cmyk,
             overprint_black: true,
             track_changes: false,
+            glyph_fallback: false,
         }
     }
 }

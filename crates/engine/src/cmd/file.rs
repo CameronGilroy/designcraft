@@ -829,6 +829,8 @@ mod document_fonts_tests {
         let mut s = Session::new();
         open(&mut s, &a.join("A.designcraft"));
         open(&mut s, &b.join("B.designcraft"));
+        // Fallback fonts for the `a` B's font lacks: never A's font.
+        s.execute("document.preferences", &json!({"glyphFallback": true})).unwrap();
         let in_b = glyph_faces(&s);
         s.execute("file.activate", &json!({"index": 0})).unwrap();
         let in_a = glyph_faces(&s);

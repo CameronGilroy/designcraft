@@ -1079,19 +1079,43 @@ impl FontDb {
         false
     }
 
-    /// Glyph outline in font units, y-down (flipped), cached per (face, glyph).
+    /// The box drawn for `face`'s missing glyph (.notdef) when the font's own has no outline, in
+    /// font units, y-down: a hollow rectangle across the glyph's advance, cap height tall. `None`
+    /// when the font draws its own.
+    pub fn missing_box(&self, face: &FontFace) -> Option<BezPath> {
+        if !font_outline(face, 0).elements().is_empty() {
+            return None;
+        }
+        let adv = Some(face.advance(0)).filter(|a| a.is_finite() && *a > 0.0).unwrap_or(face.upem * 0.5);
+        let top = Some(face.cap_height).filter(|h| h.is_finite() && *h > 0.0).unwrap_or(face.upem * 0.7);
+        let outer = kurbo::Rect::new(adv * 0.1, -top, adv * 0.9, 0.0);
+        let t = (face.upem * 0.05).min(outer.width() / 4.0).min(top / 4.0);
+        let inner = outer.inset(-t);
+        let mut p = BezPath::new();
+        // The inner rectangle runs the other way round, so filling leaves it empty.
+        p.move_to((outer.x0, outer.y0));
+        p.line_to((outer.x1, outer.y0));
+        p.line_to((outer.x1, outer.y1));
+        p.line_to((outer.x0, outer.y1));
+        p.close_path();
+        p.move_to((inner.x0, inner.y0));
+        p.line_to((inner.x0, inner.y1));
+        p.line_to((inner.x1, inner.y1));
+        p.line_to((inner.x1, inner.y0));
+        p.close_path();
+        Some(p)
+    }
+
+    /// Glyph outline in font units, y-down (flipped), cached per (face, glyph). A `.notdef`
+    /// without an outline is drawn as [`FontDb::missing_box`], so a missing character never
+    /// disappears.
     pub fn outline(&self, face: &FontFace, gid: u32) -> Arc<BezPath> {
         let key = (face.id, gid);
         if let Some(p) = self.outlines.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
             return p.clone();
         }
-        let mut pen = FlipPen(BezPath::new());
-        if let Some(f) = face.skrifa()
-            && let Some(g) = f.outline_glyphs().get(GlyphId::new(gid))
-        {
-            let _ = g.draw(DrawSettings::unhinted(Size::unscaled(), face.location()), &mut pen);
-        }
-        let p = Arc::new(pen.0);
+        let drawn = font_outline(face, gid);
+        let p = Arc::new(if gid == 0 && drawn.elements().is_empty() { self.missing_box(face).unwrap_or(drawn) } else { drawn });
         let mut cache = self.outlines.lock().unwrap_or_else(|e| e.into_inner());
         if cache.len() >= OUTLINE_CACHE_MAX {
             cache.clear();
@@ -1306,6 +1330,17 @@ fn too_large() -> String {
 #[cfg(not(target_arch = "wasm32"))]
 fn over_total() -> String {
     format!("over the {} MB the folder's fonts may take in all", MAX_DOCUMENT_FONTS_TOTAL >> 20)
+}
+
+/// Glyph `gid`'s outline as the font draws it, in font units, y-down (flipped).
+fn font_outline(face: &FontFace, gid: u32) -> BezPath {
+    let mut pen = FlipPen(BezPath::new());
+    if let Some(f) = face.skrifa()
+        && let Some(g) = f.outline_glyphs().get(GlyphId::new(gid))
+    {
+        let _ = g.draw(DrawSettings::unhinted(Size::unscaled(), face.location()), &mut pen);
+    }
+    pen.0
 }
 
 struct FlipPen(BezPath);

@@ -318,6 +318,7 @@ mod tests {
         std::fs::write(fonts.join("restricted.otf"), with_fs_type(font_with(RESTRICTED, &[restricted]).unwrap(), 0x0002).unwrap()).unwrap();
         let mut s = Session::new();
         s.execute("file.new", &json!({})).unwrap();
+        s.execute("document.preferences", &json!({"glyphFallback": true})).unwrap();
         let text = format!("N{helped}{restricted}");
         let r = s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": text})).unwrap();
         s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": text.len()})).unwrap();

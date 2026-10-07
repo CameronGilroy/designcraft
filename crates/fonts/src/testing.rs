@@ -198,3 +198,15 @@ pub fn with_table_u16(mut font: Vec<u8>, tag: &[u8; 4], at: usize, value: u16) -
     font.get_mut(offset + at..offset + at + 2)?.copy_from_slice(&value.to_be_bytes());
     Some(font)
 }
+
+/// `font` (a TrueType font) with an empty `.notdef`: glyph 0's `loca` entry starts where it ends,
+/// so the glyph has no outline. `None` if the font has no `head`/`loca` tables.
+pub fn with_empty_notdef(mut font: Vec<u8>) -> Option<Vec<u8>> {
+    let (_, head, _) = table(&font, b"head")?;
+    let long = font.get(head + 50..head + 52)? != [0, 0];
+    let (_, loca, _) = table(&font, b"loca")?;
+    let width = if long { 4 } else { 2 };
+    let end = font.get(loca + width..loca + 2 * width)?.to_vec();
+    font.get_mut(loca..loca + width)?.copy_from_slice(&end);
+    Some(font)
+}

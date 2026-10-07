@@ -435,6 +435,49 @@ mod tests {
     }
 
     #[test]
+    fn a_notdef_without_an_outline_is_drawn_as_a_box() {
+        let db = FontDb::with_font_dirs(Vec::new());
+        db.set_system_fallback(false);
+        let font = testing::font_with("DC Test Empty Notdef", &['a']).unwrap();
+        db.add_font(testing::with_empty_notdef(font).unwrap());
+        let face = db.face("DC Test Empty Notdef", "Regular");
+        assert!(face.skrifa().unwrap().outline_glyphs().get(skrifa::GlyphId::NOTDEF).is_some_and(|g| {
+            let mut pen = kurbo::BezPath::new();
+            let _ = g.draw(skrifa::outline::DrawSettings::unhinted(skrifa::instance::Size::unscaled(), face.location()), &mut BezPen(&mut pen));
+            pen.elements().is_empty()
+        }));
+        // The box spans the glyph's advance, above the baseline (outlines are y-down).
+        let b = kurbo::Shape::bounding_box(&*db.outline(&face, 0));
+        assert!(b.width() > 0.0 && b.width() <= face.advance(0), "{b:?}");
+        assert!(b.y0 < 0.0 && b.y1 <= 0.0, "{b:?}");
+        assert!(db.missing_box(&face).is_some());
+        // A font's own .notdef stays as drawn.
+        let serif = db.face(DEFAULT_FAMILY, "Regular");
+        assert!(db.missing_box(&serif).is_none());
+        assert!(!db.outline(&serif, 0).elements().is_empty());
+    }
+
+    struct BezPen<'a>(&'a mut kurbo::BezPath);
+
+    impl skrifa::outline::OutlinePen for BezPen<'_> {
+        fn move_to(&mut self, x: f32, y: f32) {
+            self.0.move_to((x as f64, y as f64));
+        }
+        fn line_to(&mut self, x: f32, y: f32) {
+            self.0.line_to((x as f64, y as f64));
+        }
+        fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+            self.0.quad_to((cx0 as f64, cy0 as f64), (x as f64, y as f64));
+        }
+        fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+            self.0.curve_to((cx0 as f64, cy0 as f64), (cx1 as f64, cy1 as f64), (x as f64, y as f64));
+        }
+        fn close(&mut self) {
+            self.0.close_path();
+        }
+    }
+
+    #[test]
     fn craft_fonts_japanese_faces_cover_japanese_and_have_vertical_forms() {
         if CRAFT_FONTS.is_empty() {
             eprintln!("skipped: built without craft-fonts (set CRAFT_FONTS_DIR to a checkout)");
