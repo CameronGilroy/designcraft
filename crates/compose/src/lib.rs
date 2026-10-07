@@ -420,7 +420,10 @@ const DEFAULT_TAB: f64 = 36.0;
 
 /// Compose `story` into `frames`.
 pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &ComposeOptions) -> ComposedStory {
-    let db = FontDb::global();
+    compose_with_db(doc, story, frames, opts, FontDb::global())
+}
+
+fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &ComposeOptions, db: &FontDb) -> ComposedStory {
     let mut out = ComposedStory { story: story.id, rev: story.rev, text_len: story.text.len(), ..Default::default() };
     let mut styles_tab: Vec<RunStyle> = Vec::new();
     let mut missing_fonts: HashMap<String, bool> = HashMap::new();

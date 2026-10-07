@@ -871,6 +871,19 @@ fn carets_in_right_to_left_text_follow_the_drawing() {
 
 #[test]
 fn kashidas_stretch_justified_arabic_before_spaces() {
+    check_kashida_justification(FontDb::global(), false);
+}
+
+#[test]
+fn kashidas_without_tatweel_fall_back_to_spaces() {
+    // A private database excludes host fonts without mutating the global database
+    // used by parallel tests. Bundled Latin/Japanese fonts have no tatweel.
+    let db = FontDb::with_font_dirs(Vec::new());
+    db.set_system_fallback(false);
+    check_kashida_justification(&db, true);
+}
+
+fn check_kashida_justification(db: &FontDb, require_fallback: bool) {
     let mut d = Document::new(&designcraft_doc::build::NewDocument::default());
     let lid = d.default_layer();
     let text = "بسم الله الرحمن الرحيم الحمد لله رب العالمين الرحمن الرحيم مالك يوم الدين اياك نعبد واياك نستعين";
@@ -879,14 +892,28 @@ fn kashidas_stretch_justified_arabic_before_spaces() {
         ..Default::default()
     };
     let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 260.0, 400.0), lid, text, pf).unwrap();
-    let first = |d: &Document| compose_story(d, sid, &ComposeOptions::default()).frames[0].lines[0].clone();
+    let composed = |d: &Document| compose_with_db(d, d.story(sid).unwrap(), &frame_specs(d, sid), &ComposeOptions::default(), db);
+    let first = |d: &Document| composed(d).frames[0].lines[0].clone();
     let with = first(&d);
-    assert!(compose_story(&d, sid, &ComposeOptions::default()).frames[0].lines.len() > 1);
+    assert!(composed(&d).frames[0].lines.len() > 1);
+    let lacks_tatweel = with.glyphs.iter().all(|g| g.face.glyph_for('\u{0640}') == 0);
+    if require_fallback {
+        assert!(lacks_tatweel);
+    }
     // Spaces keep (about) their natural width; the joins took the extra length.
     let space_w = |l: &Line| l.glyphs.iter().filter(|g| g.len > 0 && text[g.byte..].starts_with(' ')).map(|g| g.adv).fold(0.0, f64::max);
     d.story_mut(sid).unwrap().paras[0].para.kashidas = Some(false);
     let without = first(&d);
-    assert!(space_w(&with) < space_w(&without) - 0.5, "{} {}", space_w(&with), space_w(&without));
+    if lacks_tatweel {
+        // No legal elongation can be drawn: enabling kashidas must preserve
+        // the same space justification as disabling them.
+        assert_eq!(with.glyphs.len(), without.glyphs.len());
+        for (a, b) in with.glyphs.iter().zip(&without.glyphs) {
+            assert_eq!((a.byte, a.gid, a.x, a.adv), (b.byte, b.gid, b.x, b.adv));
+        }
+    } else {
+        assert!(space_w(&with) < space_w(&without) - 0.5, "{} {}", space_w(&with), space_w(&without));
+    }
     // Both fill the measure: the line's (visually last) glyph reaches the left edge either way.
     let left = |l: &Line| l.glyphs.iter().filter(|g| g.len > 0).map(|g| g.x).fold(f64::MAX, f64::min);
     assert!((left(&with) - left(&without)).abs() < 1.0, "{} {}", left(&with), left(&without));
