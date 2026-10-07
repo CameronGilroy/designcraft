@@ -91,6 +91,20 @@ pub struct DocState {
     /// Editing parent spreads (Pages panel double-click on a parent).
     pub editing_parents: bool,
     pub uid: u64,
+    /// The fonts the document brought (`doc.font_scope`), found while it is open.
+    pub fonts: Option<Arc<FontScope>>,
+}
+
+/// A document's font scope ([`designcraft_fonts::FontDb::load_document_fonts`]): its fonts are
+/// found until the document's state (with every copy of it) is gone — closed, reverted, or its
+/// session ended.
+#[derive(Debug)]
+pub struct FontScope(pub u32);
+
+impl Drop for FontScope {
+    fn drop(&mut self) {
+        designcraft_fonts::FontDb::global().close_scope(self.0);
+    }
 }
 
 static NEXT_UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -111,6 +125,7 @@ impl DocState {
             interaction: None,
             editing_parents: false,
             uid: NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            fonts: None,
         }
     }
     pub fn is_dirty(&self) -> bool {

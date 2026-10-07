@@ -2239,6 +2239,7 @@ impl<'r> Importer<'r> {
             created: designcraft_doc::vars::now(),
             modified: 0,
             next_id: self.next_id,
+            font_scope: 0,
         };
         Ok(d)
     }

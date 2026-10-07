@@ -30,7 +30,7 @@ use designcraft_doc::{
     Align, Composer, Document, FirstBaseline, GridAlign, ItemId, ParaProps, SpanColumns, StartParagraph, Story, StoryId, TabAlign, TextFrameOptions,
     VerticalJustification, WrapMode, story,
 };
-use designcraft_fonts::FontDb;
+use designcraft_fonts::{FontDb, ScopedFonts};
 use designcraft_geom::{Point, Rect};
 
 use crate::breaker::{Break, Spacing};
@@ -443,6 +443,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
 }
 
 fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &ComposeOptions, db: &FontDb) -> ComposedStory {
+    let db = &db.scoped(doc.font_scope);
     let mut out = ComposedStory { story: story.id, rev: story.rev, text_len: story.text.len(), ..Default::default() };
     let mut styles_tab: Vec<RunStyle> = Vec::new();
     let mut missing_fonts: HashMap<String, bool> = HashMap::new();
@@ -843,7 +844,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
                 let last = k + 1 == breaks.len();
                 let (mut placed, end_x, ratio) =
                     layout_line(&glyphs, s, e, b.hyphen, lx0, lx1, col.x0, &pp, &spacing, last, b.forced && !last, f.left_page, &bidi_info);
-                ruby::annotate(&styles_tab, &mut placed);
+                ruby::annotate(db, &styles_tab, &mut placed);
                 let range_end = if last { prange.end } else { glyphs.get(g0 + b.next).map(|g| g.byte).unwrap_or(prange.end) };
                 let range_start = glyphs.get(s).map(|g| g.byte).unwrap_or(prange.start).min(range_end);
                 let range_start = if line_no == 0 { prange.start } else { range_start };
@@ -1427,13 +1428,12 @@ fn line_metrics(
     s: usize,
     base_leading: f64,
     base_size: f64,
-    db: &FontDb,
+    db: &ScopedFonts<'_>,
     base: &designcraft_doc::CharProps,
 ) -> (f64, f64, f64) {
-    let _ = db;
     let src: &[Glyph] = if line.is_empty() { all.get(s..(s + 1).min(all.len())).unwrap_or(&[]) } else { line };
     if src.is_empty() {
-        let face = FontDb::global().face(&base.font_family, &base.font_style);
+        let face = db.face(&base.font_family, &base.font_style);
         let k = base_size / face.upem;
         return (face.ascent * k, face.descent * k, base_leading);
     }
@@ -1986,7 +1986,7 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
 }
 
 fn prepend_label(
-    db: &FontDb,
+    db: &ScopedFonts<'_>,
     glyphs: &mut Vec<Glyph>,
     label: &str,
     at: usize,

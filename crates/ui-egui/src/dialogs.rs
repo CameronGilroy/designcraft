@@ -1963,11 +1963,12 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
                 }
             }
             "chars" => {
+                let fonts = crate::panels::fonts(app);
                 egui::Grid::new("psc").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     crate::rtl::label(ui, crate::i18n::tr(&app.ui.language, "Font Family:"));
                     let fam = cur(d, "c.fontFamily", &cv["fontFamily"]).as_str().unwrap_or("").to_string();
                     egui::ComboBox::from_id_salt("psfam").selected_text(&fam).width(200.0).show_ui(ui, |ui| {
-                        for f in designcraft_fonts::FontDb::global().families() {
+                        for f in fonts.families() {
                             if ui.selectable_label(f == fam, &f).clicked() {
                                 d.fields.insert("c.fontFamily".into(), json!(f));
                             }
@@ -1977,7 +1978,7 @@ fn paragraph_style_options(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialo
                     crate::rtl::label(ui, crate::i18n::tr(&app.ui.language, "Font Style:"));
                     let sty = cur(d, "c.fontStyle", &cv["fontStyle"]).as_str().unwrap_or("").to_string();
                     egui::ComboBox::from_id_salt("pssty").selected_text(&sty).width(200.0).show_ui(ui, |ui| {
-                        for s in designcraft_fonts::FontDb::global().styles(&fam) {
+                        for s in fonts.styles(&fam) {
                             if ui.selectable_label(s == sty, &s).clicked() {
                                 d.fields.insert("c.fontStyle".into(), json!(s));
                             }
@@ -2617,7 +2618,7 @@ fn find_font(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
     });
     ui.add_space(8.0);
     crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "Replace With")).font(semibold(12.0)));
-    let db = designcraft_fonts::FontDb::global();
+    let db = crate::panels::fonts(app);
     let families = db.families();
     let fam_opts: Vec<(&str, &str)> = families.iter().map(|f| (f.as_str(), f.as_str())).collect();
     egui::Grid::new("ff_to").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {

@@ -1506,6 +1506,66 @@ fn cjk_fallback_follows_the_language() {
     assert_eq!(Some(han.family.clone()), db.fallback_for('直', primary.id(), None).map(|f| f.family.clone()));
 }
 
+#[test]
+fn each_document_shapes_words_in_its_own_fonts() {
+    use designcraft_fonts::testing::font_with_glyph;
+    const FAMILY: &str = "DocFont Word Cache";
+    // Two documents' fonts of one name: the same words, drawn as `X` in one and `O` in the other.
+    let root = std::env::temp_dir().join(format!("dc-compose-docfonts-{}", std::process::id()));
+    let mut scopes = Vec::new();
+    for (name, glyph) in [("x", 'X'), ("o", 'O')] {
+        let folder = root.join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("word.ttf"), font_with_glyph(FAMILY, &['a', 'b', ' '], glyph).unwrap()).unwrap();
+        scopes.push((designcraft_fonts::FontDb::global().load_document_fonts(&folder).scope, glyph));
+    }
+    let text = "ab ab ab ab";
+    let mut faces = Vec::new();
+    for (scope, glyph) in scopes {
+        let (mut d, sid, _) = doc_with(text, Rect::new(36.0, 36.0, 300.0, 100.0), ParaAttrs::default());
+        d.font_scope = scope;
+        d.story_mut(sid).unwrap().format_chars(0..text.len(), |f| f.over.font_family = Some(FAMILY.into()));
+        let cs = compose_story(&d, sid, &ComposeOptions::default());
+        let glyphs: Vec<&PlacedGlyph> =
+            all_lines(&cs).into_iter().flat_map(|l| l.glyphs.iter()).filter(|g| text[g.byte..].starts_with('a')).collect();
+        assert_eq!(glyphs.len(), 4);
+        let face = glyphs[0].face;
+        let drawn = designcraft_fonts::FontDb::global().face(designcraft_fonts::FALLBACK_FAMILY, "Regular").glyph_for(glyph);
+        assert!(glyphs.iter().all(|g| g.face == face && g.gid == drawn), "scope {scope}: {glyph}");
+        faces.push(face);
+    }
+    assert!(faces[0] != faces[1] && faces.iter().all(|f| f.family == FAMILY));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn composite_fonts_draw_from_the_documents_fonts() {
+    use designcraft_doc::cjk::{CompositeFont, CompositeFontEntry};
+    use designcraft_fonts::testing::font_with_glyph;
+    const FAMILY: &str = "DocFont Composite Member";
+    // A composite font whose digits come from a font only the document has.
+    let folder = std::env::temp_dir().join(format!("dc-compose-composite-docfont-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("digits.ttf"), font_with_glyph(FAMILY, &['1'], 'X').unwrap()).unwrap();
+    let scope = FontDb::global().load_document_fonts(&folder).scope;
+    let (mut d, sid, _) = doc_with("A1B", Rect::new(0.0, 0.0, 300.0, 100.0), ParaAttrs::default());
+    d.font_scope = scope;
+    std::sync::Arc::make_mut(&mut d.styles).composite_fonts.push(CompositeFont {
+        name: "Mixed".into(),
+        entries: vec![
+            CompositeFontEntry { family: designcraft_fonts::DEFAULT_FAMILY.into(), ..Default::default() },
+            CompositeFontEntry { characters: "0123456789".into(), family: FAMILY.into(), ..Default::default() },
+        ],
+    });
+    d.story_mut(sid).unwrap().format_chars(0..3, |f| f.over.font_family = Some("CompositeFont/Mixed".into()));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let digit = cs.frames[0].lines[0].glyphs.iter().find(|g| g.byte == 1).unwrap();
+    assert_eq!(digit.face.family, FAMILY);
+    assert_ne!(digit.gid, 0);
+    assert!(!cs.styles.iter().any(|s| s.missing_font), "the document's font isn't missing");
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 const KO_WORDS: &str = "한국어 문장은 띄어쓰기 단위로 줄을 바꿉니다 한국어 문장은 띄어쓰기 단위로 줄을 바꿉니다";
 const KO_HANJA: &str = "大韓民國 憲法은 國民의 權利를 保障한다 大韓民國 憲法은 國民의 權利를 保障한다";
 const KO_PUNCT: &str = "가나다라마。바사아자차」카타파하가、나다라마바。사아자차카」타파하가나、다라마바사。아자차카타」파하가나다、";

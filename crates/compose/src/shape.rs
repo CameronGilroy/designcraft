@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use designcraft_doc::{Capitalization, CharProps, Kerning, Leading, Position, Story, Styles, story};
-use designcraft_fonts::{FaceRef, Feature, FontDb, FontFace, ShapedGlyph, feature};
+use designcraft_fonts::{FaceRef, Feature, FontFace, ScopedFonts, ShapedGlyph, feature};
 
 use crate::RunStyle;
 
@@ -131,7 +131,7 @@ pub(crate) struct StyleTable<'a> {
 }
 
 impl StyleTable<'_> {
-    fn intern(&mut self, p: &CharProps) -> u32 {
+    fn intern(&mut self, db: &ScopedFonts<'_>, p: &CharProps) -> u32 {
         let rs = RunStyle {
             fill: p.fill.clone(),
             fill_tint: p.fill_tint,
@@ -154,10 +154,7 @@ impl StyleTable<'_> {
             },
             skew: p.skew,
             size: p.size,
-            missing_font: *self
-                .missing
-                .entry(p.font_family.clone())
-                .or_insert_with(|| !p.font_family.is_empty() && !designcraft_fonts::FontDb::global().has_family(&p.font_family)),
+            missing_font: *self.missing.entry(p.font_family.clone()).or_insert_with(|| !p.font_family.is_empty() && !db.has_family(&p.font_family)),
             custom_tracking: p.tracking.abs() > 1e-9 || matches!(p.kerning, designcraft_doc::Kerning::Manual(_)),
             condition: p.conditions.first().cloned(),
             inserted: p.change == designcraft_doc::ChangeMark::Inserted,
@@ -176,7 +173,7 @@ impl StyleTable<'_> {
 
 /// Resolve and shape one paragraph.
 pub(crate) fn shape_para(
-    db: &FontDb,
+    db: &ScopedFonts<'_>,
     styles: &Styles,
     story: &Story,
     pi: usize,
@@ -237,18 +234,18 @@ pub(crate) fn shape_para(
             for (offset, c) in story.text.get(a..b).unwrap_or("").char_indices() {
                 let entry = font.entry(c);
                 if entry != selected && a + offset > start {
-                    resolved.push((start, a + offset, composite_props(&props, selected), fmt, para_chars.clone()));
+                    resolved.push((start, a + offset, composite_props(db, &props, selected), fmt, para_chars.clone()));
                     start = a + offset;
                 }
                 selected = entry;
             }
-            resolved.push((start, b, composite_props(&props, selected), fmt, para_chars.clone()));
+            resolved.push((start, b, composite_props(db, &props, selected), fmt, para_chars.clone()));
         } else {
             resolved.push((a, b, props, fmt, para_chars.clone()));
         }
     }
     for (a, b, props, fmt, resolved_base) in resolved {
-        let style = table.intern(&props);
+        let style = table.intern(db, &props);
         let deleted = props.change == designcraft_doc::ChangeMark::Deleted;
         if deleted || (!props.conditions.is_empty() && props.conditions.iter().all(|c| sub.hidden_conditions.contains(c))) {
             // Hidden conditional text: zero-width, unbreakable, undrawn place-holders keep every
@@ -278,11 +275,11 @@ pub(crate) fn shape_para(
         }
         rf.over.position = Some(sub.note_position);
         let rprops = styles.resolve_char(&resolved_base, &rf);
-        let rstyle = table.intern(&rprops);
+        let rstyle = table.intern(db, &rprops);
         let mut ef = fmt.clone();
         ef.over.position = Some(designcraft_doc::Position::Superscript);
         let eprops = styles.resolve_char(&resolved_base, &ef);
-        let estyle = table.intern(&eprops);
+        let estyle = table.intern(db, &eprops);
         let mut k = a;
         for (i, m) in story.text[a..b].match_indices(is_ref) {
             let i = a + i;
@@ -395,7 +392,7 @@ fn is_mark(c: char) -> bool {
     unicode_bidi::bidi_class(c) == unicode_bidi::BidiClass::NSM || matches!(c, '\u{200C}' | '\u{200D}')
 }
 
-fn composite_props(base: &CharProps, entry: Option<&designcraft_doc::cjk::CompositeFontEntry>) -> CharProps {
+fn composite_props(db: &ScopedFonts<'_>, base: &CharProps, entry: Option<&designcraft_doc::cjk::CompositeFontEntry>) -> CharProps {
     let mut p = base.clone();
     if let Some(e) = entry {
         p.font_family.clone_from(&e.family);
@@ -405,7 +402,7 @@ fn composite_props(base: &CharProps, entry: Option<&designcraft_doc::cjk::Compos
         p.v_scale *= e.vertical_scale.clamp(0.01, 100.0);
         p.baseline_shift += base.size * e.baseline_shift;
         if e.scale_option {
-            let face = FontDb::global().face(&p.font_family, &p.font_style);
+            let face = db.face(&p.font_family, &p.font_style);
             let (asc, desc) = face.vertical_metrics();
             let center = (asc - desc) / (2.0 * (asc + desc).max(1e-9));
             p.baseline_shift += (base.size * base.v_scale - p.size * p.v_scale) * center;
@@ -415,7 +412,16 @@ fn composite_props(base: &CharProps, entry: Option<&designcraft_doc::cjk::Compos
 }
 
 #[allow(clippy::too_many_arguments)]
-fn shape_run(db: &FontDb, text: &str, range: std::ops::Range<usize>, p: &CharProps, env: TypeEnv, style: u32, sub: &SubstCtx, out: &mut Vec<Glyph>) {
+fn shape_run(
+    db: &ScopedFonts<'_>,
+    text: &str,
+    range: std::ops::Range<usize>,
+    p: &CharProps,
+    env: TypeEnv,
+    style: u32,
+    sub: &SubstCtx,
+    out: &mut Vec<Glyph>,
+) {
     let start = out.len();
     shape_run_raw(db, text, range, p, env, style, sub, out);
     let run = &mut out[start..];
@@ -462,7 +468,7 @@ fn shape_run(db: &FontDb, text: &str, range: std::ops::Range<usize>, p: &CharPro
 
 #[allow(clippy::too_many_arguments)]
 fn shape_run_raw(
-    db: &FontDb,
+    db: &ScopedFonts<'_>,
     text: &str,
     range: std::ops::Range<usize>,
     p: &CharProps,
@@ -774,7 +780,7 @@ fn control_glyph(face: &Arc<FontFace>, p: &CharProps, auto_leading: TypeEnv, sty
 
 #[allow(clippy::too_many_arguments)]
 fn shape_segment(
-    db: &FontDb,
+    db: &ScopedFonts<'_>,
     text: &str,
     range: std::ops::Range<usize>,
     replacement: Option<&str>,

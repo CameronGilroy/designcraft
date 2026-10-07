@@ -1,6 +1,7 @@
 //! Ruby and kenten: small glyphs set over laid-out text (to its right in vertical frames, where
 //! the frame's turn carries "above" there). They don't change line breaks or leading.
 
+use designcraft_fonts::ScopedFonts;
 use designcraft_geom::Shape as _;
 
 use crate::{PlacedGlyph, RunStyle, upright_in_vertical};
@@ -40,12 +41,12 @@ fn set(base: &PlacedGlyph, text: &str, size: f64, base_size: f64) -> (Vec<Placed
 }
 
 /// A sesame dot (or a bullet, when the font has none) centred over `b`.
-fn kenten(b: &PlacedGlyph, size: f64, character: &str) -> Vec<PlacedGlyph> {
+fn kenten(db: &ScopedFonts<'_>, b: &PlacedGlyph, size: f64, character: &str) -> Vec<PlacedGlyph> {
     let character = if character.is_empty() { "\u{FE45}" } else { character };
     let mut base = b.clone();
     if let Some(c) = character.chars().next()
         && !base.face.covers(c)
-        && let Some(face) = designcraft_fonts::FontDb::global().fallback_for(c, base.face.id(), None)
+        && let Some(face) = db.fallback_for(c, base.face.id(), None)
     {
         base.face = designcraft_fonts::FaceRef::of(&face);
     }
@@ -68,7 +69,7 @@ fn kenten(b: &PlacedGlyph, size: f64, character: &str) -> Vec<PlacedGlyph> {
 }
 
 /// Add the ruby and kenten of a laid-out line's glyphs.
-pub(crate) fn annotate(styles: &[RunStyle], line: &mut Vec<PlacedGlyph>) {
+pub(crate) fn annotate(db: &ScopedFonts<'_>, styles: &[RunStyle], line: &mut Vec<PlacedGlyph>) {
     let style = |g: &PlacedGlyph| styles.get(g.style as usize);
     if !line.iter().any(|g| style(g).is_some_and(|s| s.ruby.is_some() || s.kenten)) {
         return;
@@ -82,7 +83,7 @@ pub(crate) fn annotate(styles: &[RunStyle], line: &mut Vec<PlacedGlyph>) {
             continue;
         };
         if st.kenten && g.adv > 0.0 {
-            extra.extend(kenten(g, st.size, &st.kenten_character));
+            extra.extend(kenten(db, g, st.size, &st.kenten_character));
         }
         let Some(text) = &st.ruby else {
             i += 1;
@@ -114,7 +115,7 @@ pub(crate) fn annotate(styles: &[RunStyle], line: &mut Vec<PlacedGlyph>) {
         extra.extend(glyphs);
         // Kenten on the rest of the group.
         for b in line[i + 1..j].iter().filter(|b| st.kenten && b.len > 0 && b.adv > 0.0) {
-            extra.extend(kenten(b, st.size, &st.kenten_character));
+            extra.extend(kenten(db, b, st.size, &st.kenten_character));
         }
         i = j;
     }

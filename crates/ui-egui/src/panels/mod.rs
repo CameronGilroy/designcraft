@@ -102,6 +102,17 @@ pub fn sel_info(app: &DesignApp) -> Option<SelInfo> {
 }
 
 /// Resolved attributes at the text selection (or the selected text frames).
+/// The fonts the active document sees: its own (its `Document Fonts` folder) ahead of the shared
+/// ones.
+pub fn fonts(app: &DesignApp) -> designcraft_fonts::ScopedFonts<'static> {
+    designcraft_fonts::FontDb::global().scoped(font_scope(app))
+}
+
+/// The active document's font scope (0 without a document or fonts of its own).
+pub fn font_scope(app: &DesignApp) -> u32 {
+    app.session.active().map_or(0, |d| d.doc.font_scope)
+}
+
 pub fn text_attrs(app: &mut DesignApp) -> Option<Value> {
     let v = app.session.execute("type.selectionAttrs", &json!({})).ok()?;
     if v.is_null() { None } else { Some(serde_json::to_value(v).ok()?) }
@@ -189,7 +200,8 @@ fn paint_star(p: &egui::Painter, c: egui::Pos2, r: f32, filled: bool, color: egu
 /// The Font menu: search, favourites (★, Show Favorites Only), and each family's name shown in
 /// that family.
 pub fn font_family_picker(app: &mut DesignApp, ui: &mut egui::Ui, current: &str, width: f32) {
-    let fams = designcraft_fonts::FontDb::global().families();
+    let (fonts, scope) = (fonts(app), font_scope(app));
+    let fams = fonts.families();
     let mut favs = app.session.prefs.favorite_fonts.clone();
     let mut pick = None;
     let mut favs_changed = false;
@@ -239,10 +251,10 @@ pub fn font_family_picker(app: &mut DesignApp, ui: &mut egui::Ui, current: &str,
                 }
                 ui.painter().text(row.min + egui::vec2(22.0, 12.0), egui::Align2::LEFT_CENTER, f, egui::FontId::proportional(12.0), t.text);
                 // The name in its own face (rendered once per family and scale).
-                let key = egui::Id::new(("font_preview", f, (ppp * 100.0) as u32, t.text.to_array()));
+                let key = egui::Id::new(("font_preview", f, scope, (ppp * 100.0) as u32, t.text.to_array()));
                 let tex: Option<egui::TextureHandle> = ui.data(|d| d.get_temp(key));
                 let tex = tex.unwrap_or_else(|| {
-                    let img = designcraft_render::glyphs::text_line(f, "Regular", "Sample", (18.0 * ppp) as u32, t.text.to_array());
+                    let img = designcraft_render::glyphs::text_line(&fonts, f, "Regular", "Sample", (18.0 * ppp) as u32, t.text.to_array());
                     let ci = egui::ColorImage::from_rgba_premultiplied([img.width as usize, img.height as usize], &img.pixels);
                     let h = ui.ctx().load_texture(format!("font_preview_{f}"), ci, egui::TextureOptions::LINEAR);
                     ui.data_mut(|d| d.insert_temp(key, h.clone()));
@@ -267,14 +279,14 @@ pub fn font_family_picker(app: &mut DesignApp, ui: &mut egui::Ui, current: &str,
         let _ = app.run("prefs.set", json!({ "favoriteFonts": favs }));
     }
     if let Some(f) = pick {
-        let styles = designcraft_fonts::FontDb::global().styles(&f);
+        let styles = fonts.styles(&f);
         let style = if styles.iter().any(|s| s == "Regular") { "Regular".to_string() } else { styles.first().cloned().unwrap_or_default() };
         let _ = app.run("type.char", json!({"attrs": {"fontFamily": f, "fontStyle": style}}));
     }
 }
 
 pub fn font_style_picker(app: &mut DesignApp, ui: &mut egui::Ui, family: &str, current: &str, width: f32) {
-    let styles = designcraft_fonts::FontDb::global().styles(family);
+    let styles = fonts(app).styles(family);
     let mut pick = None;
     egui::ComboBox::from_id_salt("font_style").selected_text(if current.is_empty() { "—" } else { current }).width(width).show_ui(ui, |ui| {
         for s in &styles {

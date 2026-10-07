@@ -71,11 +71,13 @@ pub(crate) fn open_idml(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(n) = name {
         d.title = n;
     }
-    let (faces, warnings) = match str_param(p, "path").filter(|_| str_param(p, "base64").is_none()) {
-        Some(path) => super::file::load_document_fonts(path),
-        None => (0, Vec::new()),
+    let (fonts, faces, warnings) = match str_param(p, "path").filter(|_| str_param(p, "base64").is_none()) {
+        Some(path) => super::file::load_document_fonts(&mut d, path),
+        None => (None, 0, Vec::new()),
     };
     // Never save over the .idml with the native format: the document starts unsaved.
-    let i = s.add_document(DocState::new(d, None));
+    let mut st = DocState::new(d, None);
+    st.fonts = fonts;
+    let i = s.add_document(st);
     Ok(json!({"index": i, "documentFonts": faces, "warnings": warnings}))
 }

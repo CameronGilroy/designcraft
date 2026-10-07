@@ -2,12 +2,18 @@
 
 use skrifa::MetadataProvider;
 
-/// A font named `family` (style Regular) that maps exactly `chars`, all to one glyph: the bundled
+/// A font named `family` (style Regular) that maps exactly `chars`, all to one glyph (`X`): the bundled
 /// Source Sans 3 Regular with its `name` and `cmap` tables replaced. Stands in for a font that
 /// isn't installed (a system CJK font on a machine without it). `None` only if the bundled font
 /// can't be read.
 pub fn font_with(family: &str, chars: &[char]) -> Option<Vec<u8>> {
-    let glyphs: Vec<(char, char)> = chars.iter().map(|c| (*c, 'X')).collect();
+    font_with_glyph(family, chars, 'X')
+}
+
+/// [`font_with`], drawing every character as Source Sans 3's `glyph` (two fonts of one name that
+/// set the same text differently).
+pub fn font_with_glyph(family: &str, chars: &[char], glyph: char) -> Option<Vec<u8>> {
+    let glyphs: Vec<(char, char)> = chars.iter().map(|c| (*c, glyph)).collect();
     font_mapping(family, &glyphs)
 }
 

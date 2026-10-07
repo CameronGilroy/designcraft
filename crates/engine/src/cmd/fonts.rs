@@ -44,7 +44,7 @@ fn for_each_story(d: &Document, f: &mut dyn FnMut(&Story)) {
 }
 
 fn list(d: &Document) -> Vec<Value> {
-    let db = designcraft_fonts::FontDb::global();
+    let db = designcraft_fonts::FontDb::global().scoped(d.font_scope);
     let mut used: BTreeMap<(String, String), usize> = BTreeMap::new();
     for_each_story(d, &mut |st| {
         let ranges = st.para_ranges();

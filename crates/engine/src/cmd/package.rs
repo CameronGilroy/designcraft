@@ -123,7 +123,7 @@ fn package(s: &mut Session, p: &Value) -> Result<Value> {
     std::fs::write(&doc_path, super::to_bytes(&packed)).map_err(|e| EngineError::Other(format!("{}: {e}", doc_path.display())))?;
     files.insert(0, doc_path);
     // The font files, and what the report says about each font.
-    let db = designcraft_fonts::FontDb::global();
+    let db = designcraft_fonts::FontDb::global().scoped(d.font_scope);
     let (fonts_dir, mut copied, mut taken) = (dir.join(designcraft_fonts::DOCUMENT_FONTS_FOLDER), Vec::new(), Vec::new());
     let mut font_lines = Vec::new();
     for f in fonts.as_array().into_iter().flatten() {

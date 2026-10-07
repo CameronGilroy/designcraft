@@ -240,7 +240,9 @@ impl Cache {
 }
 
 fn signature(doc: &Document, story: &Arc<Story>) -> (Vec<usize>, Vec<Arc<Item>>) {
-    let mut sig = vec![Arc::as_ptr(story) as usize, story.rev as usize, Arc::as_ptr(&doc.styles) as usize, doc.sections.len()];
+    // The document's font scope: another document's fonts of the same name set it differently.
+    let mut sig =
+        vec![Arc::as_ptr(story) as usize, story.rev as usize, Arc::as_ptr(&doc.styles) as usize, doc.sections.len(), doc.font_scope as usize];
     let mut keep = Vec::new();
     let mut spreads = Vec::new();
     for f in &story.frames {

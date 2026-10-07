@@ -515,6 +515,11 @@ pub struct Document {
     #[serde(default)]
     pub modified: i64,
     pub next_id: u64,
+    /// While the document is open, the font scope of the fonts it brought (its `Document Fonts`
+    /// folder): composition, export and the font menus look its fonts up there. 0: none. Not
+    /// saved.
+    #[serde(skip)]
+    pub font_scope: u32,
 }
 
 /// What a hyperlink is attached to.

@@ -1,14 +1,14 @@
 //! Glyph grids for the Glyphs panel: a font's characters drawn into square cells.
 
-use designcraft_fonts::FontDb;
+use designcraft_fonts::ScopedFonts;
 use vello_cpu::{RenderContext, Resources, kurbo, peniko};
 
 use crate::Rendered;
 
-/// Draw `chars` of `family`/`style` into a grid of `cols` columns of `cell`-pixel cells, in
-/// `color` (straight RGBA) on transparency. Glyphs are scaled to the font's em and centred.
-pub fn glyph_grid(family: &str, style: &str, chars: &[char], cols: u32, cell: u32, color: [u8; 4]) -> Rendered {
-    let db = FontDb::global();
+/// Draw `chars` of `family`/`style` (as `db`, a document's fonts, has it) into a grid of `cols`
+/// columns of `cell`-pixel cells, in `color` (straight RGBA) on transparency. Glyphs are scaled to
+/// the font's em and centred.
+pub fn glyph_grid(db: &ScopedFonts<'_>, family: &str, style: &str, chars: &[char], cols: u32, cell: u32, color: [u8; 4]) -> Rendered {
     let face = db.face(family, style);
     let cols = cols.max(1);
     let rows = (chars.len() as u32).div_ceil(cols).max(1);
@@ -45,10 +45,10 @@ pub fn glyph_grid(family: &str, style: &str, chars: &[char], cols: u32, cell: u3
     Rendered { width: w as u32, height: h as u32, pixels }
 }
 
-/// `text` set in `family`/`style` on one line, `height` pixels tall (the em fits the height), in
-/// `color` on transparency — for font menus that preview each family.
-pub fn text_line(family: &str, style: &str, text: &str, height: u32, color: [u8; 4]) -> Rendered {
-    let db = FontDb::global();
+/// `text` set in `family`/`style` (as `db`, a document's fonts, has it) on one line, `height`
+/// pixels tall (the em fits the height), in `color` on transparency — for font menus that preview
+/// each family.
+pub fn text_line(db: &ScopedFonts<'_>, family: &str, style: &str, text: &str, height: u32, color: [u8; 4]) -> Rendered {
     let face = db.face(family, style);
     let upem = face.units_per_em().max(1.0);
     let k = height as f64 * 0.72 / upem;
@@ -85,7 +85,8 @@ mod tests {
 
     #[test]
     fn grid_draws_each_cell() {
-        let img = glyph_grid(designcraft_fonts::DEFAULT_FAMILY, "Regular", &['A', 'B', 'C', ' '], 2, 40, [0, 0, 0, 255]);
+        let db = designcraft_fonts::FontDb::global().scoped(0);
+        let img = glyph_grid(&db, designcraft_fonts::DEFAULT_FAMILY, "Regular", &['A', 'B', 'C', ' '], 2, 40, [0, 0, 0, 255]);
         assert_eq!((img.width, img.height), (80, 80));
         let ink = |cx: u32, cy: u32| {
             (cx * 40..cx * 40 + 40).flat_map(|x| (cy * 40..cy * 40 + 40).map(move |y| (x, y))).filter(|&(x, y)| img.pixel(x, y)[3] > 128).count()
@@ -96,7 +97,8 @@ mod tests {
 
     #[test]
     fn text_line_draws_the_name() {
-        let img = text_line(designcraft_fonts::DEFAULT_FAMILY, "Regular", "Serif", 24, [0, 0, 0, 255]);
+        let db = designcraft_fonts::FontDb::global().scoped(0);
+        let img = text_line(&db, designcraft_fonts::DEFAULT_FAMILY, "Regular", "Serif", 24, [0, 0, 0, 255]);
         assert_eq!(img.height, 24);
         assert!(img.width > 30);
         let ink = (0..img.width).flat_map(|x| (0..img.height).map(move |y| (x, y))).filter(|&(x, y)| img.pixel(x, y)[3] > 128).count();

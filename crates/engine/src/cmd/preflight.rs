@@ -37,7 +37,7 @@ pub fn check(s: &Session, min_ppi: f64) -> Vec<Issue> {
     let d = &st.doc;
     let mut out = Vec::new();
     // Stories: overset and fonts.
-    let db = designcraft_fonts::FontDb::global();
+    let db = designcraft_fonts::FontDb::global().scoped(d.font_scope);
     let mut missing_fonts: Vec<String> = Vec::new();
     let mut unsupported_typography = std::collections::BTreeSet::new();
     for story in d.stories.values() {

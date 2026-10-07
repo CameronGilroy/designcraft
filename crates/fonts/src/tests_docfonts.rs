@@ -1,5 +1,6 @@
-//! Document fonts: the fonts in a `Document Fonts` folder beside a document, loaded ahead of the
-//! installed fonts of the same name; damaged, oversized and surplus files are skipped.
+//! Document fonts: the fonts in a `Document Fonts` folder beside a document, loaded for that
+//! document alone (its scope) ahead of the installed fonts of the same name; damaged, oversized
+//! and surplus files are skipped.
 
 use std::path::{Path, PathBuf};
 
@@ -37,14 +38,17 @@ fn document_fonts_load_ahead_of_installed_ones() {
 
     let r = db.load_document_fonts(&folder);
     assert_eq!((r.faces, r.skipped.len()), (1, 0), "{:?}", r.skipped);
-    let face = db.face("DocFont Precedence", "Regular");
+    let face = db.scoped(r.scope).face("DocFont Precedence", "Regular");
     assert!(face.covers('b'), "the document's face wins");
     assert_eq!(face.source, FontSource::Document(file.clone()));
     assert_eq!(face.source.path(), Some(file.as_path()));
+    assert!(db.face("DocFont Precedence", "Regular").covers('a'), "outside the document the installed face stays");
 
-    // Loading the folder again adds nothing.
+    // Loading the folder again (another document beside it) shares the face, in a scope of its own.
     let again = db.load_document_fonts(&folder);
-    assert_eq!((again.faces, again.skipped.len()), (0, 0));
+    assert_eq!((again.faces, again.skipped.len()), (1, 0));
+    assert_ne!(again.scope, r.scope);
+    assert!(Arc::ptr_eq(&db.scoped(again.scope).face("DocFont Precedence", "Regular"), &face));
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -62,8 +66,9 @@ fn damaged_oversized_and_other_files_are_skipped() {
     let db = FontDb::with_font_dirs(vec![]);
     let r = db.load_document_fonts(&folder);
     assert_eq!(r.faces, 1);
-    assert!(db.has_family("DocFont Good"));
-    assert!(!db.has_family("DocFont Nested"), "subfolders aren't read");
+    assert!(db.scoped(r.scope).has_family("DocFont Good"));
+    assert!(!db.has_family("DocFont Good"), "the document's alone");
+    assert!(!db.scoped(r.scope).has_family("DocFont Nested"), "subfolders aren't read");
     assert_eq!(r.skipped.len(), 2, "{:?}", r.skipped);
     assert!(r.skipped.iter().any(|s| s.contains("broken.ttf")), "{:?}", r.skipped);
     assert!(r.skipped.iter().any(|s| s.contains("huge.ttc") && s.contains(&format!("{} MB", MAX_DOCUMENT_FONT_BYTES >> 20))), "{:?}", r.skipped);
@@ -81,8 +86,8 @@ fn the_number_of_files_read_is_capped() {
 
     let db = FontDb::with_font_dirs(vec![]);
     let r = db.load_document_fonts(&folder);
-    assert_eq!(r.faces, 0);
-    assert!(!db.has_family("DocFont Past Cap"));
+    assert_eq!((r.faces, r.scope), (0, 0));
+    assert!(!db.scoped(r.scope).has_family("DocFont Past Cap"));
     assert_eq!(r.skipped.len(), MAX_DOCUMENT_FONT_FILES + 1, "one note for each file read, one for the rest");
     assert!(r.skipped.last().is_some_and(|s| s.contains("6 more") && s.contains("200")), "{:?}", r.skipped.last());
     let _ = std::fs::remove_dir_all(&folder);
@@ -103,7 +108,51 @@ fn large_cjk_collections_are_within_the_limit() {
 fn a_missing_folder_loads_nothing() {
     let db = FontDb::with_font_dirs(vec![]);
     let r = db.load_document_fonts(&std::env::temp_dir().join("dc-docfonts-no-such-folder").join(DOCUMENT_FONTS_FOLDER));
-    assert_eq!((r.faces, r.skipped.len()), (0, 0));
+    assert_eq!((r.faces, r.scope, r.skipped.len()), (0, 0, 0));
+}
+
+#[test]
+fn each_scope_sees_its_own_fonts_only() {
+    const FAMILY: &str = "DocFont Scope";
+    let (a, b) = (temp_dir("scope-a"), temp_dir("scope-b"));
+    write_font(&a, "a.ttf", FAMILY, &['a']);
+    write_font(&b, "b.ttf", FAMILY, &['b', '\u{E123}']);
+    let db = FontDb::with_font_dirs(vec![]);
+    let (ra, rb) = (db.load_document_fonts(&a), db.load_document_fonts(&b));
+    let (in_a, in_b) = (db.scoped(ra.scope), db.scoped(rb.scope));
+
+    assert!(in_a.face(FAMILY, "Regular").covers('a') && in_b.face(FAMILY, "Regular").covers('b'));
+    assert!(in_a.families().iter().any(|f| f == FAMILY) && in_a.styles(FAMILY) == ["Regular"]);
+    assert!(!db.has_family(FAMILY) && !db.families().iter().any(|f| f == FAMILY), "no document's fonts are shared");
+    assert!(!db.scoped(0).has_family(FAMILY));
+    // Fallback finds a character in the document's own fonts, never another document's.
+    let exclude = in_a.face(FALLBACK_FAMILY, "Regular").id();
+    assert!(in_a.fallback_for('\u{E123}', exclude, None).is_none());
+    assert!(in_b.fallback_for('\u{E123}', exclude, None).is_some_and(|f| f.family == FAMILY));
+    let _ = std::fs::remove_dir_all(&a);
+    let _ = std::fs::remove_dir_all(&b);
+}
+
+#[test]
+fn a_closed_scope_finds_nothing_and_reopening_reuses_the_faces() {
+    const FAMILY: &str = "DocFont Reopened";
+    let folder = temp_dir("reopen");
+    let file = write_font(&folder, "r.ttf", FAMILY, &['r']);
+    let db = FontDb::with_font_dirs(vec![]);
+    let r = db.load_document_fonts(&folder);
+    let face = db.scoped(r.scope).face(FAMILY, "Regular");
+    db.close_scope(r.scope);
+    assert!(!db.scoped(r.scope).has_family(FAMILY), "closed");
+
+    let again = db.load_document_fonts(&folder);
+    assert!(Arc::ptr_eq(&db.scoped(again.scope).face(FAMILY, "Regular"), &face), "an unchanged file isn't read again");
+    // A file changed since is read again.
+    std::fs::write(&file, font_with(FAMILY, &['r', 's']).unwrap()).unwrap();
+    let changed = db.load_document_fonts(&folder);
+    let new_face = db.scoped(changed.scope).face(FAMILY, "Regular");
+    assert!(new_face.covers('s') && new_face.id() != face.id());
+    assert!(!db.scoped(again.scope).face(FAMILY, "Regular").covers('s'), "the document open before keeps what it opened with");
+    let _ = std::fs::remove_dir_all(&folder);
 }
 
 #[test]

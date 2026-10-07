@@ -107,15 +107,16 @@ fn text_controls(app: &mut DesignApp, ui: &mut Ui, in_text: bool) {
     let c = a["chars"].clone();
     let fam = c["fontFamily"].as_str().unwrap_or("").to_string();
     let sty = c["fontStyle"].as_str().unwrap_or("").to_string();
-    let fams = designcraft_fonts::FontDb::global().families();
+    let fonts = panels::fonts(app);
+    let fams = fonts.families();
     let cur = fams.iter().position(|f| *f == fam);
     if let Some(k) = widgets::dropdown_list(ui, if fam.is_empty() { "—" } else { &fam }, 150.0, &fams, cur) {
         let f = fams[k].clone();
-        let styles = designcraft_fonts::FontDb::global().styles(&f);
+        let styles = fonts.styles(&f);
         let style = if styles.iter().any(|s| s == "Regular") { "Regular".to_string() } else { styles.first().cloned().unwrap_or_default() };
         let _ = app.run("type.char", json!({"attrs": {"fontFamily": f, "fontStyle": style}}));
     }
-    let styles = designcraft_fonts::FontDb::global().styles(&fam);
+    let styles = fonts.styles(&fam);
     let cur = styles.iter().position(|s| *s == sty);
     if let Some(k) = widgets::dropdown_list(ui, if sty.is_empty() { "—" } else { &sty }, 90.0, &styles, cur) {
         let _ = app.run("type.char", json!({"attrs": {"fontStyle": styles[k]}}));
