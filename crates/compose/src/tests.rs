@@ -994,6 +994,20 @@ fn tate_chu_yoko_sets_digits_across_one_em() {
     let [a1, x1, _] = digits[1].tcy.unwrap();
     assert!(((digits[0].x + a0) - (digits[1].x + a1)).abs() < 1e-6);
     assert!(x0 < 0.0 && x1 > x0 && x1 < em, "{x0} {x1}");
+    // Offsets move the turned group: the Y offset along the line, the X offset across it.
+    let origin = |d: &Document| {
+        let cs = compose_story(d, sid, &ComposeOptions::default());
+        let line = &cs.frames[0].lines[0];
+        let g = line.glyphs.iter().find(|g| g.tcy.is_some()).unwrap();
+        g.vertical_xf(line.baseline).unwrap() * Point::new(g.x, line.baseline + g.y)
+    };
+    let plain = origin(&d);
+    d.story_mut(sid).unwrap().format_chars(at..at + 2, |f| {
+        f.over.tate_chu_yoko_x_offset = Some(2.0);
+        f.over.tate_chu_yoko_y_offset = Some(3.0);
+    });
+    let moved = origin(&d);
+    assert!(((moved.x - plain.x) - 3.0).abs() < 1e-6 && ((moved.y - plain.y).abs() - 2.0).abs() < 1e-6, "{plain:?} {moved:?}");
 }
 
 #[test]
@@ -1587,5 +1601,160 @@ fn korean_lines_keep_kinsoku() {
                 assert!(texts.iter().all(|t| !t.starts_with(['、', '。', '」'])), "kinsoku ({char_breaks}, {composer:?}): {texts:?}");
             }
         }
+    }
+}
+
+/// A synthetic font for vertical text: Source Sans 3 glyphs (CJK characters drawn as Latin ones)
+/// with vertical metrics, every glyph one em down the line and 120 units below its vertical
+/// origin, except ヸ (drawn as O): 1.024 em. No vertical forms. Added to the global database once.
+fn vertical_test_font() -> &'static str {
+    use designcraft_fonts::testing::{font_mapping, with_vmtx};
+    const FAMILY: &str = "DC Test Vertical";
+    static ADDED: std::sync::Once = std::sync::Once::new();
+    ADDED.call_once(|| {
+        let glyphs = [('一', 'X'), ('二', 'X'), ('日', 'X'), ('本', 'X'), ('ま', 'o'), ('ヸ', 'O'), ('、', ','), ('A', 'A'), ('b', 'b')];
+        let base = font_mapping(FAMILY, &glyphs).unwrap();
+        let scratch = designcraft_fonts::FontDb::with_font_dirs(vec![]);
+        scratch.add_font(base.clone());
+        let wi = u16::try_from(scratch.face(FAMILY, "Regular").glyph_for('ヸ')).unwrap();
+        designcraft_fonts::FontDb::global().add_font(with_vmtx(&base, (1000, 120), &[(wi, 1024, 100)]).unwrap());
+    });
+    FAMILY
+}
+
+/// Shippori Mincho (vertical forms, `vpal`) when built with craft-fonts; else `None`, with a note.
+fn shippori() -> Option<&'static str> {
+    if !designcraft_fonts::japanese_fonts().any(|f| f.family == "Shippori Mincho") {
+        eprintln!("skipped Shippori Mincho: built without craft-fonts (set CRAFT_FONTS_DIR to a checkout)");
+        return None;
+    }
+    Some("Shippori Mincho")
+}
+
+/// The fonts vertical layout is checked in: the synthetic one, and Shippori Mincho with craft-fonts.
+fn vertical_families() -> Vec<&'static str> {
+    std::iter::once(vertical_test_font()).chain(shippori()).collect()
+}
+
+/// A vertical frame (no inset) with `text` in `family` at 20 pt (and `over`), and its first line
+/// with the frame's first column.
+fn vertical_line(family: &str, text: &str, over: impl Fn(&mut designcraft_doc::CharFormat)) -> (Line, Rect) {
+    let mut d = Document::new(&NewDocument::default());
+    let lid = d.default_layer();
+    let (fid, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(100.0, 100.0, 200.0, 500.0), lid, text, ParaFormat::default()).unwrap();
+    if let Some(tf) = d.item_mut(fid).and_then(|i| i.text_frame_mut()) {
+        tf.options.vertical = true;
+        tf.options.inset = [0.0; 4];
+    }
+    d.story_mut(sid).unwrap().format_chars(0..text.len(), |f| {
+        f.over.font_family = Some(family.into());
+        f.over.size = Some(20.0);
+        over(f);
+    });
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let ft = &cs.frames[0];
+    assert!(ft.vertical);
+    let line = ft.lines[0].clone();
+    assert!(line.glyphs.iter().all(|g| g.face.family == family), "{family}: {:?}", line.glyphs.iter().map(|g| &g.face.family).collect::<Vec<_>>());
+    (line, ft.columns[0])
+}
+
+/// Text-space bounds of a glyph's ink as drawn in a vertical frame.
+fn vertical_ink(g: &PlacedGlyph, baseline: f64) -> Rect {
+    use designcraft_geom::{Affine, Shape};
+    let ink = designcraft_fonts::FontDb::global().outline(&g.face, g.gid).bounding_box();
+    let mut a = Affine::translate((g.x, baseline + g.y)) * Affine::scale_non_uniform(g.sx, g.sy);
+    if let Some(turn) = g.vertical_xf(baseline) {
+        a = turn * a;
+    }
+    a.transform_rect_bbox(ink)
+}
+
+/// The em box in text space: along the line from x (page down), across from its top (text -y,
+/// page right) to its bottom → (right, left, centre).
+fn em_across(l: &Line, g: &PlacedGlyph) -> (f64, f64, f64) {
+    let (top, bottom) = g.face.em_box();
+    let right = l.baseline + g.y - top * g.sy;
+    let left = l.baseline + g.y - bottom * g.sy;
+    (right, left, (right + left) / 2.0)
+}
+
+#[test]
+fn upright_glyphs_hang_on_the_line_centre() {
+    for family in vertical_families() {
+        let (l, _) = vertical_line(family, "一", |_| {});
+        let ichi = &l.glyphs[0];
+        assert!(ichi.upright, "{family}");
+        // An ideograph is centred across the line and inside its em along it.
+        let (_, _, centre) = em_across(&l, ichi);
+        let ink = vertical_ink(ichi, l.baseline);
+        assert!(((ink.y0 + ink.y1) / 2.0 - centre).abs() < 0.05 * 20.0, "{family}: {ink:?} {centre}");
+        assert!(ink.x0 > ichi.x && ink.x1 < ichi.x + ichi.adv, "{family}: {ink:?}");
+    }
+    // The synthetic glyph's top is its top side bearing (120 units) below its vertical origin.
+    let (l, _) = vertical_line(vertical_test_font(), "一", |_| {});
+    let ink = vertical_ink(&l.glyphs[0], l.baseline);
+    assert!((ink.x0 - l.glyphs[0].x - 2.4).abs() < 1e-6, "{ink:?} {}", l.glyphs[0].x);
+}
+
+#[test]
+fn upright_punctuation_takes_its_vertical_form_and_place() {
+    // A font with vertical forms: Shippori Mincho.
+    let Some(family) = shippori() else { return };
+    let (l, _) = vertical_line(family, "一、", |_| {});
+    let comma = &l.glyphs[1];
+    assert!(comma.upright);
+    assert_ne!(comma.gid, comma.face.glyph_for('、'), "vertical form (vert)");
+    let (right, _, centre) = em_across(&l, comma);
+    // The comma's ink sits in the upper right quarter of its em box on the page.
+    let ink = vertical_ink(comma, l.baseline);
+    assert!(ink.x0 >= comma.x - 1e-6 && ink.x1 < comma.x + comma.adv / 2.0, "upper half: {ink:?} {} {}", comma.x, comma.adv);
+    assert!(ink.y0 >= right - 1e-6 && ink.y1 < centre, "right half: {ink:?} {right} {centre}");
+}
+
+#[test]
+fn latin_in_vertical_text_turns_as_a_run() {
+    // Shippori Mincho's `vrt2` has turned Latin forms; a turned run must not use them.
+    for family in vertical_families() {
+        let (l, _) = vertical_line(family, "日本Ab", |_| {});
+        let latin: Vec<_> = l.glyphs.iter().filter(|g| g.byte >= "日本".len()).collect();
+        let face = latin[0].face;
+        assert_eq!(latin.iter().map(|g| g.gid).collect::<Vec<_>>(), [face.glyph_for('A'), face.glyph_for('b')], "{family}");
+        assert!(latin.iter().all(|g| !g.upright && g.vertical_xf(l.baseline).is_none()), "{family}");
+        assert!((latin[0].adv - face.advance(latin[0].gid) * latin[0].sx).abs() < 1e-9, "{family}: horizontal advance");
+    }
+}
+
+#[test]
+fn upright_glyphs_advance_by_their_vertical_metrics() {
+    // ヸ is 1.024 em tall in both fonts.
+    for family in vertical_families() {
+        let (l, _) = vertical_line(family, "一ヸ一", |_| {});
+        let g = &l.glyphs;
+        assert_eq!(g[1].face.v_advance(g[1].gid), 1024.0, "{family}");
+        assert!((g[1].x - g[0].x - 20.0).abs() < 1e-9, "{family}");
+        assert!((g[2].x - g[1].x - 20.48).abs() < 1e-9, "{family}: {} {}", g[1].x, g[2].x);
+    }
+    let Some(family) = shippori() else { return };
+    // Shippori's ヸ is an em wide.
+    let (l, _) = vertical_line(family, "ヸ", |_| {});
+    assert_eq!(l.glyphs[0].face.advance(l.glyphs[0].gid), 1000.0);
+    // Proportional vertical metrics (`vpal`): ま takes 0.974 em.
+    let (l, _) = vertical_line(family, "まま", |f| f.over.otf_features = Some(vec!["vpal".into()]));
+    assert!((l.glyphs[1].x - l.glyphs[0].x - 19.48).abs() < 1e-9, "{:?}", l.glyphs.iter().map(|g| g.x).collect::<Vec<_>>());
+    let (l, _) = vertical_line(family, "まま", |_| {});
+    assert!((l.glyphs[1].x - l.glyphs[0].x - 20.0).abs() < 1e-9);
+}
+
+#[test]
+fn vertical_lines_fit_the_em_box() {
+    // First baseline at the ascent: an upright line's ascent is its em box top, so the em box
+    // touches the frame's right edge. The synthetic font's em box is Source Sans 3's BASE one
+    // (0.83 em, -0.17 em); Shippori Mincho's its OS/2 typo metrics (0.88 em, -0.12 em).
+    let expected = [(vertical_test_font(), 16.6, 3.4)].into_iter().chain(shippori().map(|f| (f, 17.6, 2.4)));
+    for (family, ascent, descent) in expected {
+        let (l, col) = vertical_line(family, "一二", |_| {});
+        assert!((l.ascent - ascent).abs() < 1e-9 && (l.descent - descent).abs() < 1e-9, "{family}: {} {}", l.ascent, l.descent);
+        assert!((l.baseline - col.y0 - ascent).abs() < 1e-9, "{family}: {} {}", l.baseline, col.y0);
     }
 }

@@ -32,7 +32,7 @@ presets or tables are copied. Our default mojikumi and kinsoku tables are built 
 | Area | State |
 |---|---|
 | Vertical frames, upright CJK, rotated Latin | done (per frame; glyphs turned by transforms) |
-| `vert`/`vrt2` in vertical frames | done (applied to every run, Latin included); Horizontal Kana (`hkna`) becomes `vkna` |
+| Vertical metrics and shaping | done: upright runs shaped top to bottom (`vert`; `vkrn`/`vpal` when asked) with `vmtx`/`VORG` advances and origins, centred on the ideographic em box (`BASE`, else OS/2); turned runs shaped horizontally, without `vrt2`; Horizontal Kana (`hkna`) takes the vertical kana (`vkna`) in upright runs. Default location of variable fonts only (no `VVAR`) |
 | Kinsoku | named (hard, soft, Chinese, Korean) and custom kinsoku sets, bunri-kinshi, rensuuji, hanging punctuation (regular, force); without a set, fixed no-start / no-end lists and a break anywhere between CJK characters; kinsoku type (push in / push out priorities) kept but not applied |
 | Korean line breaking | at spaces (Hangul everywhere, hanja in Korean text); per-paragraph character-based breaking (`koreanCharBreaks`); DesignCraft-only, not in IDML |
 | Mojikumi | tables and paragraph references kept through IDML; not applied (Preflight says so) |
@@ -47,8 +47,6 @@ presets or tables are copied. Our default mojikumi and kinsoku tables are built 
 
 Known bugs to fix first:
 
-- Vertical advances are the horizontal ones and upright glyphs turn about a guessed centre
-  (`adv × 0.38`), so proportional and non-square glyphs sit wrong in vertical text.
 - A justified CJK line has no stretch except Single Word Justification.
 
 ## Architecture

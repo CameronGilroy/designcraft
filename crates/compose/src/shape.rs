@@ -61,6 +61,9 @@ pub struct Glyph {
     pub shaping_rtl: bool,
     /// The character's language as a BCP 47 tag ([`designcraft_doc::language_tag`]).
     pub lang: Option<&'static str>,
+    /// Upright in a vertical frame: shaped top to bottom (`adv` is its vertical advance) and hung
+    /// from its vertical origin on the line's centre (see [`crate::PlacedGlyph::vertical_xf`]).
+    pub upright: bool,
 }
 
 impl Glyph {
@@ -99,7 +102,8 @@ pub struct SubstCtx {
     pub objects: HashMap<usize, ObjectSpec>,
     /// Conditions currently hidden (conditional text with only these isn't shown).
     pub hidden_conditions: Vec<String>,
-    /// Set in a Vertical Type frame: vertical glyph forms (`vert`, `vrt2`).
+    /// Set in a Vertical Type frame: upright runs are shaped top to bottom (vertical forms and
+    /// metrics), the rest horizontally to be turned as a whole.
     pub vertical: bool,
 }
 
@@ -619,10 +623,11 @@ fn shape_run_raw(
 }
 
 type WordMap = HashMap<Box<str>, Arc<[ShapedGlyph]>>;
-type WordKey = (u32, bool, String, Option<&'static str>);
+type WordKey = (u32, bool, bool, String, Option<&'static str>);
 
-/// Shaped words (font units) by (face, caps, features, language), then text. Lookups take read
-/// locks and misses are shaped outside any lock, so parallel composition doesn't serialize here.
+/// Shaped words (font units) by (face, vertical, caps, features, language), then text. Lookups
+/// take read locks and misses are shaped outside any lock, so parallel composition doesn't
+/// serialize here.
 static WORD_CACHE: RwLock<Vec<(WordKey, Arc<RwLock<WordMap>>)>> = RwLock::new(Vec::new());
 const WORD_CACHE_MAX: usize = 50_000;
 
@@ -645,13 +650,28 @@ fn word_map(key: WordKey) -> Arc<RwLock<WordMap>> {
 /// Shape `src` word by word through a cache (like a browser's word cache): the text is split
 /// after each U+0020 so repeated words are shaped once. Shaping does not cross word spaces in the
 /// scripts we lay out, and clusters stay byte offsets into `src`.
-fn shape_cached(face: &FontFace, src: &str, feats: &[Feature], lang: Option<&'static str>, caps: bool, around: (&str, &str)) -> Vec<ShapedGlyph> {
+fn shape_cached(
+    face: &FontFace,
+    src: &str,
+    feats: &[Feature],
+    lang: Option<&'static str>,
+    caps: bool,
+    vertical: bool,
+    (before, after): (&str, &str),
+) -> Vec<ShapedGlyph> {
+    use designcraft_fonts::ShapeContext;
     let map = |c: char| if caps { c.to_uppercase().next().unwrap_or(c) } else { c };
+    let shape = |s: &str, context: ShapeContext<'_>| {
+        if vertical {
+            designcraft_fonts::shape_vertical(face, s, feats, map, context)
+        } else {
+            designcraft_fonts::shape_with_context(face, s, feats, map, context)
+        }
+    };
     if src.len() < 2 || !src.contains(' ') || src.chars().any(designcraft_fonts::is_rtl) {
-        let (before, after) = around;
-        return designcraft_fonts::shape_with_context(face, src, feats, map, designcraft_fonts::ShapeContext { before, after, language: lang });
+        return shape(src, ShapeContext { before, after, language: lang });
     }
-    let words = word_map((face.id(), caps, format!("{feats:?}"), lang));
+    let words = word_map((face.id(), vertical, caps, format!("{feats:?}"), lang));
     let pieces: Vec<&str> = src.split_inclusive(' ').collect();
     let mut found: Vec<Option<Arc<[ShapedGlyph]>>> = {
         let r = words.read().unwrap_or_else(|e| e.into_inner());
@@ -660,14 +680,7 @@ fn shape_cached(face: &FontFace, src: &str, feats: &[Feature], lang: Option<&'st
     let mut fresh: Vec<(Box<str>, Arc<[ShapedGlyph]>)> = Vec::new();
     for (k, f) in found.iter_mut().enumerate() {
         if f.is_none() {
-            let g: Arc<[ShapedGlyph]> = designcraft_fonts::shape_with_context(
-                face,
-                pieces[k],
-                feats,
-                map,
-                designcraft_fonts::ShapeContext { language: lang, ..Default::default() },
-            )
-            .into();
+            let g: Arc<[ShapedGlyph]> = shape(pieces[k], ShapeContext { language: lang, ..Default::default() }).into();
             fresh.push((pieces[k].into(), g.clone()));
             *f = Some(g);
         }
@@ -755,6 +768,7 @@ fn control_glyph(face: &Arc<FontFace>, p: &CharProps, auto_leading: TypeEnv, sty
         safe_tatweel_before: false,
         shaping_rtl: false,
         lang: designcraft_doc::language_tag(&p.language),
+        upright: false,
     }
 }
 
@@ -778,23 +792,37 @@ fn shape_segment(
     let manual = if let Kerning::Manual(v) = p.kerning { v / 1000.0 * p.size } else { 0.0 };
     let src = replacement.unwrap_or(&text[range.clone()]);
     let caps = p.capitalization == Capitalization::AllCaps;
-    let mut feats = features_for(p);
+    let feats = features_for(p);
+    // Upright in vertical text, Horizontal Kana takes the vertical kana alternates instead.
+    let mut upright_feats = feats.clone();
     if vertical && designcraft_doc::otf::is_on(&p.otf_features, "hkna") {
-        feats.extend(feature("-hkna"));
-        feats.extend(feature("vkna"));
-    }
-    if vertical {
-        feats.extend(["vert", "vrt2"].iter().filter_map(|t| designcraft_fonts::feature(t)));
+        upright_feats.extend(feature("-hkna"));
+        upright_feats.extend(feature("vkna"));
     }
     let space = face.advance(face.glyph_for(' ')) * k * hs;
     // The language picks the font's localized forms (`locl`); the text around the run lets
     // letters join across a change of style.
     let lang = designcraft_doc::language_tag(&p.language);
-    let around = if replacement.is_none() { (text.get(..range.start).unwrap_or(""), text.get(range.end..).unwrap_or("")) } else { ("", "") };
-    let shaped: Vec<ShapedGlyph> = shape_cached(face, src, &feats, lang, caps, around);
+    // Vertical frames: upright runs top to bottom, the rest (turned as a whole) horizontally.
+    // Tate-chu-yoko is set across the line, so it stays horizontal.
+    let mut shaped: Vec<ShapedGlyph> = Vec::new();
+    let mut upright: Vec<bool> = Vec::new();
+    for (r, up) in upright_runs(src, vertical && !p.tate_chu_yoko) {
+        let around = match replacement {
+            None => (text.get(..range.start + r.start).unwrap_or(""), text.get(range.start + r.end..).unwrap_or("")),
+            Some(_) => ("", ""),
+        };
+        let g = shape_cached(face, &src[r.clone()], if up { &upright_feats } else { &feats }, lang, caps, up, around);
+        upright.extend(std::iter::repeat_n(up, g.len()));
+        shaped.extend(g.into_iter().map(|g| ShapedGlyph { cluster: g.cluster + r.start, ..g }));
+    }
+    // Upright glyphs fill the ideographic em box across the line.
+    let (em_top, em_bottom) = face.em_box();
+    let k_v = k * p.v_scale;
     let n = shaped.len();
     let fref = FaceRef::of(face);
     for (gi, sg) in shaped.iter().enumerate() {
+        let up = upright.get(gi).copied().unwrap_or(false);
         let (byte, len, ch) = if replacement.is_some() {
             (range.start, if gi == 0 { range.len() } else { 0 }, text[range.start..].chars().next().unwrap_or(' '))
         } else {
@@ -803,7 +831,14 @@ fn shape_segment(
             (cl, end.saturating_sub(cl), text[cl..].chars().next().unwrap_or(' '))
         };
         let last_in_cluster = gi + 1 == n || shaped[gi + 1].cluster != sg.cluster;
-        let mut adv = sg.x_advance as f64 * k * hs;
+        // Upright: down the line is the shaper's -y, across it (text space -y) its x.
+        let mut adv = if up { -(sg.y_advance as f64) * k_v } else { sg.x_advance as f64 * k * hs };
+        let (dx, dy) = if up {
+            (-(sg.y_offset as f64) * k_v, -(sg.x_offset as f64) * k * hs)
+        } else {
+            (sg.x_offset as f64 * k * hs, -(sg.y_offset as f64) * k * p.v_scale)
+        };
+        let (ascent, descent) = if up { (em_top * k_v, -em_bottom * k_v) } else { (ascent, descent) };
         if ch == SOFT_HYPHEN {
             adv = 0.0;
         } else if last_in_cluster {
@@ -821,8 +856,8 @@ fn shape_segment(
             len: if first_in_cluster || replacement.is_some() { len } else { 0 },
             ch,
             adv,
-            dx: sg.x_offset as f64 * k * hs + mark_x,
-            dy: -(sg.y_offset as f64) * k * p.v_scale - mark_y,
+            dx: dx + mark_x,
+            dy: dy - mark_y,
             sx: k * hs,
             sy: k * p.v_scale,
             shift,
@@ -855,8 +890,24 @@ fn shape_segment(
             safe_tatweel_before: sg.safe_tatweel_before,
             shaping_rtl: sg.rtl,
             lang,
+            upright: up,
         });
     }
+}
+
+/// `src` cut into runs set upright in vertical text (CJK) and runs that turn with the line, as
+/// (byte range, upright); combining marks stay with the run they follow. One horizontal run when
+/// `vertical` is false.
+fn upright_runs(src: &str, vertical: bool) -> Vec<(std::ops::Range<usize>, bool)> {
+    let mut runs: Vec<(std::ops::Range<usize>, bool)> = Vec::new();
+    for (i, c) in src.char_indices() {
+        let up = vertical && crate::upright_in_vertical(c);
+        match runs.last_mut() {
+            Some((r, u)) if *u == up || is_mark(c) => r.end = i + c.len_utf8(),
+            _ => runs.push((i..i + c.len_utf8(), up)),
+        }
+    }
+    runs
 }
 
 /// A hyphen glyph in the face/size of `g`, placed after it (zero source length).

@@ -115,15 +115,29 @@ pub struct PlacedGlyph {
 }
 
 impl PlacedGlyph {
-    /// In a vertical frame, the turn that sets this glyph upright (about its em box centre, or
-    /// across the line in a tate-chu-yoko group), applied after drawing it at `x` on `baseline`.
+    /// In a vertical frame, the turn that sets this glyph upright, applied after drawing it at `x`
+    /// on `baseline`: it hangs from its vertical origin ([`designcraft_fonts::FontFace::v_origin`],
+    /// centred across) at `x` on the line's centre, the middle of the font's em box; a tate-chu-yoko
+    /// group sits across that centre.
     pub fn vertical_xf(&self, baseline: f64) -> Option<designcraft_geom::Affine> {
         let turn = -std::f64::consts::FRAC_PI_2;
+        // The em box centre above the baseline, in ems.
+        let (top, bottom) = self.face.em_box();
+        let centre = (top + bottom) / 2.0 / self.face.units_per_em();
         if let Some([along, across, em]) = self.tcy {
-            let c = Point::new(self.x + along, baseline + self.y - em * 0.38);
+            let c = Point::new(self.x + along, baseline + self.y - em * centre);
             return Some(designcraft_geom::Affine::rotate_about(turn, c) * designcraft_geom::Affine::translate((c.x + across - self.x, 0.0)));
         }
-        self.upright.then(|| designcraft_geom::Affine::rotate_about(turn, Point::new(self.x + self.adv / 2.0, baseline + self.y - self.adv * 0.38)))
+        if !self.upright {
+            return None;
+        }
+        // Turning about c takes the glyph's vertical origin (half across, `origin` up) to the
+        // centre point at `x`: c is where the two points' perpendicular bisector meets the turn.
+        let half = self.face.advance(self.gid) / 2.0 * self.sx;
+        let origin = self.face.v_origin(self.gid) * self.sy;
+        let mid = centre * self.face.units_per_em() * self.sy;
+        let c = Point::new(self.x + (origin - mid + half) / 2.0, baseline + self.y + (half - mid - origin) / 2.0);
+        Some(designcraft_geom::Affine::rotate_about(turn, c))
     }
 }
 
@@ -1960,7 +1974,7 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
         byte: g.byte,
         len: g.len,
         visible,
-        upright: upright_in_vertical(g.ch),
+        upright: g.upright,
         tcy: g.tcy,
         rtl: false,
     }
