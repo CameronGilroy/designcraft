@@ -133,6 +133,38 @@ pub struct SortKey {
     pub direction: String,
 }
 
+/// Virtual field that inserts the source file name, or the source `name` when there is no path.
+pub const SOURCE_FILENAME_FIELD: &str = "Source filename";
+/// Virtual field that inserts the 1-based position in the combined list after filter, sort, range, and limit.
+pub const MERGE_INDEX_FIELD: &str = "Merge index";
+
+/// A file column of the same name wins over these virtual fields.
+pub fn is_virtual_field(name: &str) -> bool {
+    name == SOURCE_FILENAME_FIELD || name == MERGE_INDEX_FIELD
+}
+
+/// Text added to a field when a placeholder is filled. The stored cell stays as it was.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AffixRule {
+    pub field: String,
+    pub text: String,
+    /// `prefix` or `postfix`.
+    pub place: String,
+    /// When set, an empty cell is left unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub non_empty: bool,
+}
+
+/// One joined source. `driving_field` is on the driving source; `field` is on `source`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinLink {
+    pub source: u64,
+    pub driving_field: String,
+    pub field: String,
+}
+
 fn match_all() -> String {
     "all".into()
 }
@@ -176,6 +208,9 @@ pub struct DataSource {
     pub filter: SourceFilter,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sort: Vec<SortKey>,
+    /// Prefix and postfix rules. Applied when a placeholder is filled, not stored into `rows`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affixes: Vec<AffixRule>,
 }
 
 /// A drawn record grid. Children are the prototype, stored relative to the origin cell.
@@ -379,6 +414,9 @@ pub struct MergeOptions {
     pub link_images: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    /// Drop a record when filling it warns. Off unless the user turns it on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skip_warnings: bool,
 }
 
 fn all_records() -> String {
@@ -418,6 +456,7 @@ impl Default for MergeOptions {
             center: false,
             link_images: true,
             limit: None,
+            skip_warnings: false,
         }
     }
 }
@@ -438,6 +477,14 @@ pub struct DataMerge {
     pub placeholders: Vec<Placeholder>,
     #[serde(default, skip_serializing_if = "MergeOptions::is_default")]
     pub options: MergeOptions,
+    /// When set, other enabled sources are joined onto this one. `None` concatenates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driving: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub joins: Vec<JoinLink>,
+    /// Sort of the combined list, after each source's own sort and before range and limit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sort: Vec<SortKey>,
     /// Session id of the template this document was merged from. Not saved.
     #[serde(skip)]
     pub template_uid: Option<u64>,
@@ -445,6 +492,11 @@ pub struct DataMerge {
 
 impl DataMerge {
     pub fn is_empty(&self) -> bool {
-        self.sources.is_empty() && self.placeholders.is_empty() && self.options.is_default()
+        self.sources.is_empty()
+            && self.placeholders.is_empty()
+            && self.options.is_default()
+            && self.driving.is_none()
+            && self.joins.is_empty()
+            && self.sort.is_empty()
     }
 }

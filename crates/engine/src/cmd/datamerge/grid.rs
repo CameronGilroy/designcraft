@@ -12,22 +12,12 @@ use serde_json::{Value, json};
 
 use super::super::object::RemoveKeep;
 use super::super::{bad, rect_param, spread_param};
-use super::fill::{self, FillMode, Maps, MissingImage, place_from_snapshot, snapshot_of};
+use super::fill::{self, Maps, MissingImage, place_from_snapshot, snapshot_of};
+use super::records::CellRecord;
 use crate::{Result, Session};
 
 /// String errors from geometry and planning. Command handlers turn these into `EngineError`.
 type GridOut<T> = std::result::Result<T, String>;
-
-/// One record already chosen for this merge or preview.
-#[derive(Clone, Debug)]
-pub struct CellRecord {
-    pub source_id: Option<u64>,
-    pub fields: Vec<designcraft_doc::DataField>,
-    pub cells: Vec<String>,
-    pub data_dir: Option<std::path::PathBuf>,
-    /// 1-based position in the filtered list, before range and limit.
-    pub number: u32,
-}
 
 #[derive(Clone, Debug)]
 pub struct GridSpec {
@@ -281,7 +271,7 @@ pub fn explode_cycle(
             {
                 absorb(fill_record(dst, rec, options, &cell_maps, doc_dir), warnings, missing, parent_warned);
             } else {
-                let report = fill::fill_row(dst, &[], &[], 0, options, &cell_maps, None, doc_dir, FillMode::Blank);
+                let report = fill::fill_row(dst, &CellRecord::blank(), options, &cell_maps, doc_dir, fill::FillMode::Blank);
                 absorb(report, warnings, missing, parent_warned);
             }
         }
@@ -297,11 +287,7 @@ fn fill_record(
     maps: &Maps,
     doc_dir: Option<&std::path::Path>,
 ) -> fill::FillReport {
-    let mode = match rec.source_id {
-        Some(id) => FillMode::Source(id),
-        None => FillMode::Named,
-    };
-    fill::fill_row(doc, &rec.fields, &rec.cells, rec.number, options, maps, rec.data_dir.as_deref(), doc_dir, mode)
+    fill::fill_row(doc, rec, options, maps, doc_dir, fill::fill_mode_of(rec))
 }
 
 fn absorb(report: fill::FillReport, warnings: &mut Vec<String>, missing: &mut Vec<MissingImage>, parent: &mut bool) {

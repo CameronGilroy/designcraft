@@ -38,8 +38,8 @@ use std::sync::Arc;
 pub use anchored::{AnchorPosition, AnchoredObject, OBJECT_MARK};
 pub use attrs::*;
 pub use datamerge::{
-    DataField, DataFieldKind, DataGrid, DataMerge, DataSource, Delimiter, FilterRule, Fingerprint, MergeOptions, Placeholder, PlaceholderAnchor,
-    PlaceholderRole, SortKey, SourceFilter, SourceStatus,
+    AffixRule, DataField, DataFieldKind, DataGrid, DataMerge, DataSource, Delimiter, FilterRule, Fingerprint, JoinLink, MERGE_INDEX_FIELD,
+    MergeOptions, Placeholder, PlaceholderAnchor, PlaceholderRole, SOURCE_FILENAME_FIELD, SortKey, SourceFilter, SourceStatus, is_virtual_field,
 };
 pub use designcraft_color as color;
 pub use designcraft_geom as geom;

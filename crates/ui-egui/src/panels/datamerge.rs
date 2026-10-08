@@ -426,6 +426,10 @@ fn merge_options(
     if ui.checkbox(&mut link_images, w(ui, lang, "Link images")).changed() {
         let _ = app.run("data.options", json!({"linkImages": link_images}));
     }
+    let mut skip_warnings = options.skip_warnings;
+    if ui.checkbox(&mut skip_warnings, w(ui, lang, "Skip records with warnings")).changed() {
+        let _ = app.run("data.options", json!({"skipWarnings": skip_warnings}));
+    }
     let mut limit = options.limit.unwrap_or(0);
     if ui.add(egui::DragValue::new(&mut limit).range(0..=100_000).prefix(format!("{} ", tr(lang, "Limit")))).changed() {
         let value = if limit == 0 { Value::Null } else { json!(limit) };

@@ -215,7 +215,7 @@ same references), and from the app's JSON control channel. See [docs/agents.md](
 | M8 | Tables | ✅ core (table/cell styles, rotation, diagonal lines pending) |
 | M9 | Performance (MT composition, tiles) | in progress (glyph path cache, bounded RTL label layout cache, culling, parallel compose 6.7× faster, perf harness) |
 | M10 | Find/Change, spelling, Preflight | in progress (Find/Change ✅, spelling ✅, Preflight) |
-| M11 | Layout power features (liquid/alternate layouts, data merge) | in progress (data merge phase 2, step & repeat, snippets) |
+| M11 | Layout power features (liquid/alternate layouts, data merge) | in progress (data merge phase 3, step & repeat, snippets) |
 | M12 | Interactive & digital (EPUB, HTML, interactive PDF) | started (EPUB, PDF links/bookmarks) |
 | M13 | Automation (scripts, batch) | |
 | M14 | 1.0 polish & packaging | |

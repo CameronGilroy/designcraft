@@ -266,10 +266,174 @@ fn excel_first_sheet_named_sheet_and_cached_values() {
     exec(&mut s, "data.source.select", json!({"bytes": book, "name": "people.xlsx", "sheet": "People"}));
     let src = s.documents()[0].doc.data_merge.sources.last().unwrap();
     assert_eq!(src.rows[0], vec!["Ada", "12", "TRUE", "44927"]);
-    assert_eq!(src.rows[1], vec!["Grace", "", "", ""]);
+    // Data merge computes an uncached formula. Place-as-table still leaves that cell empty.
+    assert_eq!(src.rows[1], vec!["Grace", "", "2", ""]);
     let msg = err(&mut s, "data.source.select", json!({"bytes": book, "name": "people.xlsx", "sheet": "Missing"}));
     assert!(msg.contains("Missing"), "{msg}");
     assert_eq!(s.documents()[0].doc.data_merge.sources.last().unwrap().rows[0][0], "Ada");
+}
+
+fn phase3_workbook() -> String {
+    xlsx(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="People" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        ("xl/_rels/workbook.xml.rels", r#"<Relationships><Relationship Id="rId1" Type="x" Target="worksheets/sheet1.xml"/></Relationships>"#),
+        (
+            "xl/styles.xml",
+            r#"<styleSheet><numFmts><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="yyyy-qq"/></numFmts><cellXfs><xf numFmtId="0"/><xf numFmtId="164"/><xf numFmtId="165"/><xf numFmtId="14"/></cellXfs></styleSheet>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Name</t></is></c><c r="B1" t="inlineStr"><is><t>Qty</t></is></c><c r="C1" t="inlineStr"><is><t>When</t></is></c><c r="D1" t="inlineStr"><is><t>Other</t></is></c><c r="E1" t="inlineStr"><is><t>Built</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Ada</t></is></c><c r="B2"><v>9</v><f>1+1</f></c><c r="C2" s="1"><v>1</v></c><c r="D2"><v>12</v></c><c r="E2" s="3"><v>1</v></c></row><row r="3"><c r="A3" t="inlineStr"><is><t>Bea</t></is></c><c r="B3"><f>1+1</f></c><c r="C3" s="1"><v>60</v></c><c r="D3" s="1"><v>61</v></c></row><row r="4"><c r="A4" t="inlineStr"><is><t>Cy</t></is></c><c r="B4"><f>SUM(B2:B3)</f></c><c r="C4" s="2"><v>1</v></c><c r="D4"><f>NOW()</f></c></row><row r="5"><c r="A5" t="inlineStr"><is><t>Dee</t></is></c><c r="B5"><f>A2&amp;&quot;x&quot;</f></c></row></sheetData></worksheet>"#,
+        ),
+    ])
+}
+
+#[test]
+fn phase3_excel_formulas_dates_xls_and_place_stays_cached() {
+    let book = phase3_workbook();
+    let mut s = Session::new();
+    new_doc(&mut s, 1);
+    exec(&mut s, "data.source.select", json!({"bytes": book, "name": "people.xlsx"}));
+    let src = &s.documents()[0].doc.data_merge.sources[0];
+    assert_eq!(src.rows[0], vec!["Ada", "9", "1900-01-01", "12", "01-01-00"]);
+    assert_eq!(src.rows[1], vec!["Bea", "2", "1900-02-29", "1900-03-01", ""]);
+    assert_eq!(src.rows[2][1], "11");
+    assert_eq!(src.rows[2][2], "1");
+    assert_eq!(src.rows[2][3], "");
+    assert_eq!(src.rows[3][1], "");
+    let notes = src.warnings.join("\n");
+    assert!(notes.contains("Cell C4: the date format could not be read."), "{notes}");
+    assert!(notes.contains("Cell D4: the formula could not be computed."), "{notes}");
+    assert!(notes.contains("Cell B5: the formula could not be computed."), "{notes}");
+
+    let msg = err(&mut s, "data.source.select", json!({"bytes": book, "name": "book.xlsm"}));
+    assert!(msg.contains("xlsm"), "{msg}");
+    assert_eq!(s.documents()[0].doc.data_merge.sources.len(), 1, "an xlsm file does not attach");
+
+    let xls = designcraft_textimport::xls_fixture(&[
+        vec![
+            designcraft_textimport::XlsCell::Text("Name".into()),
+            designcraft_textimport::XlsCell::Text("Qty".into()),
+            designcraft_textimport::XlsCell::Text("Note".into()),
+        ],
+        vec![
+            designcraft_textimport::XlsCell::Text("Ada".into()),
+            designcraft_textimport::XlsCell::Rk(12),
+            designcraft_textimport::XlsCell::Formula(9.0),
+        ],
+        vec![designcraft_textimport::XlsCell::Text("Bea".into()), designcraft_textimport::XlsCell::Empty, designcraft_textimport::XlsCell::Empty],
+    ]);
+    exec(&mut s, "data.source.select", json!({"bytes": crate::cmd::base64_encode(&xls), "name": "book.xls"}));
+    let src = s.documents()[0].doc.data_merge.sources.last().unwrap();
+    assert_eq!(src.rows[0], vec!["Ada", "12", "9"]);
+    assert_eq!(src.rows[1], vec!["Bea", "", ""]);
+
+    let placed = err(&mut s, "file.place", json!({"base64": crate::cmd::base64_encode(&xls), "name": "book.xls"}));
+    assert!(placed.contains("not placed"), "{placed}");
+    exec(&mut s, "file.place", json!({"base64": book, "name": "people.xlsx"}));
+    let doc = &s.documents()[0].doc;
+    let table = doc.stories.values().flat_map(|st| st.tables.values()).next().expect("placed table");
+    let cell = |r, c| table.cell(r, c).unwrap().text.text.clone();
+    assert_eq!(cell(1, 1), "9", "place keeps the cached value");
+    assert_eq!(cell(1, 2), "1", "place leaves a date serial as a number");
+    let mut flat = Vec::new();
+    for r in 0..table.nrows() {
+        for c in 0..table.ncols() {
+            flat.push(cell(r, c));
+        }
+    }
+    assert!(flat.iter().all(|text| text != "2" && !text.contains("1900")), "{flat:?}");
+}
+
+#[test]
+fn phase3_grid_drag_uses_the_rectangle_and_create_grid_defaults() {
+    use designcraft_tools::{PointerEvent, PointerKind};
+
+    let v = crate::ViewInfo::at_zoom(1.0);
+    let mut s = Session::new();
+    new_doc(&mut s, 1);
+    s.set_tool("dataGrid");
+    s.pointer(&PointerEvent::new(PointerKind::Down, 80.0, 90.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 80.0, 90.0), v).unwrap();
+    assert!(s.doc().unwrap().doc.spreads[0].items.is_empty(), "a click does not create a grid");
+    assert!(s.journal.iter().all(|(cmd, _)| cmd != "data.grid.create"));
+
+    // A single page is centered on the spine, so spread x is the canvas x plus half the page width.
+    let half = s.doc().unwrap().doc.spreads[0].pages[0].width / 2.0;
+    s.pointer(&PointerEvent::new(PointerKind::Down, 50.0, 60.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Drag, 220.0, 180.0), v).unwrap();
+    s.pointer(&PointerEvent::new(PointerKind::Up, 220.0, 180.0), v).unwrap();
+    let (cmd, params) = s.journal.last().expect("the mouse-up commits the preview").clone();
+    assert_eq!(cmd, "data.grid.create");
+    let keys: Vec<&String> = params.as_object().expect("object").keys().collect();
+    assert_eq!(keys, ["rect", "spread"], "the drag sends only the rectangle and the spread");
+    assert_eq!(params["spread"], json!(0));
+    let rect = json!([50.0 + half, 60.0, 220.0 + half, 180.0]);
+    assert_eq!(params["rect"], rect);
+    let st = s.doc().unwrap();
+    assert_eq!(st.history.undo.len(), 1);
+    let it = &st.doc.spreads[0].items[0];
+    assert_eq!(it.bounds(), designcraft_geom::Rect::new(50.0 + half, 60.0, 220.0 + half, 180.0));
+    let grid = it.data_grid.as_ref().expect("a grid");
+    assert_eq!((grid.rows, grid.columns), (2, 2));
+    assert_eq!(grid.gutter, 0.0);
+    assert_eq!((grid.record_offset, grid.record_advance), (0, 1));
+    assert_eq!(grid.origin, "topLeft");
+    assert_eq!(grid.arrange, "rows");
+    assert_eq!(st.doc.data_merge.options.per_page, "single");
+
+    // Two points inside the left margin, inside the snap zone. The rectangle stays on the drag.
+    let mut near = Session::new();
+    new_doc(&mut near, 1);
+    let margin = near.doc().unwrap().doc.spreads[0].pages[0].margins.inside;
+    let x0 = margin + 2.0 - half;
+    near.set_tool("dataGrid");
+    near.pointer(&PointerEvent::new(PointerKind::Down, x0, 80.0), v).unwrap();
+    near.pointer(&PointerEvent::new(PointerKind::Drag, 120.0, 200.0), v).unwrap();
+    near.pointer(&PointerEvent::new(PointerKind::Up, 120.0, 200.0), v).unwrap();
+    let near_rect = near.journal.last().unwrap().1["rect"].clone();
+    assert_eq!(near_rect, json!([margin + 2.0, 80.0, 120.0 + half, 200.0]), "the drag does not snap, {near_rect}");
+
+    let mut parent = Session::new();
+    new_doc(&mut parent, 1);
+    parent.active_mut().unwrap().editing_parents = true;
+    parent.set_tool("dataGrid");
+    parent.pointer(&PointerEvent::new(PointerKind::Down, 50.0, 60.0), v).unwrap();
+    parent.pointer(&PointerEvent::new(PointerKind::Drag, 220.0, 180.0), v).unwrap();
+    parent.pointer(&PointerEvent::new(PointerKind::Up, 220.0, 180.0), v).unwrap();
+    let doc = &parent.doc().unwrap().doc;
+    assert!(doc.parents.iter().flat_map(|sp| sp.items.iter()).all(|it| it.data_grid.is_none()));
+    assert!(doc.spreads.iter().flat_map(|sp| sp.items.iter()).all(|it| it.data_grid.is_none()));
+    assert!(parent.journal.iter().all(|(cmd, _)| cmd != "data.grid.create"));
+}
+
+#[test]
+fn phase3_merge_writes_a_pdf_only_when_a_path_is_given() {
+    let dir = scratch("pdf");
+    let path = dir.join("merged.pdf");
+    let mut s = Session::new();
+    new_doc(&mut s, 1);
+    select_csv(&mut s, "Name\nAda\nGrace\n");
+    text_frame(&mut s, [36.0, 36.0, 200.0, 80.0], "<<Name>>", None);
+    let merged = exec(&mut s, "data.merge", json!({"pdf": path.to_string_lossy()}));
+    assert_eq!(merged["records"], 2);
+    assert_eq!(s.documents().len(), 2, "the merged document is added");
+    let active = &s.documents()[s.active_index().unwrap()].doc;
+    let story_text: Vec<&str> = active.stories.values().map(|st| st.text.as_str()).collect();
+    assert!(story_text.iter().any(|t| t.contains("Ada")) && story_text.iter().any(|t| t.contains("Grace")), "{story_text:?}");
+    assert!(story_text.iter().all(|t| !t.contains("<<Name>>")), "{story_text:?}");
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(bytes.starts_with(b"%PDF"), "pdf magic");
+    let len = bytes.len();
+    let again = exec(&mut s, "data.merge", json!({}));
+    assert_eq!(again["records"], 2);
+    assert_eq!(std::fs::read(&path).unwrap().len(), len, "omitting pdf leaves the previous file alone");
+    assert!(!dir.join("other.pdf").exists());
+    let bad = err(&mut s, "data.merge", json!({"pdf": 12}));
+    assert!(bad.contains("pdf"), "{bad}");
 }
 
 #[test]
@@ -737,7 +901,7 @@ fn parent_page_placeholder_warns_once_and_stays() {
     text_frame(&mut s, [36.0, 36.0, 240.0, 80.0], "<<Name>>", None);
     let r = exec(&mut s, "data.merge", json!({}));
     let warnings: Vec<_> = r["warnings"].as_array().unwrap().iter().filter_map(|w| w.as_str()).filter(|w| w.contains("parent")).collect();
-    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(warnings.len(), 0, "{warnings:?}");
     let doc = &s.documents()[s.active_index().unwrap()].doc;
     let mut parent_text = Vec::new();
     for sp in &doc.parents {
@@ -750,8 +914,90 @@ fn parent_page_placeholder_warns_once_and_stays() {
         }
     }
     assert_eq!(parent_text, vec!["<<Name>>".to_string()]);
+    let pages = page_frames(&s);
+    assert!(pages.len() >= 2, "{pages:?}");
+    assert!(pages[0].iter().any(|(_, _, t)| t == "Ada"), "{pages:?}");
+    assert!(pages[1].iter().any(|(_, _, t)| t == "Grace"), "{pages:?}");
     assert!(texts(&s).contains(&"Ada".to_string()));
     assert!(texts(&s).contains(&"Grace".to_string()));
+}
+
+#[test]
+fn phase3_blank_page_warns_once_for_an_unfilled_parent() {
+    let mut s = Session::new();
+    new_doc(&mut s, 2);
+    select_csv(&mut s, "Name\nAda\nGrace\n");
+    let parent = exec(
+        &mut s,
+        "frame.create",
+        json!({"rect": [36.0, 120.0, 220.0, 160.0], "content": "text", "text": "", "spread": {"kind": "parent", "index": 0}}),
+    );
+    exec(&mut s, "data.placeholder.add", json!({"field": "Name", "story": parent["story"], "at": 0}));
+    text_frame(&mut s, [36.0, 36.0, 240.0, 80.0], "<<Name>>", Some(0));
+
+    let preview = exec(&mut s, "data.preview", json!({"record": 1}));
+    let preview_warnings: Vec<_> = preview["warnings"].as_array().unwrap().iter().filter_map(|w| w.as_str()).collect();
+    assert_eq!(preview_warnings, vec!["A parent-page placeholder was left unfilled."]);
+    let preview_pages = page_frames(&s);
+    assert!(preview_pages[0].iter().any(|(_, _, t)| t == "Ada"), "{preview_pages:?}");
+    assert!(preview_pages[1].is_empty(), "the blank page has no record copy: {preview_pages:?}");
+    exec(&mut s, "data.preview.stop", json!({}));
+
+    let merged = exec(&mut s, "data.merge", json!({}));
+    let warnings: Vec<_> = merged["warnings"].as_array().unwrap().iter().filter_map(|w| w.as_str()).filter(|w| w.contains("parent")).collect();
+    assert_eq!(warnings, vec!["A parent-page placeholder was left unfilled."]);
+    let doc = &s.documents()[s.active_index().unwrap()].doc;
+    let parent_text: Vec<_> = doc
+        .parents
+        .iter()
+        .flat_map(|sp| sp.items.iter())
+        .filter_map(|it| match &it.content {
+            Content::Text(tf) => doc.story(tf.story).map(|st| st.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(parent_text, vec!["<<Name>>".to_string()]);
+    assert!(!doc.page(0).unwrap().overridden.is_empty(), "the record page overrides the parent");
+    assert!(doc.page(1).unwrap().overridden.is_empty(), "the blank page keeps the unfilled parent");
+    assert!(!doc.page(2).unwrap().overridden.is_empty());
+    assert!(doc.page(3).unwrap().overridden.is_empty());
+    let pages = page_frames(&s);
+    assert_eq!(pages.len(), 4, "{pages:?}");
+    assert!(pages[0].iter().any(|(_, _, t)| t == "Ada"), "{pages:?}");
+    assert!(pages[1].is_empty(), "{pages:?}");
+    assert!(pages[2].iter().any(|(_, _, t)| t == "Grace"), "{pages:?}");
+    assert!(pages[3].is_empty(), "{pages:?}");
+
+    let mut both = Session::new();
+    new_doc(&mut both, 2);
+    select_csv(&mut both, "Name\nAda\n");
+    let parent = exec(
+        &mut both,
+        "frame.create",
+        json!({"rect": [36.0, 120.0, 220.0, 160.0], "content": "text", "text": "", "spread": {"kind": "parent", "index": 0}}),
+    );
+    exec(&mut both, "data.placeholder.add", json!({"field": "Name", "story": parent["story"], "at": 0}));
+    text_frame(&mut both, [36.0, 36.0, 200.0, 80.0], "<<Name>>", Some(0));
+    text_frame(&mut both, [36.0, 36.0, 200.0, 80.0], "<<Name>>", Some(1));
+    let filled = exec(&mut both, "data.merge", json!({}));
+    let warnings: Vec<_> = filled["warnings"].as_array().unwrap().iter().filter_map(|w| w.as_str()).filter(|w| w.contains("parent")).collect();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let pages = page_frames(&both);
+    assert!(pages.iter().all(|page| page.iter().any(|(_, _, t)| t == "Ada")), "{pages:?}");
+
+    let mut only_parent = Session::new();
+    new_doc(&mut only_parent, 1);
+    select_csv(&mut only_parent, "Name\nAda\n");
+    let parent = exec(
+        &mut only_parent,
+        "frame.create",
+        json!({"rect": [36.0, 36.0, 200.0, 80.0], "content": "text", "text": "", "spread": {"kind": "parent", "index": 0}}),
+    );
+    exec(&mut only_parent, "data.placeholder.add", json!({"field": "Name", "story": parent["story"], "at": 0}));
+    let filled = exec(&mut only_parent, "data.merge", json!({}));
+    let warnings: Vec<_> = filled["warnings"].as_array().unwrap().iter().filter_map(|w| w.as_str()).filter(|w| w.contains("parent")).collect();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(page_frames(&only_parent).iter().any(|page| page.iter().any(|(_, _, t)| t == "Ada")));
 }
 
 #[test]
@@ -782,6 +1028,7 @@ fn relative_path_and_reopen() {
         enabled: true,
         filter: designcraft_doc::SourceFilter::default(),
         sort: Vec::new(),
+        affixes: Vec::new(),
     });
     resolve_sources_on_open(&mut doc, Some(&b.join("doc.designcraft")));
     assert_eq!(doc.data_merge.sources[0].status, SourceStatus::Ok);
@@ -1097,9 +1344,10 @@ fn enabled_sources_concatenate_and_other_source_placeholders_are_blank() {
     exec(&mut s, "data.placeholder.add", json!({"field": "Name", "source": bea, "story": right["story"], "at": 2}));
 
     let fields = exec(&mut s, "data.fields", json!({}));
-    assert_eq!(fields.as_array().unwrap().len(), 2);
-    assert_eq!(fields[0]["sourceId"], ada);
-    assert_eq!(fields[1]["sourceId"], bea);
+    let names: Vec<_> = fields.as_array().unwrap().iter().filter(|field| field["name"] == "Name").collect();
+    assert_eq!(names.len(), 2);
+    assert_eq!(names[0]["sourceId"], ada);
+    assert_eq!(names[1]["sourceId"], bea);
     assert_eq!(fields[0]["enabled"], true);
     assert_eq!(fields[0]["records"], 1);
     assert_eq!(fields[0]["preview"], 2);
@@ -1637,6 +1885,135 @@ fn select_records_dedupes_large_ranges_in_first_seen_order() {
     assert_eq!(&idx[..3], &[4, 0, 1]);
 }
 
+fn bind_photo(s: &mut Session, rect: [f64; 4]) -> u64 {
+    let id = exec(s, "frame.create", json!({"rect": rect, "content": "graphic"}))["id"].as_u64().unwrap();
+    exec(s, "data.placeholder.add", json!({"field": "Photo", "item": id}));
+    id
+}
+
+#[test]
+fn phase3_skip_keeps_or_drops_a_warning_record() {
+    let dir = scratch("phase3-skip");
+    let csv = dir.join("people.csv");
+    write(&csv, "Name,@Photo\nBad,missing.png\nGood,good.png\n");
+    write_png(&dir.join("good.png"));
+
+    let mut off = Session::new();
+    new_doc(&mut off, 1);
+    exec(&mut off, "data.source.select", json!({"path": &csv}));
+    bind_photo(&mut off, [40.0, 100.0, 100.0, 160.0]);
+    add_grid(&mut off, 0, [36.0, 36.0, 436.0, 236.0], [40.0, 40.0, 200.0, 80.0], 1, 2, json!({}));
+    text_frame(&mut off, [460.0, 36.0, 600.0, 80.0], "#<<Merge index>>", None);
+    let merged = exec(&mut off, "data.merge", json!({}));
+    assert_eq!(merged["records"], 2);
+    assert!(merged["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap_or("").contains("missing image")), "{merged}");
+    let frames = page_frames(&off);
+    assert!(frames[0].iter().any(|(_, _, text)| text.contains("Bad")), "the warning record stays: {frames:?}");
+    exec(&mut off, "file.activate", json!({"index": 0}));
+    let preview = exec(&mut off, "data.preview", json!({"record": 1}));
+    assert_eq!(preview["count"], 2);
+    assert!(story_order(&off).iter().any(|t| t.contains("Bad")));
+
+    let mut on = Session::new();
+    new_doc(&mut on, 1);
+    exec(&mut on, "data.source.select", json!({"path": &csv}));
+    bind_photo(&mut on, [40.0, 100.0, 100.0, 160.0]);
+    add_grid(&mut on, 0, [36.0, 36.0, 436.0, 236.0], [40.0, 40.0, 200.0, 80.0], 1, 2, json!({}));
+    text_frame(&mut on, [460.0, 36.0, 600.0, 80.0], "#<<Merge index>>", None);
+    exec(&mut on, "data.options", json!({"skipWarnings": true}));
+    let preview = exec(&mut on, "data.preview", json!({"record": 1}));
+    assert_eq!(preview["count"], 1, "{preview}");
+    assert!(preview["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap_or("").contains("missing image")), "{preview}");
+    assert!(story_order(&on).iter().any(|t| t.contains("Good")), "{:?}", story_order(&on));
+    assert!(!story_order(&on).iter().any(|t| t.contains("Bad")), "{:?}", story_order(&on));
+    exec(&mut on, "data.preview.stop", json!({}));
+    let merged = exec(&mut on, "data.merge", json!({}));
+    assert_eq!(merged["records"], 1);
+    assert!(merged["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap_or("").contains("missing image")), "{merged}");
+    let frames = page_frames(&on);
+    let origin = frames[0].iter().find(|(_, _, text)| text.contains("Good") || text.contains("Bad"));
+    assert!(origin.is_some_and(|(_, _, text)| text.contains("Good") && !text.contains("Bad")), "kept record takes the first cell: {frames:?}");
+    assert!(frames.iter().flatten().any(|(_, _, text)| text.contains("#2")), "skip does not renumber: {frames:?}");
+    assert!(!frames.iter().flatten().any(|(_, _, text)| text.contains("Bad")), "{frames:?}");
+}
+
+#[test]
+fn phase3_affixes_virtual_fields_join_and_global_sort() {
+    let dir = scratch("phase3-records");
+    let csv = dir.join("people.csv");
+    let body = "Name,Note\nAda,1\n,2\nBea,3\n";
+    write(&csv, body);
+    let before = std::fs::read(&csv).unwrap();
+    let mut s = Session::new();
+    new_doc(&mut s, 1);
+    exec(&mut s, "data.source.select", json!({"path": &csv}));
+    text_frame(&mut s, [36.0, 36.0, 400.0, 80.0], "<<Name>>|<<Source filename>>|<<Merge index>>", None);
+    exec(
+        &mut s,
+        "data.source.affix",
+        json!({"rules": [
+            {"field": "Name", "text": "Hi ", "place": "prefix", "nonEmpty": true},
+            {"field": "Name", "text": "!", "place": "postfix", "nonEmpty": true}
+        ]}),
+    );
+    exec(&mut s, "data.options", json!({"records": "range", "range": "2-3"}));
+    exec(&mut s, "data.merge", json!({}));
+    assert_eq!(story_order(&s), vec!["|people.csv|1".to_string(), "Hi Bea!|people.csv|2".to_string()]);
+    assert_eq!(std::fs::read(&csv).unwrap(), before);
+
+    let mut inline_name = Session::new();
+    new_doc(&mut inline_name, 1);
+    exec(&mut inline_name, "data.source.select", json!({"bytes": crate::cmd::base64_encode(b"Name\nAda\n"), "name": "guests.csv"}));
+    text_frame(&mut inline_name, [36.0, 36.0, 320.0, 80.0], "<<Source filename>>|<<Merge index>>", None);
+    let listed = exec(&mut inline_name, "data.fields", json!({}));
+    let names: Vec<&str> = listed.as_array().unwrap().iter().filter_map(|entry| entry["name"].as_str()).collect();
+    assert_eq!(names.iter().filter(|name| **name == "Source filename").count(), 1, "{names:?}");
+    assert_eq!(names.iter().filter(|name| **name == "Merge index").count(), 1, "{names:?}");
+    exec(&mut inline_name, "data.merge", json!({}));
+    assert_eq!(story_order(&inline_name), vec!["guests.csv|1".to_string()]);
+    exec(&mut s, "file.activate", json!({"index": 0}));
+    assert_eq!(s.documents()[0].doc.data_merge.sources[0].rows, vec![vec!["Ada", "1"], vec!["", "2"], vec!["Bea", "3"]]);
+    let preview = exec(&mut s, "data.preview", json!({"record": 2}));
+    assert_eq!(preview["count"], 2);
+    assert!(story_order(&s).iter().any(|t| t.contains("Hi Bea!")));
+
+    let mut named = Session::new();
+    new_doc(&mut named, 1);
+    select_body(&mut named, "people.csv", "Merge index,Name\nfrom-file,Ada\n");
+    text_frame(&mut named, [36.0, 36.0, 300.0, 80.0], "<<Merge index>>|<<Name>>", None);
+    exec(&mut named, "data.merge", json!({}));
+    assert_eq!(story_order(&named), vec!["from-file|Ada".to_string()]);
+
+    let mut join = Session::new();
+    new_doc(&mut join, 1);
+    let people = select_body(&mut join, "people.csv", "Name,Key\nAda,1\nBea,2\nCara,9\n");
+    let cities = select_body(&mut join, "cities.csv", "Key,City\n2,Ville\n1,Town\n3,Nope\n");
+    text_frame(&mut join, [36.0, 36.0, 300.0, 80.0], "<<Name>>|<<City>>", None);
+    exec(&mut join, "data.join", json!({"driving": people, "links": [{"source": cities, "drivingField": "Key", "field": "Key"}]}));
+    let merged = exec(&mut join, "data.merge", json!({}));
+    assert_eq!(merged["records"], 3);
+    assert_eq!(story_order(&join), vec!["Ada|Town".to_string(), "Bea|Ville".to_string(), "Cara|".to_string()]);
+
+    let mut sorted = Session::new();
+    new_doc(&mut sorted, 1);
+    let left = select_body(&mut sorted, "a.csv", "Name,Group\nZoe,1\nAda,1\n");
+    select_body(&mut sorted, "b.csv", "Name\nMia\n");
+    text_frame(&mut sorted, [36.0, 36.0, 240.0, 80.0], "<<Name>>", None);
+    exec(&mut sorted, "data.source.sort", json!({"id": left, "fields": [{"field": "Name", "direction": "asc"}]}));
+    exec(&mut sorted, "data.sort", json!({"fields": [{"field": "Group"}]}));
+    exec(&mut sorted, "data.merge", json!({}));
+    assert_eq!(story_order(&sorted), vec!["Mia".to_string(), "Ada".to_string(), "Zoe".to_string()]);
+
+    let mut interleaved = Session::new();
+    new_doc(&mut interleaved, 1);
+    select_body(&mut interleaved, "a.csv", "Name\nCara\nAda\n");
+    select_body(&mut interleaved, "b.csv", "Name\nBea\n");
+    text_frame(&mut interleaved, [36.0, 36.0, 240.0, 80.0], "<<Name>>", None);
+    exec(&mut interleaved, "data.sort", json!({"fields": [{"field": "Name"}]}));
+    exec(&mut interleaved, "data.merge", json!({}));
+    assert_eq!(story_order(&interleaved), vec!["Ada".to_string(), "Bea".to_string(), "Cara".to_string()]);
+}
+
 #[test]
 fn oversized_data_file_is_refused_before_reading() {
     let dir = scratch("oversized");
@@ -1646,4 +2023,332 @@ fn oversized_data_file_is_refused_before_reading() {
     let msg = read_path_capped(&path, 1024).unwrap_err();
     assert!(msg.contains("larger than"), "{msg}");
     assert_eq!(read_path_capped(&path, 4096).unwrap().len(), 2048);
+}
+
+fn inline_origin(s: &Session, prefix: &str) -> Option<(f64, f64)> {
+    let doc = &s.documents()[s.active_index().unwrap()].doc;
+    for sp in &doc.spreads {
+        for it in &sp.items {
+            let Content::Text(tf) = &it.content else { continue };
+            let Some(st) = doc.story(tf.story) else { continue };
+            if !st.text.starts_with(prefix) {
+                continue;
+            }
+            let composed = designcraft_compose::compose_story(doc, tf.story, &designcraft_compose::ComposeOptions::default());
+            let obj = composed.frames.iter().flat_map(|frame| frame.objects.iter()).next()?;
+            let long = obj.size.0.max(obj.size.1);
+            return Some((obj.origin.x, long));
+        }
+    }
+    None
+}
+
+fn qr_alts(s: &Session) -> Vec<String> {
+    let doc = &s.documents()[s.active_index().unwrap()].doc;
+    let mut alts = Vec::new();
+    for sp in &doc.spreads {
+        for it in &sp.items {
+            if let Content::Group { items } = &it.content {
+                alts.extend(items.iter().map(|child| child.alt_text.clone()));
+            }
+        }
+    }
+    alts
+}
+
+#[test]
+fn phase3_inline_picture_parent_and_unmarked_qr() {
+    let dir = scratch("phase3-inline");
+    let wide = designcraft_render::Rendered { width: 200, height: 2, pixels: vec![255u8; 200 * 2 * 4] }.to_png();
+    assert!(designcraft_render::image_size(&wide).is_some());
+    let pic = dir.join("wide.png");
+    std::fs::write(&pic, &wide).unwrap();
+    let csv = dir.join("people.csv");
+    write(&csv, "Name,@Photo\nA,wide.png\nLongername,wide.png\nGone,missing.png\n");
+
+    let mut s = Session::new();
+    new_doc(&mut s, 1);
+    exec(&mut s, "data.source.select", json!({"path": &csv}));
+    let frame = text_frame(&mut s, [36.0, 36.0, 500.0, 160.0], "", None);
+    let story = frame["story"].as_u64().unwrap();
+    exec(&mut s, "data.placeholder.add", json!({"field": "Name", "story": story, "at": 0}));
+    exec(&mut s, "data.placeholder.add", json!({"field": "Photo", "role": "image", "story": story, "at": 8}));
+    let picture = exec(&mut s, "frame.create", json!({"rect": [36.0, 200.0, 76.0, 240.0], "content": "unassigned"}));
+    exec(&mut s, "data.placeholder.add", json!({"field": "Photo", "role": "image", "item": picture["id"]}));
+    exec(&mut s, "data.preview", json!({"record": 1}));
+    let preview_short = inline_origin(&s, "A").expect("preview places an inline picture");
+    exec(&mut s, "data.preview", json!({"record": 2}));
+    let preview_long = inline_origin(&s, "Longername").expect("preview places the second record");
+    assert!(preview_long.0 > preview_short.0 + 4.0, "the picture moves with the text at preview: short {preview_short:?} long {preview_long:?}");
+    exec(&mut s, "data.preview.stop", json!({}));
+    let merged = exec(&mut s, "data.merge", json!({}));
+    assert_eq!(merged["records"], 3);
+    assert!(merged["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap_or("").contains("missing image")));
+    let short = inline_origin(&s, "A").expect("short name places an inline picture");
+    let long = inline_origin(&s, "Longername").expect("long name places an inline picture");
+    assert!(long.0 > short.0 + 4.0, "the picture moves with the text in front of it: short {short:?} long {long:?}");
+    assert!((short.1 - 144.0).abs() < 1.0, "inline long side clamps to 144 pt, got {}", short.1);
+    let doc = &s.documents()[s.active_index().unwrap()].doc;
+    let mut frame_w = Vec::new();
+    let mut unassigned = 0;
+    for sp in &doc.spreads {
+        for it in &sp.items {
+            if let Content::Graphic(g) = &it.content {
+                let fitted = g.xf.transform_rect_bbox(designcraft_geom::Rect::new(0.0, 0.0, g.size.0, g.size.1));
+                frame_w.push(fitted.width());
+                assert!((it.inner_bounds().width() - 40.0).abs() < 1.0, "the picture frame keeps its own size");
+            }
+            if matches!(it.content, Content::Unassigned) {
+                unassigned += 1;
+            }
+        }
+    }
+    assert!(frame_w.iter().any(|w| *w < 50.0), "the frame picture stays fitted in its frame, {frame_w:?}");
+    assert!(unassigned >= 1, "a missing image leaves the frame empty");
+    let gone = doc.stories.values().find(|st| st.text.starts_with("Gone")).expect("missing record is kept");
+    assert!(gone.objects.iter().any(|obj| matches!(obj.item.content, Content::Unassigned)));
+
+    let mut parent = Session::new();
+    new_doc(&mut parent, 1);
+    select_csv(&mut parent, "Name\nAda\nBea\nCara\nDot\nEve\n");
+    exec(
+        &mut parent,
+        "frame.create",
+        json!({"rect": [36.0, 20.0, 220.0, 60.0], "content": "text", "text": "", "spread": {"kind": "parent", "index": 0}}),
+    );
+    let header = parent.documents()[0].doc.parents[0].items.last().unwrap().clone();
+    let Content::Text(tf) = &header.content else {
+        panic!("parent frame");
+    };
+    exec(&mut parent, "data.placeholder.add", json!({"field": "Name", "story": tf.story.0, "at": 0}));
+    add_grid(&mut parent, 0, [72.0, 200.0, 360.0, 480.0], [72.0, 200.0, 200.0, 320.0], 2, 2, json!({}));
+    let grid = exec(&mut parent, "data.merge", json!({}));
+    assert_eq!(grid["pages"], 2);
+    assert!(grid["warnings"].as_array().unwrap().iter().all(|w| !w.as_str().unwrap_or("").contains("parent")));
+    let pages = page_frames(&parent);
+    assert!(pages[0].iter().any(|(_, y, t)| *y < 80 && t == "Ada"), "{pages:?}");
+    assert!(pages[1].iter().any(|(_, y, t)| *y < 80 && t == "Eve"), "{pages:?}");
+    let master = &parent.documents()[parent.active_index().unwrap()].doc;
+    let master_text: Vec<_> = master
+        .parents
+        .iter()
+        .flat_map(|sp| sp.items.iter())
+        .filter_map(|it| match &it.content {
+            Content::Text(tf) => master.story(tf.story).map(|st| st.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(master_text, vec!["<<Name>>".to_string()]);
+
+    let mut tile = Session::new();
+    new_doc(&mut tile, 1);
+    select_csv(&mut tile, "Name\nA\nB\nC\nD\nE\nF\n");
+    exec(
+        &mut tile,
+        "frame.create",
+        json!({"rect": [36.0, 8.0, 180.0, 36.0], "content": "text", "text": "", "spread": {"kind": "parent", "index": 0}}),
+    );
+    let band = tile.documents()[0].doc.parents[0].items.last().unwrap().clone();
+    let Content::Text(tf) = &band.content else {
+        panic!("parent frame");
+    };
+    exec(&mut tile, "data.placeholder.add", json!({"field": "Name", "story": tf.story.0, "at": 0}));
+    text_frame(&mut tile, [72.0, 72.0, 172.0, 172.0], "<<Name>>", None);
+    exec(
+        &mut tile,
+        "data.options",
+        json!({"perPage": "multiple", "arrange": "rows", "insets": [36.0, 36.0, 36.0, 36.0], "columnSpacing": 36.0, "rowSpacing": 36.0}),
+    );
+    exec(&mut tile, "data.merge", json!({}));
+    let tiled = page_frames(&tile);
+    assert_eq!(tiled.len(), 1, "{tiled:?}");
+    assert!(tiled[0].iter().any(|(_, y, t)| *y < 40 && t == "A"), "the parent copy uses the first record on the page: {tiled:?}");
+    assert!(!tiled[0].iter().any(|(_, y, t)| *y < 40 && t == "F"), "{tiled:?}");
+
+    let mut qr = Session::new();
+    new_doc(&mut qr, 1);
+    select_csv(&mut qr, "Code\nhello\n");
+    let kind = qr.documents()[0].doc.data_merge.sources[0].fields[0].kind;
+    assert_eq!(kind, DataFieldKind::Text);
+    exec(&mut qr, "object.qrCode", json!({"field": "Code", "rect": [36.0, 36.0, 120.0, 120.0]}));
+    assert_eq!(qr.documents()[0].doc.data_merge.sources[0].fields[0].kind, DataFieldKind::Text);
+    assert!(qr.documents()[0].doc.data_merge.placeholders.iter().any(|ph| ph.role == designcraft_doc::PlaceholderRole::Qr));
+    exec(&mut qr, "data.merge", json!({}));
+    assert_eq!(qr_alts(&qr), vec!["QR code: hello".to_string()]);
+
+    let mut marked = Session::new();
+    new_doc(&mut marked, 1);
+    select_csv(&mut marked, "#Code\nhello\n");
+    assert_eq!(marked.documents()[0].doc.data_merge.sources[0].fields[0].kind, DataFieldKind::Qr);
+    let frame = exec(&mut marked, "frame.create", json!({"rect": [36.0, 36.0, 120.0, 120.0], "content": "unassigned"}));
+    exec(&mut marked, "data.placeholder.add", json!({"field": "Code", "item": frame["id"]}));
+    exec(&mut marked, "data.merge", json!({}));
+    assert_eq!(qr_alts(&marked), vec!["QR code: hello".to_string()]);
+
+    let mut story_qr = Session::new();
+    new_doc(&mut story_qr, 1);
+    select_csv(&mut story_qr, "Code\nhello\n");
+    let made = text_frame(&mut story_qr, [36.0, 36.0, 200.0, 80.0], "", None);
+    let msg = err(&mut story_qr, "data.placeholder.add", json!({"field": "Code", "role": "qr", "story": made["story"], "at": 0}));
+    assert!(msg.contains("frame"), "{msg}");
+}
+
+#[test]
+fn phase3_fetches_http_images() {
+    let png = crate::cmd::base64_decode(PNG_B64);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("localhost socket");
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        let mut served = 0u8;
+        while served < 2 && std::time::Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut sock, _)) => {
+                    sock.set_nonblocking(false).unwrap();
+                    let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                    let mut buf = [0u8; 4096];
+                    let n = std::io::Read::read(&mut sock, &mut buf).unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let body: &[u8] = if req.contains("GET /ok.png") { &png } else { b"" };
+                    let status = if req.contains("GET /ok.png") { "200 OK" } else { "500 ERR" };
+                    let header = format!("HTTP/1.0 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                    let _ = std::io::Write::write_all(&mut sock, header.as_bytes());
+                    let _ = std::io::Write::write_all(&mut sock, body);
+                    served += 1;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(std::time::Duration::from_millis(15)),
+                Err(_) => break,
+            }
+        }
+    });
+
+    let mut s = Session::new();
+    new_doc(&mut s, 1);
+    select_csv(&mut s, &format!("@Photo\nhttp://127.0.0.1:{port}/ok.png\n"));
+    let frame = exec(&mut s, "frame.create", json!({"rect": [36.0, 36.0, 80.0, 80.0], "content": "unassigned"}));
+    exec(&mut s, "data.placeholder.add", json!({"field": "Photo", "role": "image", "item": frame["id"]}));
+    let ok = exec(&mut s, "data.merge", json!({}));
+    assert!(ok["warnings"].as_array().unwrap().is_empty(), "{ok}");
+    assert!(graphic_link(&s).is_some_and(|link| link.contains("/ok.png")));
+
+    let mut fail = Session::new();
+    new_doc(&mut fail, 1);
+    select_csv(&mut fail, &format!("@Photo\nhttp://127.0.0.1:{port}/missing.png\n"));
+    let frame = exec(&mut fail, "frame.create", json!({"rect": [36.0, 36.0, 80.0, 80.0], "content": "unassigned"}));
+    exec(&mut fail, "data.placeholder.add", json!({"field": "Photo", "role": "image", "item": frame["id"]}));
+    let bad = exec(&mut fail, "data.merge", json!({}));
+    assert_eq!(bad["records"], 1);
+    assert!(bad["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap_or("").contains("missing image")), "{bad}");
+    assert!(graphic_link(&fail).is_none());
+    server.join().unwrap();
+}
+
+/// `curl` trusts `SSL_CERT_FILE` from its own environment. This crate forbids the unsafe call
+/// that would set that variable in-process, so the merge runs in a child of this test binary.
+struct StopChild(Option<std::process::Child>);
+
+impl Drop for StopChild {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+fn https_server_ready(port: u16) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    while std::time::Instant::now() < deadline {
+        if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(200)).is_ok() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+    false
+}
+
+fn phase3_fetches_https_images_in_process() {
+    let port: u16 = std::env::var("DESIGNCRAFT_HTTPS_PORT").expect("port").parse().expect("port number");
+    let png = crate::cmd::base64_decode(PNG_B64);
+    let mut s = Session::new();
+    new_doc(&mut s, 1);
+    select_csv(&mut s, &format!("@Photo\nhttps://127.0.0.1:{port}/ok.png\n"));
+    let frame = exec(&mut s, "frame.create", json!({"rect": [36.0, 36.0, 80.0, 80.0], "content": "unassigned"}));
+    exec(&mut s, "data.placeholder.add", json!({"field": "Photo", "role": "image", "item": frame["id"]}));
+    let ok = exec(&mut s, "data.merge", json!({}));
+    assert!(ok["warnings"].as_array().unwrap().is_empty(), "{ok}");
+    let link = graphic_link(&s).unwrap_or_default();
+    assert!(link.contains(&format!("https://127.0.0.1:{port}/ok.png")), "{link}");
+    let doc = &s.documents()[s.active_index().unwrap()].doc;
+    assert!(doc.assets.values().any(|asset| asset.data.as_slice() == png.as_slice()), "the merge places the fetched png");
+
+    let mut fail = Session::new();
+    new_doc(&mut fail, 1);
+    select_csv(&mut fail, &format!("@Photo\nhttps://127.0.0.1:{port}/missing.png\n"));
+    let frame = exec(&mut fail, "frame.create", json!({"rect": [36.0, 36.0, 80.0, 80.0], "content": "unassigned"}));
+    exec(&mut fail, "data.placeholder.add", json!({"field": "Photo", "role": "image", "item": frame["id"]}));
+    let bad = exec(&mut fail, "data.merge", json!({}));
+    assert_eq!(bad["records"], 1);
+    assert!(bad["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap_or("").contains("missing image")), "{bad}");
+    assert!(graphic_link(&fail).is_none());
+}
+
+#[test]
+fn phase3_fetches_https_images() {
+    if std::env::var_os("DESIGNCRAFT_HTTPS_PORT").is_some() {
+        phase3_fetches_https_images_in_process();
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("designcraft-https-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    std::fs::write(dir.join("ok.png"), crate::cmd::base64_decode(PNG_B64)).expect("png");
+    let cert = dir.join("cert.pem");
+    let key = dir.join("key.pem");
+    let made = std::process::Command::new("openssl")
+        .arg("req")
+        .args(["-x509", "-newkey", "rsa:2048", "-days", "1", "-nodes"])
+        .arg("-keyout")
+        .arg(&key)
+        .arg("-out")
+        .arg(&cert)
+        .args(["-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost"])
+        .output()
+        .expect("openssl req");
+    assert!(made.status.success(), "openssl req failed: {}", String::from_utf8_lossy(&made.stderr));
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("localhost socket");
+    let port = listener.local_addr().expect("port").port();
+    drop(listener);
+    let accept = format!("127.0.0.1:{port}");
+    let err_path = dir.join("server.err");
+    let err_file = std::fs::File::create(&err_path).expect("server log");
+    let server = std::process::Command::new("openssl")
+        .args(["s_server", "-accept", &accept, "-cert", "cert.pem", "-key", "key.pem", "-WWW"])
+        .current_dir(&dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::from(err_file))
+        .spawn()
+        .expect("openssl s_server");
+    let server = StopChild(Some(server));
+    if !https_server_ready(port) {
+        let log = std::fs::read_to_string(&err_path).unwrap_or_default();
+        panic!("https server did not listen on {port}: {log}");
+    }
+
+    let exe = std::env::current_exe().expect("test binary");
+    let output = std::process::Command::new(exe)
+        .args(["--exact", "--test-threads=1", "cmd::datamerge::tests::phase3_fetches_https_images"])
+        .env("SSL_CERT_FILE", &cert)
+        .env("DESIGNCRAFT_HTTPS_PORT", port.to_string())
+        .output()
+        .expect("re-run the https merge");
+    drop(server);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success() && stdout.contains("phase3_fetches_https_images ... ok"), "https data.merge did not pass\n{stdout}\n{stderr}");
+    let _ = std::fs::remove_dir_all(&dir);
 }
