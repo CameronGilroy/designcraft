@@ -497,6 +497,40 @@ fn round_trips_tables() {
 }
 
 #[test]
+fn imports_and_round_trips_explicit_cell_border_overrides() {
+    // Hand-written IDML: the outer cell edge may explicitly suppress or replace the
+    // table border. An absent/zero priority keeps the table border's precedence.
+    let story = r#"<idPkg:Story xmlns:idPkg="http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging">
+<Story Self="s1"><ParagraphStyleRange><CharacterStyleRange>
+<Table HeaderRowCount="0" FooterRowCount="0" TopBorderStrokeWeight="2">
+  <Row Name="0" MinimumHeight="24"/>
+  <Column Name="0" SingleColumnWidth="60"/><Column Name="1" SingleColumnWidth="60"/>
+  <Cell Name="0:0" TopEdgeStrokeColor="Swatch/None" TopEdgeStrokePriority="1"
+        LeftEdgeStrokeColor="Color/Brand" LeftEdgeStrokeWeight="3" LeftEdgeStrokePriority="2"
+        BottomEdgeStrokeWeight="0" BottomEdgeStrokePriority="0" RightEdgeStrokeColor="Swatch/None">
+    <ParagraphStyleRange><CharacterStyleRange><Content>A</Content></CharacterStyleRange></ParagraphStyleRange>
+  </Cell>
+  <Cell Name="1:0"><ParagraphStyleRange><CharacterStyleRange><Content>B</Content></CharacterStyleRange></ParagraphStyleRange></Cell>
+</Table></CharacterStyleRange></ParagraphStyleRange></Story></idPkg:Story>"#;
+    let d = import_idml(&fixture_with_story(story)).unwrap();
+    d.check().unwrap();
+    let table = d.stories.values().flat_map(|s| s.tables.values()).next().unwrap();
+    let cell = table.cell(0, 0).unwrap();
+    assert_eq!(cell.border_overrides, [true, true, false, false]);
+    assert!(!cell.strokes[0].is_visible(), "explicit None is retained");
+    assert_eq!(cell.strokes[1].color, "Brand");
+    assert_eq!(cell.strokes[1].weight, 3.0);
+    assert_eq!(table.options.border.weight, 2.0);
+    assert_eq!(table.cell(0, 1).unwrap().border_overrides, [false; 4]);
+
+    let back = import_idml(&export_idml(&d)).unwrap();
+    let roundtrip = back.stories.values().flat_map(|s| s.tables.values()).next().unwrap();
+    assert_eq!(roundtrip.cell(0, 0).unwrap().border_overrides, cell.border_overrides);
+    assert_eq!(roundtrip.cell(0, 0).unwrap().strokes, cell.strokes);
+    assert_eq!(roundtrip.cell(0, 1).unwrap().border_overrides, [false; 4]);
+}
+
+#[test]
 fn round_trips_footnotes_and_options() {
     let mut d = Document::new(&NewDocument::default());
     let lid = d.default_layer();
