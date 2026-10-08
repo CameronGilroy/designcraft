@@ -511,7 +511,14 @@ fn place_image(
     report: &mut FillReport,
 ) {
     let cands = image_candidates(cell, data_dir, doc_dir);
-    let found = cands.iter().find_map(|p| std::fs::read(p).ok().filter(|b| !b.is_empty()).map(|b| (p.clone(), b)));
+    let found = cands.iter().find_map(|p| {
+        // Refuse huge files before reading them; a too-large image counts as missing.
+        let len = std::fs::metadata(p).ok()?.len();
+        if len == 0 || len > super::MAX_IMAGE_FILE_BYTES {
+            return None;
+        }
+        std::fs::read(p).ok().filter(|b| !b.is_empty()).map(|b| (p.clone(), b))
+    });
     let Some((path, bytes)) = found else {
         if let Some(it) = doc.item_mut(item) {
             it.content = Content::Unassigned;
@@ -601,6 +608,15 @@ fn classify_link(cell: &str) -> Option<HyperlinkDest> {
     if value.is_empty() {
         return None;
     }
+    // An explicit scheme must be a web or mail one; `javascript:`, `file:` and the like stay text.
+    if let Some((scheme, _)) = value.split_once(':') {
+        let is_scheme = scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+        if is_scheme {
+            let scheme = scheme.to_ascii_lowercase();
+            return matches!(scheme.as_str(), "http" | "https" | "ftp" | "mailto").then(|| HyperlinkDest::Url(value.to_string()));
+        }
+    }
     if value.contains("://") || value.chars().any(char::is_whitespace) {
         return Some(HyperlinkDest::Url(value.to_string()));
     }
@@ -622,4 +638,20 @@ fn anchor_is_parent(doc: &designcraft_doc::Document, anchor: &PlaceholderAnchor)
 
 fn cell_of<'a>(fields: &[DataField], row: &'a [String], name: &str) -> &'a str {
     fields.iter().position(|f| f.name == name).and_then(|i| row.get(i)).map(String::as_str).unwrap_or("")
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    #[test]
+    fn only_web_and_mail_schemes_become_links() {
+        for ok in ["https://example.com", "HTTP://example.com", "ftp://files.example.com", "mailto:a@example.com", "www.example.com"] {
+            assert!(matches!(classify_link(ok), Some(HyperlinkDest::Url(_))), "{ok}");
+        }
+        assert!(matches!(classify_link("a@example.com"), Some(HyperlinkDest::Email(_))));
+        for bad in ["javascript:alert(1)", "file:///etc/passwd", "data:text/html,hi", "vbscript:x", ""] {
+            assert!(classify_link(bad).is_none(), "{bad}");
+        }
+    }
 }

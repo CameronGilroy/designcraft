@@ -1,6 +1,6 @@
 # Data merge, phase 2
 
-Design for phase 2 of data merge. Approved in conversation on 2026-10-07. Phase 1 is `docs/superpowers/specs/2026-10-07-data-merge-design.md`.
+Design for phase 2 of data merge. Approved in conversation on 2026-10-07. Phase 1 shipped on main; its planning spec was removed with the review fixes.
 
 Phase 2 adds four slices, in this order: JSON, more than one source, filter and sort, then a drawn grid. Each slice leaves the existing suite green. Phase 1 pack-to-fit tiling stays. It is used when the document has no grid item.
 

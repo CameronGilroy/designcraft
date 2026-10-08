@@ -1,6 +1,6 @@
 # Data merge, phase 3 scope
 
-Scope for the data-merge work that phase 2 leaves out. Phase 1 is `docs/superpowers/specs/2026-10-07-data-merge-design.md`. Phase 2 is `docs/superpowers/specs/2026-10-07-data-merge-phase-2-design.md`.
+Scope for the data-merge work that phase 2 leaves out. Phase 1 shipped on main. Phase 2 is `docs/superpowers/specs/2026-10-07-data-merge-phase-2-design.md`.
 
 This document names what phase 3 includes. It is not the implementation design. Phase 1 and phase 2 behavior stays unless a section below says otherwise.
 
