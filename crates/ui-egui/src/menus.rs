@@ -34,7 +34,12 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.menus", "Menus…", None, "{} — show or hide menu items"),
     ("window.hideMenuItem", "Hide Menu Item", None, "{item: \"Menu/Label\", hidden?: bool}"),
     ("edit.dynamicSpelling", "Dynamic Spelling", None, "{on?: bool} — underline misspelled words on the canvas"),
-    ("app.language", "Interface Language", None, "{lang: \"\"|de|fr|es|ja} — menus and panel names (the macOS menu bar follows on the next launch)"),
+    (
+        "app.language",
+        "Interface Language",
+        None,
+        "{lang: \"\"|de|fr|es|ja|zh|ar} — menus and panel names (the macOS menu bar follows on the next launch)",
+    ),
     (
         "app.flattener",
         "Transparency Flattener Presets",
@@ -130,7 +135,12 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("help.issues", "Report an Issue…", None, "{} — opens the GitHub issue tracker"),
     ("help.website", "ArtCraft Website…", None, "{} — opens https://getartcraft.com"),
     ("help.app", "ArtCraft App Page…", None, "{app} — opens https://getartcraft.com/apps/{app} (e.g. photocraft)"),
-    ("help.about", "About DesignCraft", None, "{open?: true} — the About splash with community links (open: false closes it)"),
+    (
+        "help.about",
+        "About DesignCraft",
+        None,
+        "{open?: true, tab?: \"about\"|\"contributors\"|\"models\"} — the About window: splash with community links, contributor and model credits (open: false closes it)",
+    ),
     ("window.toolsDoubleColumn", "Tools: Double Column", None, "{}"),
     (
         "window.workspace",
@@ -221,6 +231,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:app.language|Français|{\"lang\": \"fr\"}",
             "ui:app.language|Español|{\"lang\": \"es\"}",
             "ui:app.language|日本語|{\"lang\": \"ja\"}",
+            "ui:app.language|简体中文|{\"lang\": \"zh\"}",
+            "ui:app.language|العربية|{\"lang\": \"ar\"}",
             "<",
             ">Transparency Flattener Presets",
             "ui:app.flattener|None (keep transparency)|{\"preset\": \"\"}",
@@ -400,8 +412,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:endnote.insert",
             "cmd:math.insert",
             ">Story Direction",
-            "cmd:object.textFrameOptions|Horizontal|{\"vertical\": false}",
-            "cmd:object.textFrameOptions|Vertical|{\"vertical\": true}",
+            "cmd:type.storyDirection|Horizontal|{\"vertical\": false}",
+            "cmd:type.storyDirection|Vertical|{\"vertical\": true}",
             "<",
             "cmd:type.tateChuYoko",
             "ui:app.rubyDialog",
@@ -943,6 +955,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 let doc = app.session.execute("document.preferences", &json!({})).unwrap_or_default();
                 f["horizontalUnits"] = doc["horizontalUnits"].clone();
                 f["overprintBlack"] = doc["overprintBlack"].clone();
+                f["glyphFallback"] = doc["glyphFallback"].clone();
                 for k in ["superscriptSize", "superscriptPosition", "subscriptSize", "subscriptPosition"] {
                     f[format!("adv.{k}")] = json!(format!("{}", doc["advancedType"][k].as_f64().unwrap_or(0.0)));
                 }
@@ -1271,6 +1284,12 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "window.taskBar" => flag(&mut app.ui.task_bar),
         "help.about" => {
+            if let Some(tab) = p.get("tab").and_then(Value::as_str) {
+                let Some(i) = crate::about::ABOUT_TABS.iter().position(|t| t.eq_ignore_ascii_case(tab)) else {
+                    return Some(Err(format!("help.about: unknown tab `{tab}` (about, contributors, models)")));
+                };
+                app.ui.about_tab = u8::try_from(i).unwrap_or(0);
+            }
             app.ui.about = p.get("open").and_then(Value::as_bool).unwrap_or(true);
             Ok(json!(app.ui.about))
         }
@@ -1674,6 +1693,15 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "window.toolsDoubleColumn" => app.ui.tools_double_column,
         "view.togglePreview" => app.ui.screen_mode == crate::ScreenMode::Preview,
         "window.brightness" => params.get("brightness").and_then(Value::as_str) == Some(app.ui.brightness.id()),
+        "type.storyDirection" => {
+            let st = app.session.active()?;
+            let sid = st
+                .selection
+                .text
+                .map(|t| t.story)
+                .or_else(|| st.selection.items.iter().find_map(|i| st.doc.item(*i)?.text_frame().map(|t| t.story)))?;
+            st.doc.story(sid)?.vertical == params.get("vertical").and_then(Value::as_bool)?
+        }
         _ => return None,
     })
 }
@@ -1717,16 +1745,25 @@ pub fn activate(app: &mut DesignApp, id: &str, params: &Value) {
 /// The menu bar contents (inside the app bar; macOS uses the native menu instead).
 pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
     let lang = app.ui.language.clone();
-    for (menu, entries) in menu_tree() {
-        ui.menu_button(crate::i18n::tr(&lang, menu), |ui| {
-            ui.set_min_width(240.0);
-            let hidden = menu_items(app, ui, &entries, menu);
-            if hidden > 0 && !app.ui.show_full_menus {
-                ui.separator();
-                if ui.button(crate::i18n::tr(&lang, "Show All Menu Items")).clicked() {
-                    app.ui.show_full_menus = true;
-                }
+    let mut menus = menu_tree();
+    if crate::i18n::is_rtl(&lang) {
+        menus.reverse();
+    }
+    for (menu, entries) in menus {
+        ui.menu_button(crate::rtl::widget(ui, crate::i18n::tr(&lang, menu)), |ui| {
+            if crate::i18n::is_rtl(&lang) {
+                ui.set_max_width(320.0);
             }
+            ui.with_layout(egui::Layout::top_down(if crate::i18n::is_rtl(&lang) { egui::Align::Max } else { egui::Align::Min }), |ui| {
+                ui.set_min_width(240.0);
+                let hidden = menu_items(app, ui, &entries, menu);
+                if hidden > 0 && !app.ui.show_full_menus {
+                    ui.separator();
+                    if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Show All Menu Items"))).clicked() {
+                        app.ui.show_full_menus = true;
+                    }
+                }
+            });
         });
     }
 }
@@ -1746,8 +1783,8 @@ fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item], path: &str
             }
             Item::Sub(name, children) => {
                 let sub = format!("{path}/{name}");
-                let shown = crate::i18n::tr(&app.ui.language, name).into_owned();
-                ui.menu_button(shown, |ui| {
+                let shown = crate::i18n::tr(&app.ui.language, name).to_owned();
+                ui.menu_button(crate::rtl::widget(ui, shown), |ui| {
                     hidden += menu_items(app, ui, children, &sub);
                 });
             }
@@ -1757,9 +1794,9 @@ fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item], path: &str
                 let text = match checked(app, id, params) {
                     Some(true) => format!("✓ {label}"),
                     Some(false) => format!("   {label}"),
-                    None => label.into_owned(),
+                    None => label.to_owned(),
                 };
-                let mut b = egui::Button::new(text);
+                let mut b = egui::Button::new(crate::rtl::widget(ui, text));
                 if let Some(sc) = shortcut_of(app, id) {
                     b = b.shortcut_text(shortcut_text(&sc));
                 }
@@ -1886,7 +1923,11 @@ pub fn palette(app: &mut DesignApp, ctx: &egui::Context) {
     let mut run: Option<(String, Value)> = None;
     egui::Modal::new(egui::Id::new("palette")).show(ctx, |ui| {
         ui.set_width(480.0);
-        let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text("Search styles and commands…").desired_width(f32::INFINITY));
+        let r = ui.add(
+            egui::TextEdit::singleline(&mut q)
+                .hint_text(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "Search styles and commands…")))
+                .desired_width(f32::INFINITY),
+        );
         r.request_focus();
         let items = quick_apply_items(&app.session, &q);
         egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
@@ -1977,6 +2018,16 @@ mod tests {
     }
 
     #[test]
+    fn transform_menu_items_open_their_dialogs() {
+        for id in ["transform.move", "transform.scale", "transform.rotate", "transform.shear"] {
+            let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            activate(&mut app, id, &Value::Null);
+            let dialog = app.ui.dialog.as_ref().map(|d| d.id.clone());
+            assert_eq!(dialog.as_deref(), Some(format!("cmd:{id}").as_str()), "{id} opens its dialog");
+        }
+    }
+
+    #[test]
     fn snap_preferences_are_a_command() {
         let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         let r = run_ui(&mut app, "view.snapPreferences", &json!({"smartSpacing": false, "zone": 8})).unwrap().unwrap();
@@ -2058,10 +2109,66 @@ mod tests {
         assert_eq!(checked(&app, "app.language", &json!({"lang": "de"})), Some(true));
         assert_eq!(crate::i18n::tr(&app.ui.language, "Window"), "Fenster");
         assert!(run_ui(&mut app, "app.language", &json!({"lang": "xx"})).unwrap().is_err());
+
+        run_ui(&mut app, "app.language", &json!({"lang": "zh"})).unwrap().unwrap();
+        assert_eq!(app.ui.language, "zh");
+        assert_eq!(crate::i18n::tr(&app.ui.language, "File"), "文件");
+
+        app.run("file.new", json!({"pages": 4, "facingPages": true})).unwrap();
+        let before = serde_json::to_value(&app.session.doc().unwrap().doc).unwrap();
+        run_ui(&mut app, "app.language", &json!({"lang": "ar"})).unwrap().unwrap();
+        assert_eq!(app.ui.language, "ar");
+        assert_eq!(checked(&app, "app.language", &json!({"lang": "ar"})), Some(true));
+        assert_eq!(before, serde_json::to_value(&app.session.doc().unwrap().doc).unwrap());
+        for (title, _) in menu_tree() {
+            assert_ne!(crate::i18n::tr("ar", title), title, "{title}");
+        }
         // Every menu title has a translation (Japanese never matches the English).
         for (title, _) in menu_tree() {
             assert_ne!(crate::i18n::tr("ja", title), title, "{title}");
         }
+    }
+
+    #[test]
+    fn arabic_dialog_and_language_switch_keep_finite_widget_geometry() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        let frame = |app: &mut crate::DesignApp| {
+            for _ in 0..4 {
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1440.0, 900.0))),
+                        max_texture_side: Some(8192),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        app.logic(&ui.ctx().clone());
+                        app.ui(ui);
+                    },
+                );
+                output.textures_delta.clear();
+            }
+        };
+        app.run("app.language", json!({"lang": "ar"})).unwrap();
+        frame(&mut app);
+        app.run("app.newDocumentDialog", json!({})).unwrap();
+        frame(&mut app); // egui asserts that all allocated rectangles are finite.
+        crate::dialogs::confirm(&mut app).unwrap();
+        frame(&mut app);
+        assert_eq!(app.session.documents().len(), 1);
+        for lang in ["zh", "", "ar"] {
+            app.run("app.language", json!({"lang": lang})).unwrap();
+            frame(&mut app);
+        }
+    }
+
+    #[test]
+    fn story_direction_is_checked() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        app.session.execute("frame.create", &json!({"rect": [72, 72, 200, 400], "content": "text", "text": "縦", "vertical": true})).unwrap();
+        assert_eq!(checked(&app, "type.storyDirection", &json!({"vertical": true})), Some(true));
+        assert_eq!(checked(&app, "type.storyDirection", &json!({"vertical": false})), Some(false));
     }
 
     #[test]
@@ -2171,6 +2278,43 @@ mod tests {
         );
         assert!(app.power_zoom.is_none());
         assert!((app.view().unwrap().zoom - z0).abs() < 1e-9, "back at the zoom it started from");
+    }
+
+    #[test]
+    fn middle_drag_pans_with_any_tool() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        let ctx = egui::Context::default();
+        let frame = |app: &mut crate::DesignApp, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0))),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                app.logic(&ui.ctx().clone());
+                app.ui(ui);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut app, vec![]);
+        frame(&mut app, vec![]);
+        // A drawing tool: a primary drag would make a frame, a middle drag must not.
+        app.select_tool("rectangleFrame");
+        let p = app.canvas_rect.unwrap().center();
+        let v0 = *app.view().unwrap();
+        let items = |app: &crate::DesignApp| app.session.active().unwrap().doc.spreads.iter().map(|s| s.items.len()).sum::<usize>();
+        let items0 = items(&app);
+        let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Middle, pressed, modifiers: Default::default() };
+        frame(&mut app, vec![egui::Event::PointerMoved(p), button(p, true)]);
+        for i in 1..=8 {
+            frame(&mut app, vec![egui::Event::PointerMoved(p + egui::vec2(10.0 * i as f32, 5.0 * i as f32))]);
+        }
+        frame(&mut app, vec![button(p + egui::vec2(80.0, 40.0), false)]);
+        let v = *app.view().unwrap();
+        assert!((v.zoom - v0.zoom).abs() < 1e-9, "panning keeps the zoom");
+        assert!(v.origin.x < v0.origin.x && v.origin.y < v0.origin.y, "dragging right/down moves the view: {v0:?} -> {v:?}");
+        assert_eq!(items(&app), items0, "the tool saw nothing");
     }
 
     #[test]

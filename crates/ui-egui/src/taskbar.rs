@@ -61,7 +61,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context, sel: Rect, canvas: Rect) {
 
 fn split_button(ui: &mut Ui, icon: &str, label: &str) -> (egui::Response, egui::Response) {
     let t = Tokens::get(ui.ctx());
-    let g = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(11.0), t.text);
+    let g = crate::rtl::plain(ui.ctx(), label, egui::FontId::proportional(11.0), t.text);
     let w = 26.0 + g.size().x + 8.0 + widgets::SEG_W;
     let (r, _) = ui.allocate_exact_size(vec2(w, FIELD_H), Sense::hover());
     let main = Rect::from_min_max(r.min, pos2(r.max.x - widgets::SEG_W, r.max.y));
@@ -84,13 +84,18 @@ fn split_button(ui: &mut Ui, icon: &str, label: &str) -> (egui::Response, egui::
 fn text_controls(app: &mut DesignApp, ui: &mut Ui, in_text: bool) {
     let t = Tokens::get(ui.ctx());
     if !in_text {
-        let (main, seg) = split_button(ui, "fit-text", "Fit Text");
-        if main.on_hover_text("Fit frame height to text").clicked() {
+        let (main, seg) = split_button(ui, "fit-text", crate::i18n::tr(&app.ui.language, "Fit Text"));
+        if main
+            .on_hover_ui(|ui| {
+                crate::rtl::label(ui, crate::i18n::tr(&app.ui.language, "Fit frame height to text"));
+            })
+            .clicked()
+        {
             let _ = app.run("object.textFrameOptions", json!({"autoSize": "heightOnly"}));
         }
         egui::Popup::menu(&seg).show(|ui| {
             for (label, v) in [("Off", "off"), ("Height Only", "heightOnly"), ("Width Only", "widthOnly"), ("Height and Width", "heightAndWidth")] {
-                if ui.button(label).clicked() {
+                if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, label))).clicked() {
                     let _ = app.run("object.textFrameOptions", json!({"autoSize": v}));
                     ui.close();
                 }
@@ -102,15 +107,19 @@ fn text_controls(app: &mut DesignApp, ui: &mut Ui, in_text: bool) {
     let c = a["chars"].clone();
     let fam = c["fontFamily"].as_str().unwrap_or("").to_string();
     let sty = c["fontStyle"].as_str().unwrap_or("").to_string();
-    let fams = designcraft_fonts::FontDb::global().families();
-    let cur = fams.iter().position(|f| *f == fam);
-    if let Some(k) = widgets::dropdown_list(ui, if fam.is_empty() { "—" } else { &fam }, 150.0, &fams, cur) {
-        let f = fams[k].clone();
-        let styles = designcraft_fonts::FontDb::global().styles(&f);
+    let fonts = panels::fonts(app);
+    let menu = panels::font_menu(app);
+    let english = app.session.prefs.show_font_names_in_english;
+    let labels: Vec<String> = menu.iter().map(|f| f.label(english).to_string()).collect();
+    let cur = menu.iter().position(|f| f.family == fam);
+    let shown = if fam.is_empty() { "—".to_string() } else { panels::font_label(app, &menu, &fam) };
+    if let Some(f) = widgets::dropdown_list(ui, &shown, 150.0, &labels, cur).and_then(|k| menu.get(k)) {
+        let f = f.family.clone();
+        let styles = fonts.styles(&f);
         let style = if styles.iter().any(|s| s == "Regular") { "Regular".to_string() } else { styles.first().cloned().unwrap_or_default() };
         let _ = app.run("type.char", json!({"attrs": {"fontFamily": f, "fontStyle": style}}));
     }
-    let styles = designcraft_fonts::FontDb::global().styles(&fam);
+    let styles = fonts.styles(&fam);
     let cur = styles.iter().position(|s| *s == sty);
     if let Some(k) = widgets::dropdown_list(ui, if sty.is_empty() { "—" } else { &sty }, 90.0, &styles, cur) {
         let _ = app.run("type.char", json!({"attrs": {"fontStyle": styles[k]}}));
@@ -150,7 +159,7 @@ fn text_controls(app: &mut DesignApp, ui: &mut Ui, in_text: bool) {
         "leftJustified" | "centerJustified" | "rightJustified" | "fullyJustified" => "palign-justify-left",
         _ => "palign-left",
     };
-    let resp = widgets::icon_toggle(ui, icon, false, "Paragraph alignment");
+    let resp = widgets::icon_toggle(ui, icon, false, crate::i18n::tr(&app.ui.language, "Paragraph alignment"));
     egui::Popup::menu(&resp).show(|ui| {
         for (label, v) in [
             ("Align Left", "left"),
@@ -159,13 +168,13 @@ fn text_controls(app: &mut DesignApp, ui: &mut Ui, in_text: bool) {
             ("Justify", "leftJustified"),
             ("Justify All", "fullyJustified"),
         ] {
-            if ui.selectable_label(al == v, label).clicked() {
+            if ui.selectable_label(al == v, crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, label))).clicked() {
                 let _ = app.run("type.para", json!({"attrs": {"align": v}}));
                 ui.close();
             }
         }
     });
-    if widgets::icon_toggle(ui, "frame-options", false, "Text Frame Options").clicked() {
+    if widgets::icon_toggle(ui, "frame-options", false, crate::i18n::tr(&app.ui.language, "Text Frame Options")).clicked() {
         app.ui.dialog = Some(crate::dialogs::Dialog::new("textFrameOptions", json!({})));
     }
 }
@@ -180,7 +189,7 @@ fn object_controls(app: &mut DesignApp, ui: &mut Ui) {
             ("fit-frame", "fitFrameToContent", "Fit Frame to Content"),
             ("fit-center", "centerContent", "Center Content"),
         ] {
-            if widgets::icon_toggle(ui, icon, false, tip).clicked() {
+            if widgets::icon_toggle(ui, icon, false, crate::i18n::tr(&app.ui.language, tip)).clicked() {
                 let _ = app.run("object.fit", json!({"mode": mode}));
             }
         }
@@ -216,11 +225,11 @@ fn object_controls(app: &mut DesignApp, ui: &mut Ui) {
     }
     sep(ui);
     for (cmd, icon, tip) in [("object.bringToFront", "objalign-top", "Bring to Front"), ("object.sendToBack", "objalign-bottom", "Send to Back")] {
-        if widgets::icon_toggle(ui, icon, false, tip).clicked() {
+        if widgets::icon_toggle(ui, icon, false, crate::i18n::tr(&app.ui.language, tip)).clicked() {
             let _ = app.run(cmd, json!({}));
         }
     }
-    if i.count > 1 && widgets::outline_button(ui, "Group", 52.0).clicked() {
+    if i.count > 1 && widgets::outline_button(ui, crate::i18n::tr(&app.ui.language, "Group"), 52.0).clicked() {
         let _ = app.run("object.group", json!({}));
     }
 }
@@ -234,13 +243,15 @@ fn more(app: &mut DesignApp, ui: &mut Ui) {
     for k in 0..3 {
         ui.painter().circle_filled(pos2(r.min.x + 4.0 + k as f32 * 7.0, r.center().y), 1.8, t.icon);
     }
-    let resp = resp.on_hover_text("More Options");
+    let resp = resp.on_hover_ui(|ui| {
+        crate::rtl::label(ui, crate::i18n::tr(&app.ui.language, "More Options"));
+    });
     egui::Popup::menu(&resp).show(|ui| {
-        if ui.button("Hide Bar").clicked() {
+        if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "Hide Bar"))).clicked() {
             app.ui.task_bar = false;
             ui.close();
         }
-        if ui.button("Properties Panel").clicked() {
+        if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "Properties Panel"))).clicked() {
             let _ = app.run("window.panel", json!({"panel": "properties"}));
             ui.close();
         }

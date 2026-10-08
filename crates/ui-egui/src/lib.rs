@@ -10,6 +10,7 @@ pub mod about;
 pub mod canvas;
 pub mod chrome;
 pub mod control;
+pub mod credits;
 pub mod dialogs;
 pub mod dock;
 pub mod i18n;
@@ -17,6 +18,7 @@ pub mod icons;
 pub mod menus;
 pub mod panels;
 pub mod render_worker;
+mod rtl;
 pub mod story_editor;
 pub mod taskbar;
 pub mod theme;
@@ -132,7 +134,7 @@ pub struct UiState {
     pub dynamic_spelling: bool,
     /// Preferences › Story Editor Display: text size (points).
     pub story_editor_size: f32,
-    /// Edit › Interface Language: "" (English), "de", "fr", "es" or "ja".
+    /// Edit › Interface Language: supported codes are listed in `i18n::LANGUAGES`.
     pub language: String,
     /// Edit › Transparency Flattener Presets: "" (none), "high", "medium" or "low" for PDF export.
     pub flattener: String,
@@ -189,6 +191,9 @@ pub struct UiState {
     pub task_bar: bool,
     /// Help › About DesignCraft is open.
     pub about: bool,
+    /// The About window's tab: 0 About, 1 Contributors, 2 Models (`about::ABOUT_TABS`).
+    #[serde(skip)]
+    pub about_tab: u8,
     /// URLs to open in the browser on the next frame (Help links, About, start screen).
     pub pending_urls: Vec<String>,
     #[serde(skip)]
@@ -260,6 +265,7 @@ impl Default for UiState {
             snap_zone: 4.0,
             task_bar: true,
             about: false,
+            about_tab: 0,
             pending_urls: Vec::new(),
             status: String::new(),
             dialog: None,
@@ -400,6 +406,8 @@ pub struct DesignApp {
     queued_shots: Vec<(u64, f64, u32)>,
     shot_token: u64,
     styled: bool,
+    /// The interface language the UI fonts were installed for (it orders the CJK fallbacks).
+    fonts_lang: String,
     pub restyle: bool,
     fonts_ready: bool,
     pub integrated_titlebar: bool,
@@ -438,6 +446,7 @@ impl DesignApp {
             queued_shots: vec![],
             shot_token: 0,
             styled: false,
+            fonts_lang: String::new(),
             restyle: false,
             fonts_ready: false,
             integrated_titlebar: false,
@@ -582,10 +591,15 @@ impl DesignApp {
             ctx.set_zoom_factor(scale);
         }
         if !self.styled {
-            theme::install_fonts(ctx);
+            theme::install_fonts(ctx, &self.ui.language);
+            self.fonts_lang = self.ui.language.clone();
             self.styled = true;
             self.restyle = true;
         } else {
+            if self.fonts_lang != self.ui.language {
+                theme::install_fonts(ctx, &self.ui.language);
+                self.fonts_lang = self.ui.language.clone();
+            }
             self.fonts_ready = true;
         }
         if self.restyle {
