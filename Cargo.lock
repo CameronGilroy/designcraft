@@ -1016,9 +1016,9 @@ dependencies = [
 name = "designcraft-images"
 version = "0.2.1"
 dependencies = [
+ "designcraft-color",
  "designcraft-fonts",
  "image",
- "psd",
  "resvg",
  "tiff",
 ]
@@ -3403,15 +3403,6 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
-]
-
-[[package]]
-name = "psd"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a25f9b8cfffd65d911baf31a033239f7a0facb755faa2481575b70db5dc9195"
-dependencies = [
- "thiserror 1.0.69",
 ]
 
 [[package]]
