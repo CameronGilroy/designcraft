@@ -413,7 +413,8 @@ fn block_of(doc: &Document) -> (Rect, Vec<ItemId>) {
 
 fn assign_page(dst: &mut Document, abs: usize, from: &Page) {
     let Some((si, pi)) = dst.page_loc(abs) else { return };
-    let sp = Arc::make_mut(&mut dst.spreads[si]);
+    let Some(sp) = dst.spreads.get_mut(si) else { return };
+    let sp = Arc::make_mut(sp);
     let Some(p) = sp.pages.get_mut(pi) else { return };
     let size_changed = (p.width - from.width).abs() > 0.01 || (p.height - from.height).abs() > 0.01;
     p.guides = from.guides.clone();
@@ -757,7 +758,21 @@ fn parse_file(bytes: &[u8], name: &str, delimiter: Option<Delimiter>, sheet: Opt
     table_from_bytes(bytes, name, delimiter)
 }
 
+/// Largest data source file read (bytes); bigger files are refused before reading.
+pub(crate) const MAX_DATA_FILE_BYTES: u64 = 256 * 1024 * 1024;
+/// Largest image file a merge places (bytes); bigger candidates are skipped before reading.
+pub(crate) const MAX_IMAGE_FILE_BYTES: u64 = 256 * 1024 * 1024;
+
 fn read_path(path: &str) -> std::result::Result<Vec<u8>, String> {
+    read_path_capped(path, MAX_DATA_FILE_BYTES)
+}
+
+fn read_path_capped(path: &str, cap: u64) -> std::result::Result<Vec<u8>, String> {
+    match std::fs::metadata(path) {
+        Ok(m) if m.len() > cap => return Err(format!("{path}: the data file is larger than {} MiB", cap / (1024 * 1024))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(format!("{path}: the data file is missing")),
+        _ => {}
+    }
     match std::fs::read(path) {
         Ok(b) => Ok(b),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(format!("{path}: the data file is missing")),
@@ -794,7 +809,7 @@ fn apply_options(opt: &mut MergeOptions, p: &Value) -> std::result::Result<(), S
         opt.records = v.to_string();
     }
     if let Some(n) = p.get("one").and_then(Value::as_u64) {
-        opt.one = n as u32;
+        opt.one = u32::try_from(n).map_err(|_| "one is too large".to_string())?;
     } else if p.get("one").is_some() {
         return Err("one must be a record number".into());
     }
@@ -837,7 +852,7 @@ fn apply_options(opt: &mut MergeOptions, p: &Value) -> std::result::Result<(), S
         if v.is_null() {
             opt.limit = None;
         } else if let Some(n) = v.as_u64() {
-            opt.limit = Some(n as u32);
+            opt.limit = Some(u32::try_from(n).map_err(|_| "limit is too large".to_string())?);
         } else {
             return Err("limit must be a number".into());
         }

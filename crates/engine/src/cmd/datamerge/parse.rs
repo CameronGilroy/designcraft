@@ -152,6 +152,7 @@ fn cell_string(v: Option<&Value>) -> Result<String, String> {
 /// 0-based indexes into `count` rows, in first-seen order.
 pub fn select_records(count: usize, records: &str, one: u32, range: &str, limit: Option<u32>) -> Result<Vec<usize>, String> {
     let mut idx = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     match records {
         "all" => idx.extend(0..count),
         "one" => {
@@ -176,7 +177,7 @@ pub fn select_records(count: usize, records: &str, one: u32, range: &str, limit:
                     let mut n = a;
                     while n <= b {
                         let i = record_index(n, count)?;
-                        if !idx.contains(&i) {
+                        if seen.insert(i) {
                             idx.push(i);
                         }
                         n = n.saturating_add(1);
@@ -184,7 +185,7 @@ pub fn select_records(count: usize, records: &str, one: u32, range: &str, limit:
                 } else {
                     let n = parse_record_no(token)?;
                     let i = record_index(n, count)?;
-                    if !idx.contains(&i) {
+                    if seen.insert(i) {
                         idx.push(i);
                     }
                 }

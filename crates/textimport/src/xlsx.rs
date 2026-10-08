@@ -21,10 +21,16 @@ fn cell_ref(r: &str) -> Option<(usize, usize)> {
 }
 
 /// The worksheet part of the first sheet (workbook order), via the workbook relationships.
-fn first_sheet(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> Option<String> {
-    let wb = parse(&part(zip, "xl/workbook.xml")?).ok()?;
+fn first_sheet(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> Result<Option<String>, ImportError> {
+    let Some(wb) = part(zip, "xl/workbook.xml")? else { return Ok(None) };
+    let Some(rels) = part(zip, "xl/_rels/workbook.xml.rels")? else { return Ok(None) };
+    Ok(first_sheet_target(&wb, &rels))
+}
+
+fn first_sheet_target(wb: &str, rels: &str) -> Option<String> {
+    let wb = parse(wb).ok()?;
     let rid = wb.child("sheets")?.els().find(|e| e.name == "sheet")?.attr("id")?.to_string();
-    let rels = parse(&part(zip, "xl/_rels/workbook.xml.rels")?).ok()?;
+    let rels = parse(rels).ok()?;
     let target = rels.els().find(|r| r.attr("Id") == Some(rid.as_str()))?.attr("Target")?.trim_start_matches('/').to_string();
     Some(if target.starts_with("xl/") { target } else { format!("xl/{target}") })
 }
@@ -60,8 +66,8 @@ fn value(c: &El, shared: &[String]) -> String {
 pub fn records(bytes: &[u8], sheet: Option<&str>) -> Result<Vec<Vec<String>>, ImportError> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| ImportError::Corrupt(e.to_string()))?;
     let sheet_part = sheet_target(&mut zip, sheet)?;
-    let sheet_xml = parse(&part(&mut zip, &sheet_part).ok_or_else(|| ImportError::Corrupt(format!("no {sheet_part} (not an Excel workbook)")))?)?;
-    let shared: Vec<String> = part(&mut zip, "xl/sharedStrings.xml")
+    let sheet_xml = parse(&part(&mut zip, &sheet_part)?.ok_or_else(|| ImportError::Corrupt(format!("no {sheet_part} (not an Excel workbook)")))?)?;
+    let shared: Vec<String> = part(&mut zip, "xl/sharedStrings.xml")?
         .map(|x| parse(&x))
         .transpose()?
         .map(|sst| sst.els().filter(|e| e.name == "si").map(El::text).collect())
@@ -146,7 +152,7 @@ pub fn records(bytes: &[u8], sheet: Option<&str>) -> Result<Vec<Vec<String>>, Im
 
 /// Workbook order, or the sheet named `wanted`.
 fn sheet_target(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, wanted: Option<&str>) -> Result<String, ImportError> {
-    let wb = parse(&part(zip, "xl/workbook.xml").ok_or_else(|| ImportError::Corrupt("no xl/workbook.xml (not an Excel workbook)".into()))?)?;
+    let wb = parse(&part(zip, "xl/workbook.xml")?.ok_or_else(|| ImportError::Corrupt("no xl/workbook.xml (not an Excel workbook)".into()))?)?;
     let sheets: Vec<(String, String)> = wb
         .child("sheets")
         .map(|s| s.els().filter(|e| e.name == "sheet").filter_map(|e| Some((e.attr("name")?.to_string(), e.attr("id")?.to_string()))).collect())
@@ -155,7 +161,7 @@ fn sheet_target(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, wanted: Optio
         None => sheets.first().cloned().ok_or_else(|| ImportError::Corrupt("the workbook has no sheets".into()))?,
         Some(w) => sheets.into_iter().find(|(n, _)| n == w).ok_or_else(|| ImportError::Corrupt(format!("no worksheet \"{w}\"")))?,
     };
-    let rels = parse(&part(zip, "xl/_rels/workbook.xml.rels").ok_or_else(|| ImportError::Corrupt("no workbook relationships".into()))?)?;
+    let rels = parse(&part(zip, "xl/_rels/workbook.xml.rels")?.ok_or_else(|| ImportError::Corrupt("no workbook relationships".into()))?)?;
     let target = rels
         .els()
         .find(|r| r.attr("Id") == Some(rid.as_str()))
@@ -167,9 +173,9 @@ fn sheet_target(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, wanted: Optio
 
 pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| ImportError::Corrupt(e.to_string()))?;
-    let sheet_part = first_sheet(&mut zip).unwrap_or_else(|| "xl/worksheets/sheet1.xml".into());
-    let sheet = parse(&part(&mut zip, &sheet_part).ok_or_else(|| ImportError::Corrupt(format!("no {sheet_part} (not an Excel workbook)")))?)?;
-    let shared: Vec<String> = part(&mut zip, "xl/sharedStrings.xml")
+    let sheet_part = first_sheet(&mut zip)?.unwrap_or_else(|| "xl/worksheets/sheet1.xml".into());
+    let sheet = parse(&part(&mut zip, &sheet_part)?.ok_or_else(|| ImportError::Corrupt(format!("no {sheet_part} (not an Excel workbook)")))?)?;
+    let shared: Vec<String> = part(&mut zip, "xl/sharedStrings.xml")?
         .map(|x| parse(&x))
         .transpose()?
         .map(|sst| sst.els().filter(|e| e.name == "si").map(El::text).collect())

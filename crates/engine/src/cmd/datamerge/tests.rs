@@ -6,7 +6,7 @@ use designcraft_doc::{Content, DataField, DataFieldKind, DataSource, Delimiter, 
 use serde_json::{Value, json};
 
 use super::parse::{self, parse_csv};
-use super::{relative_between, resolve_sources_on_open};
+use super::{read_path_capped, relative_between, resolve_sources_on_open};
 use crate::Session;
 
 fn scratch(name: &str) -> PathBuf {
@@ -634,6 +634,11 @@ fn update_remove_preview_inline_rows_and_old_files() {
     assert!(msg.contains("reversed"), "{msg}");
     let msg = err(&mut s, "data.merge", json!({"csv": "Name\nAda\n", "limit": 0}));
     assert!(msg.contains("limit"), "{msg}");
+    // Numbers past u32 are an error, not a silent truncation to a small record number.
+    let msg = err(&mut s, "data.merge", json!({"csv": "Name\nAda\n", "records": "one", "one": 4_294_967_297u64}));
+    assert!(msg.contains("too large"), "{msg}");
+    let msg = err(&mut s, "data.merge", json!({"csv": "Name\nAda\n", "limit": 4_294_967_296u64}));
+    assert!(msg.contains("too large"), "{msg}");
     assert_eq!(s.documents().len(), before);
 
     let fresh = dir.join("fresh.designcraft");
@@ -784,4 +789,22 @@ fn tile_slots_match_the_insets() {
     assert!(!plan.one_per_page);
     let slots: Vec<_> = plan.hits.iter().map(|h| (h.col, h.row)).collect();
     assert_eq!(slots, vec![(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)]);
+}
+
+#[test]
+fn select_records_dedupes_large_ranges_in_first_seen_order() {
+    let idx = parse::select_records(100_000, "range", 1, "5,1-100000,3", None).unwrap();
+    assert_eq!(idx.len(), 100_000);
+    assert_eq!(&idx[..3], &[4, 0, 1]);
+}
+
+#[test]
+fn oversized_data_file_is_refused_before_reading() {
+    let dir = scratch("oversized");
+    let path = dir.join("big.csv");
+    write(&path, &"x".repeat(2048));
+    let path = path.to_string_lossy().to_string();
+    let msg = read_path_capped(&path, 1024).unwrap_err();
+    assert!(msg.contains("larger than"), "{msg}");
+    assert_eq!(read_path_capped(&path, 4096).unwrap().len(), 2048);
 }
