@@ -64,7 +64,7 @@ pub fn text_line(db: &ScopedFonts<'_>, family: &str, style: &str, text: &str, he
     let boxed = glyphs.iter().any(|g| g.gid == 0) && db.missing_box(&face).is_some();
     for g in &glyphs {
         let outline = db.outline(&face, g.gid);
-        if !outline.elements().is_empty() && !(boxed && g.gid == 0) {
+        if !(outline.elements().is_empty() || (boxed && g.gid == 0)) {
             ctx.set_transform(kurbo::Affine::translate((x + g.x_offset as f64 * k, baseline - g.y_offset as f64 * k)) * kurbo::Affine::scale(k));
             ctx.fill_path(&outline);
         }
