@@ -118,6 +118,8 @@ pub(crate) fn decode(bytes: &[u8]) -> Option<image::RgbaImage> {
     let row_bytes = wu.checked_mul(usize::from(depth))?.div_ceil(8);
     let data = ImageData::parse(r, psb, channels, row_bytes, hu)?;
     let palette = if mode == Mode::Indexed { Some(palette(colour_mode_data)?) } else { None };
+    // Header sizes are untrusted: allocate only once the data to fill the image is present.
+    data.holds(colours + usize::from(transparency))?;
 
     let mut rgba = vec![0u8; len];
     for c in 0..colours {
@@ -233,6 +235,27 @@ impl<'a> ImageData<'a> {
             _ => return None,
         };
         Some(ImageData { counts, count_size, data: r.b, row_bytes, height })
+    }
+
+    /// `Some` when the data can hold the first `channels` channels: whole raw planes, or row
+    /// counts that fit in the data and are each long enough to unpack to a full row (PackBits
+    /// writes at most 128 bytes per 2 input bytes).
+    fn holds(&self, channels: usize) -> Option<()> {
+        let rows = channels.checked_mul(self.height)?;
+        if self.counts.is_empty() {
+            let need = self.row_bytes.checked_mul(rows)?;
+            return (need <= self.data.len()).then_some(());
+        }
+        let min_row = self.row_bytes.div_ceil(128).checked_mul(2)?;
+        let mut total = 0usize;
+        for c in self.counts.chunks_exact(self.count_size).take(rows) {
+            let n = c.iter().fold(0usize, |n, &b| n << 8 | usize::from(b));
+            if n < min_row {
+                return None;
+            }
+            total = total.checked_add(n)?;
+        }
+        (total <= self.data.len()).then_some(())
     }
 
     /// Channel `ch`'s rows, uncompressed, to `row` from top to bottom.
@@ -784,5 +807,48 @@ mod tests {
         assert_eq!(super::unpack_bits(&[0x80, 0x01, 9, 8], 2), Some(vec![9, 8]));
         assert_eq!(super::unpack_bits(&[0x05, 1, 2], 6), None, "literal past the end of the data");
         assert_eq!(super::unpack_bits(&[0xFE, 7], 2), None, "run longer than the row");
+    }
+
+    #[test]
+    fn huge_header_without_data_is_rejected_before_allocating() {
+        // A gray 11000×11000 image (≈ 460 MiB as RGBA, under the cap) with almost no image data.
+        let (w, h) = (11_000u32, 11_000u32);
+        let mut head = Vec::new();
+        head.extend(b"8BPS");
+        head.extend(1u16.to_be_bytes());
+        head.extend([0u8; 6]);
+        head.extend(1u16.to_be_bytes()); // channels
+        head.extend(h.to_be_bytes());
+        head.extend(w.to_be_bytes());
+        head.extend(8u16.to_be_bytes());
+        head.extend(1u16.to_be_bytes()); // grayscale
+        head.extend([0u8; 12]); // empty colour mode data, image resources, layers
+        let holds = |b: &[u8]| {
+            let r = super::Reader { b: &b[head.len()..] };
+            super::ImageData::parse(r, false, 1, w as usize, h as usize).expect("parses").holds(1)
+        };
+        // Raw: a few bytes instead of 11000 × 11000.
+        let mut raw = head.clone();
+        raw.extend(0u16.to_be_bytes());
+        raw.extend([0u8; 16]);
+        assert!(holds(&raw).is_none());
+        assert!(super::decode(&raw).is_none());
+        // RLE: every row count present and plausible, but the rows themselves missing.
+        let mut rle = head.clone();
+        rle.extend(1u16.to_be_bytes());
+        for _ in 0..h {
+            rle.extend(174u16.to_be_bytes()); // 2 × ⌈11000 / 128⌉: the shortest full row
+        }
+        assert!(holds(&rle).is_none());
+        assert!(super::decode(&rle).is_none());
+        // RLE row counts too short to unpack to a full row, even with the data present.
+        let mut short = head.clone();
+        short.extend(1u16.to_be_bytes());
+        for _ in 0..h {
+            short.extend(2u16.to_be_bytes());
+        }
+        short.extend(vec![0u8; 2 * h as usize]);
+        assert!(holds(&short).is_none());
+        assert!(super::decode(&short).is_none());
     }
 }
