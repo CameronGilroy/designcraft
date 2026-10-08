@@ -1,5 +1,4 @@
-//! Arabic interface translations, stored in logical Unicode order.
-//! Feature terminology follows Adobe Arabic help where verified; this is not an official Adobe UI.
+//! Original Arabic interface translations, stored in logical Unicode order.
 pub(super) const TABLE: &[(&str, &str)] = &[
     ("File", "ملف"),
     ("Edit", "تحرير"),

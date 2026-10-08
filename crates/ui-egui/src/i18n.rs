@@ -1,7 +1,5 @@
 //! Interface language (Edit › Interface Language): translations of menu titles, the most used
-//! menu items and panel names. Untranslated strings stay English.
-//! Chinese and Arabic feature terminology is checked against public Adobe help where documented;
-//! project-specific labels are original.
+//! menu items and panel names. Untranslated strings stay English. The translations are our own.
 
 use std::{collections::HashMap, sync::OnceLock};
 
@@ -31,7 +29,7 @@ const TABLE: &[(&str, [&str; 5])] = &[
     ("Save", ["Speichern", "Enregistrer", "Guardar", "保存", "保存"]),
     ("Save As…", ["Speichern unter …", "Enregistrer sous…", "Guardar como…", "別名で保存…", "另存为…"]),
     ("Save a Copy…", ["Kopie speichern …", "Enregistrer une copie…", "Guardar una copia…", "コピーを保存…", "保存副本…"]),
-    ("Revert", ["Zurück zur letzten Version", "Version précédente", "Volver a la versión guardada", "復帰", "还原"]),
+    ("Revert", ["Zurück zur letzten Version", "Version précédente", "Volver a la versión guardada", "復帰", "恢复到上次保存"]),
     ("Place…", ["Platzieren …", "Importer…", "Colocar…", "配置…", "置入…"]),
     ("Export PDF…", ["PDF exportieren …", "Exporter en PDF…", "Exportar PDF…", "PDF を書き出し…", "导出PDF…"]),
     ("Print…", ["Drucken …", "Imprimer…", "Imprimir…", "プリント…", "打印…"]),
