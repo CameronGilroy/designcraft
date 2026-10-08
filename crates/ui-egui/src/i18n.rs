@@ -4,10 +4,19 @@
 use std::{collections::HashMap, sync::OnceLock};
 
 mod ar;
+mod pt_br;
 
 /// Supported interface languages: (code, name in that language).
-pub const LANGUAGES: &[(&str, &str)] =
-    &[("", "English"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"), ("ja", "日本語"), ("zh", "简体中文"), ("ar", "العربية")];
+pub const LANGUAGES: &[(&str, &str)] = &[
+    ("", "English"),
+    ("de", "Deutsch"),
+    ("fr", "Français"),
+    ("es", "Español"),
+    ("ja", "日本語"),
+    ("zh", "简体中文"),
+    ("ar", "العربية"),
+    ("pt-br", "Português (Brasil)"),
+];
 
 /// English → [German, French, Spanish, Japanese, Simplified Chinese].
 const TABLE: &[(&str, [&str; 5])] = &[
@@ -1912,6 +1921,17 @@ const TABLE: &[(&str, [&str; 5])] = &[
             "在两端对齐的阿拉伯语文本中",
         ],
     ),
+    ("Korean Line Breaks:", ["Korean Line Breaks:", "Korean Line Breaks:", "Korean Line Breaks:", "Korean Line Breaks:", "韩文换行："]),
+    (
+        "Between syllables (not only at spaces)",
+        [
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "在音节之间（不仅在空格处）",
+        ],
+    ),
     ("Binding:", ["Binding:", "Binding:", "Binding:", "Binding:", "装订方向："]),
     ("Ruby:", ["Ruby:", "Ruby:", "Ruby:", "Ruby:", "旁注："]),
     (
@@ -2544,6 +2564,27 @@ const TABLE: &[(&str, [&str; 5])] = &[
     ("Interface", ["Interface", "Interface", "Interface", "Interface", "界面"]),
     ("Advanced Type", ["Advanced Type", "Advanced Type", "Advanced Type", "Advanced Type", "高级文字"]),
     ("Composition", ["Composition", "Composition", "Composition", "Composition", "排版"]),
+    (
+        "Show Font Names in English",
+        [
+            "Schriftnamen auf Englisch anzeigen",
+            "Afficher les noms de police en anglais",
+            "Mostrar nombres de fuentes en inglés",
+            "フォント名を英語で表示",
+            "以英文显示字体名称",
+        ],
+    ),
+    ("Missing Glyphs", ["Fehlende Glyphen", "Glyphes manquants", "Glifos que faltan", "欠落グリフ", "缺失字形"]),
+    (
+        "Draw Missing Glyphs from Fallback Fonts",
+        [
+            "Fehlende Glyphen aus Ersatzschriften zeichnen",
+            "Dessiner les glyphes manquants avec des polices de substitution",
+            "Dibujar los glifos que faltan con fuentes alternativas",
+            "欠落グリフを代替フォントで表示",
+            "用后备字体绘制缺失字形",
+        ],
+    ),
     ("Units & Increments", ["Units & Increments", "Units & Increments", "Units & Increments", "Units & Increments", "单位和增量"]),
     ("Grids", ["Grids", "Grids", "Grids", "Grids", "网格"]),
     ("Guides & Pasteboard", ["Guides & Pasteboard", "Guides & Pasteboard", "Guides & Pasteboard", "Guides & Pasteboard", "参考线和粘贴板"]),
@@ -2637,8 +2678,12 @@ fn column(lang: &str) -> Option<usize> {
 pub fn tr<'a>(lang: &str, s: &'a str) -> &'a str {
     static TRANSLATIONS: OnceLock<HashMap<&'static str, [&'static str; 5]>> = OnceLock::new();
     static ARABIC: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+    static PORTUGUESE_BR: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     if lang == "ar" {
         return ARABIC.get_or_init(|| ar::TABLE.iter().copied().collect()).get(s).copied().unwrap_or(s);
+    }
+    if lang == "pt-br" {
+        return PORTUGUESE_BR.get_or_init(|| pt_br::TABLE.iter().copied().collect()).get(s).copied().unwrap_or(s);
     }
     let Some(c) = column(lang) else { return s };
     TRANSLATIONS.get_or_init(|| TABLE.iter().copied().collect()).get(s).and_then(|row| row.get(c)).copied().unwrap_or(s)
@@ -2675,8 +2720,11 @@ mod tests {
         for (key, expected) in ar::TABLE {
             assert_eq!(tr("ar", key), *expected, "ar: {key}");
         }
+        for (key, expected) in pt_br::TABLE {
+            assert_eq!(tr("pt-br", key), *expected, "pt-br: {key}");
+        }
         let unknown = String::from("A user-defined untranslated label");
-        for lang in ["ar", "zh", "ja", "de", "fr", "es", "", "unknown"] {
+        for lang in ["ar", "pt-br", "zh", "ja", "de", "fr", "es", "", "unknown"] {
             assert!(std::ptr::eq(tr(lang, &unknown), unknown.as_str()));
         }
     }
@@ -2689,9 +2737,16 @@ mod tests {
         assert_eq!(tr("", "File"), "File");
         assert_eq!(tr("ar", "File"), "ملف");
         assert_eq!(tr("ar", "Unknown label"), "Unknown label");
+        assert_eq!(tr("pt-br", "File"), "Arquivo");
+        assert_eq!(tr("pt-br", "New Document…"), "Novo documento…");
+        assert_eq!(tr("pt-br", "Unknown label"), "Unknown label");
         assert!(is_rtl("ar"));
         for (i, (en, translation)) in ar::TABLE.iter().enumerate() {
             assert!(ar::TABLE[..i].iter().all(|(key, _)| key != en), "duplicate {en}");
+            assert!(!translation.is_empty(), "{en}");
+        }
+        for (i, (en, translation)) in pt_br::TABLE.iter().enumerate() {
+            assert!(pt_br::TABLE[..i].iter().all(|(key, _)| key != en), "duplicate {en}");
             assert!(!translation.is_empty(), "{en}");
         }
         // Every row is unique and complete.
