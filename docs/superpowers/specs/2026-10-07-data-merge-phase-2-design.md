@@ -65,7 +65,7 @@ A cycle is one copy of the template, in page order, and one visit to each grid. 
 
 Preview record N, 1-based in the combined list, starts that same walk at record N and visits each grid once. It does not repeat the template, and it does not apply offsets. A step past the end of the list leaves that cell blank. Advance 0 fills every cell of that grid from the record under the cursor, then moves one record forward before the next grid. Items that are not children of a grid show record N.
 
-With no grid item, merge behaves as in phase 1. `per_page` multiple still requires one non-facing page and still packs the frames that are already on that page.
+With no grid item, merge behaves as in phase 1. `per_page` multiple still requires one non-facing page and still packs the frames that are already on that page. The layout is one type: records per page, or a grid. Creating a grid sets `per_page` to single. Setting `per_page` to multiple releases every grid and puts its children back on the page. Choosing single record in the panel does the same release. A merge that asks for both is an error and adds no document.
 
 These are errors and add no document:
 
@@ -131,7 +131,7 @@ Engine tests, with synthetic strings and tiny files:
 - Offset 1 with four records and a 2 by 2 grid starts at record 2 and leaves the last cell blank. Companion pages show record 2.
 - Two 2 by 1 grids on one page, advance 1, offset 0, and 6 records write two cycles. The first grid's rectangle is `[72, 72, 272, 172]` and its cells are records 1 and 2 at `(72, 72)` and `(172, 72)`. The second grid's rectangle is `[72, 200, 272, 300]` and its cells are records 3 and 4 at `(72, 200)` and `(172, 200)`. The second cycle places records 5 and 6 in the first grid and leaves the second grid blank.
 - A grid on page 1 and a grid on page 2 are visited in that page order. The page 2 grid receives the records the page 1 grid did not consume.
-- A grid on a parent page, pack-to-fit together with a grid, and a gutter that collapses a cell each add no document.
+- A grid on a parent page, pack-to-fit together with a grid, and a gutter that collapses a cell each add no document. Creating a grid while `per_page` is multiple leaves `per_page` single. Setting `per_page` to multiple removes the grids.
 - With no grid item, the phase 1 3-across tiling test still passes.
 - Preview record 2, with one grid and advance 1, shows that record in the origin cell and the following records in the following cells. A step past the last record is a blank cell. With two grids, preview record 1 fills the first grid from record 1 and continues the same cursor into the second grid.
 
@@ -139,4 +139,4 @@ UI: the panel groups fields by source, the enable checkbox calls `data.source.en
 
 ## Out of scope
 
-Skip on warning, prefix and postfix rules, source filename and merge index fields, a drag tool for the grid, joining sources on a key, a global sort across sources, QR codes from an unmarked column, inline pictures, per-record parent-page fields, downloading remote images, Excel formulas, Excel date formatting, `.xls`, and merging straight to PDF.
+Phase 3 is scoped in `docs/superpowers/specs/2026-10-07-data-merge-phase-3-scope.md`. Phase 2 does not include skip on warning, prefix and postfix rules, source filename and merge index fields, a drag tool for the grid, joining sources on a key, a global sort across sources, QR codes from an unmarked column, inline pictures, per-record parent-page fields, downloading remote images, Excel formulas, Excel date formatting, `.xls`, or merging straight to PDF.

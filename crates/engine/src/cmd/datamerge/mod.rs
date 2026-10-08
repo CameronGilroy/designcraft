@@ -1,30 +1,30 @@
-//! Data merge commands: one linked table, placeholders, preview, and a new merged document.
+//! Data merge commands: linked tables, placeholders, preview, and a new merged document.
 //!
-//! `data.merge` used to duplicate pages inside the template. It now leaves the template and its
-//! undo stack alone and appends a new document.
+//! `data.merge` leaves the template and its undo stack alone and appends a new document.
+//! A drawn grid repeats its prototype and is removed from that new document.
 
 mod fill;
+mod grid;
 mod parse;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use designcraft_doc::{
-    DataField, DataFieldKind, DataSource, Delimiter, Document, HyperlinkSource, ItemId, MergeOptions, Page, Placeholder, PlaceholderAnchor,
-    PlaceholderRole, Selection, SourceStatus, SpreadRef, StoryId,
+    DataField, DataFieldKind, DataSource, Delimiter, Document, FilterRule, HyperlinkSource, ItemId, MergeOptions, Page, Placeholder,
+    PlaceholderAnchor, PlaceholderRole, Selection, SortKey, SourceFilter, SourceStatus, SpreadRef, StoryId,
 };
 use designcraft_geom::{Rect, Vec2};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, cmd, has_doc, id_param, ok, str_param};
 use crate::{DocState, Result, Session};
-use fill::{FillReport, Maps, MissingImage, copy_item, fill_row, identity_map};
+use fill::{FillMode, FillReport, Maps, MissingImage, copy_item, fill_row, identity_map};
+use grid::CellRecord;
 use parse::{
-    Table, TileInput, extension, fingerprint_of, relative_between, select_records, status_of, table_from_bytes, table_from_grid, table_from_objects,
-    tile,
+    Table, TileInput, extension, filter_rows, fingerprint_of, relative_between, select_records, sort_rows, status_of, table_from_bytes,
+    table_from_grid, table_from_json, table_from_json_bytes, table_from_objects, tile,
 };
-
-const PARENT_WARNING: &str = "A parent-page placeholder was left unfilled.";
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
@@ -33,18 +33,29 @@ pub fn specs() -> Vec<CommandSpec> {
             "Select Data Source…",
             [],
             None,
-            "{path | bytes|base64, name, delimiter?: comma|tab|semicolon, sheet?} → {fields, records, warnings}",
+            "{path | bytes|base64, name | json | csv | rows, id?, delimiter?: comma|tab|semicolon, sheet?} → {id, fields, records, warnings}",
             has_doc,
             source_select
         ),
-        cmd!("data.source.update", "Update Data Source", [], None, "{} → re-read the linked file", has_doc, source_update),
-        cmd!("data.source.remove", "Remove Data Source", [], None, "{} → drop the source; placeholders stay", has_doc, source_remove),
+        cmd!(
+            "data.source.update",
+            "Update Data Source",
+            [],
+            None,
+            "{id?} → re-read one linked file and keep its id, enabled flag, filter, and sort",
+            has_doc,
+            source_update
+        ),
+        cmd!("data.source.remove", "Remove Data Source", [], None, "{id?} → drop that source; placeholders stay", has_doc, source_remove),
+        cmd!("data.source.enabled", "Enable Data Source", [], None, "{id?, enabled} → include or skip that source", has_doc, source_enabled),
+        cmd!("data.source.filter", "Filter Data Source", [], None, "{id?, match?: all|any, rules?: [{field, op, value?}]}", has_doc, source_filter),
+        cmd!("data.source.sort", "Sort Data Source", [], None, "{id?, fields?: [{field, direction?: asc|desc}]}", has_doc, source_sort),
         cmd!(
             query "data.fields",
             "Data Fields",
             [],
             None,
-            "{csv? | rows? | path? | bytes?, name?} → [{name, kind, uses}]; no params reads the linked source and does not attach one",
+            "{csv? | rows? | json? | path? | bytes?, name?} → [{name, kind, uses, sourceId, sourceName, enabled, records}]; a payload is parsed and not attached",
             has_doc,
             fields_cmd
         ),
@@ -53,7 +64,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Insert Field",
             [],
             None,
-            "{field, role?: text|image|qr|hyperlink, story?, at?, end?, item?} → {id}",
+            "{field, source?, role?: text|image|qr|hyperlink, story?, at?, end?, item?} → {id}",
             has_doc,
             placeholder_add
         ),
@@ -74,26 +85,74 @@ pub fn specs() -> Vec<CommandSpec> {
             "Create Merged Document…",
             [],
             None,
-            "{csv? | rows? | path? | bytes?, name?, records?, one?, range?, perPage?, arrange?, insets?, columnSpacing?, rowSpacing?, fitting?, center?, linkImages?, limit?} → {records, pages, missingImages, oversetStories, warnings}",
+            "{csv? | rows? | json? | path? | bytes?, name?, records?, one?, range?, perPage?, arrange?, insets?, columnSpacing?, rowSpacing?, fitting?, center?, linkImages?, limit?} → {records, pages, missingImages, oversetStories, warnings}",
             has_doc,
             merge_cmd
+        ),
+        cmd!(
+            "data.grid.create",
+            "Create Grid",
+            [],
+            None,
+            "{rect, spread?, rows?, columns?, gutter?, recordOffset?, recordAdvance?, origin?, arrange?} → {id}",
+            has_doc,
+            grid::create
+        ),
+        cmd!(
+            "data.grid.set",
+            "Set Grid",
+            [],
+            None,
+            "{id?, rows?, columns?, gutter?, recordOffset?, recordAdvance?, origin?, arrange?}",
+            has_doc,
+            grid::set
+        ),
+        cmd!("data.grid.adopt", "Adopt Into Grid", [], None, "{id?} → parent the selection into that grid's origin cell", has_doc, grid::adopt),
+        cmd!(
+            "data.grid.release",
+            "Release Grid",
+            [],
+            None,
+            "{id?} → put that grid's children back on the page and delete the grid",
+            has_doc,
+            grid::release
         ),
     ]
 }
 
 fn source_select(s: &mut Session, p: &Value) -> Result<Value> {
-    let (mut source, report) = read_source(p).map_err(|e| bad("data.source.select", e))?;
+    let (mut source, mut report) = read_source(p).map_err(|e| bad("data.source.select", e))?;
+    let replace = p.get("id").and_then(Value::as_u64);
     s.edit(move |d, _| {
-        source.id = d.data_merge.sources.first().map(|src| src.id).unwrap_or_else(|| d.alloc());
-        d.data_merge.sources.clear();
-        d.data_merge.sources.push(source);
+        let id = if let Some(id) = replace {
+            let Some(pos) = d.data_merge.sources.iter().position(|src| src.id == id) else {
+                return Err(bad("data.source.select", format!("unknown data source {id}")));
+            };
+            source.id = id;
+            source.enabled = d.data_merge.sources[pos].enabled;
+            source.filter = d.data_merge.sources[pos].filter.clone();
+            source.sort = d.data_merge.sources[pos].sort.clone();
+            d.data_merge.sources[pos] = source;
+            id
+        } else {
+            let id = d.alloc();
+            source.id = id;
+            d.data_merge.sources.push(source);
+            id
+        };
+        if let Some(obj) = report.as_object_mut() {
+            obj.insert("id".to_string(), json!(id));
+        }
         Ok(report)
     })
 }
 
-fn source_update(s: &mut Session, _p: &Value) -> Result<Value> {
+fn source_update(s: &mut Session, p: &Value) -> Result<Value> {
+    let requested = p.get("id").and_then(Value::as_u64);
     let (path, name, delimiter, sheet) = {
-        let src = s.doc()?.doc.data_merge.sources.first().ok_or_else(|| bad("data.source.update", "select a data source"))?;
+        let doc = &s.doc()?.doc;
+        let idx = source_index(&doc.data_merge.sources, requested).map_err(|e| bad("data.source.update", e))?;
+        let src = &doc.data_merge.sources[idx];
         let path = src.path.clone().ok_or_else(|| bad("data.source.update", "this source has no file to update"))?;
         (path, src.name.clone(), src.delimiter, src.sheet.clone())
     };
@@ -105,7 +164,8 @@ fn source_update(s: &mut Session, _p: &Value) -> Result<Value> {
         "warnings": table.warnings.clone(),
     });
     s.edit(move |d, _| {
-        let src = d.data_merge.sources.first_mut().ok_or_else(|| bad("data.source.update", "select a data source"))?;
+        let idx = source_index(&d.data_merge.sources, requested).map_err(|e| bad("data.source.update", e))?;
+        let src = &mut d.data_merge.sources[idx];
         src.fields = table.fields;
         src.rows = table.rows;
         src.warnings = table.warnings;
@@ -116,9 +176,55 @@ fn source_update(s: &mut Session, _p: &Value) -> Result<Value> {
     })
 }
 
-fn source_remove(s: &mut Session, _p: &Value) -> Result<Value> {
-    s.edit(|d, _| {
-        d.data_merge.sources.clear();
+fn source_remove(s: &mut Session, p: &Value) -> Result<Value> {
+    let requested = p.get("id").and_then(Value::as_u64);
+    s.edit(move |d, _| {
+        let idx = source_index(&d.data_merge.sources, requested).map_err(|e| bad("data.source.remove", e))?;
+        d.data_merge.sources.remove(idx);
+        ok()
+    })
+}
+
+fn source_enabled(s: &mut Session, p: &Value) -> Result<Value> {
+    let requested = p.get("id").and_then(Value::as_u64);
+    let enabled = p.get("enabled").and_then(Value::as_bool).ok_or_else(|| bad("data.source.enabled", "missing `enabled`"))?;
+    s.edit(move |d, _| {
+        let idx = source_index(&d.data_merge.sources, requested).map_err(|e| bad("data.source.enabled", e))?;
+        d.data_merge.sources[idx].enabled = enabled;
+        ok()
+    })
+}
+
+fn source_filter(s: &mut Session, p: &Value) -> Result<Value> {
+    let requested = p.get("id").and_then(Value::as_u64);
+    let match_mode = str_param(p, "match").unwrap_or("all").to_string();
+    if match_mode != "all" && match_mode != "any" {
+        return Err(bad("data.source.filter", format!("unknown match \"{match_mode}\"")));
+    }
+    let rules = parse_rules(p.get("rules")).map_err(|e| bad("data.source.filter", e))?;
+    s.edit(move |d, _| {
+        let idx = source_index(&d.data_merge.sources, requested).map_err(|e| bad("data.source.filter", e))?;
+        for rule in &rules {
+            if !d.data_merge.sources[idx].fields.iter().any(|field| field.name == rule.field) {
+                return Err(bad("data.source.filter", format!("unknown field \"{}\"", rule.field)));
+            }
+        }
+        d.data_merge.sources[idx].filter = SourceFilter { match_mode, rules };
+        ok()
+    })
+}
+
+fn source_sort(s: &mut Session, p: &Value) -> Result<Value> {
+    let requested = p.get("id").and_then(Value::as_u64);
+    let keys = parse_sort(p.get("fields")).map_err(|e| bad("data.source.sort", e))?;
+    s.edit(move |d, _| {
+        let idx = source_index(&d.data_merge.sources, requested).map_err(|e| bad("data.source.sort", e))?;
+        for key in &keys {
+            if !d.data_merge.sources[idx].fields.iter().any(|field| field.name == key.field) {
+                return Err(bad("data.source.sort", format!("unknown field \"{}\"", key.field)));
+            }
+        }
+        d.data_merge.sources[idx].sort = keys;
         ok()
     })
 }
@@ -126,14 +232,53 @@ fn source_remove(s: &mut Session, _p: &Value) -> Result<Value> {
 fn fields_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     if payload_present(p) {
         let (table, _) = load_inline(p).map_err(|e| bad("data.fields", e))?;
-        return Ok(fields_json(&table.fields, |_| 0));
+        let name = str_param(p, "name").unwrap_or("");
+        let entries: Vec<Value> = table
+            .fields
+            .iter()
+            .map(|field| {
+                json!({
+                    "name": field.name,
+                    "kind": field.kind.as_str(),
+                    "uses": 0,
+                    "sourceId": Value::Null,
+                    "sourceName": name,
+                    "enabled": true,
+                    "records": table.rows.len(),
+                })
+            })
+            .collect();
+        return Ok(Value::Array(entries));
     }
     let st = s.doc()?;
-    let Some(src) = st.doc.data_merge.sources.first() else {
-        return Ok(json!([]));
+    let doc = &st.doc;
+    let preview = preview_len(doc);
+    let mut entries = Vec::new();
+    for src in &doc.data_merge.sources {
+        let records = filter_rows(&src.fields, &src.rows, &src.filter).map(|kept| kept.len()).unwrap_or(0);
+        for field in &src.fields {
+            let uses = doc.data_merge.placeholders.iter().filter(|ph| ph.source_id == src.id && ph.field == field.name).count();
+            entries.push(json!({
+                "name": field.name,
+                "kind": field.kind.as_str(),
+                "uses": uses,
+                "sourceId": src.id,
+                "sourceName": src.name,
+                "enabled": src.enabled,
+                "records": records,
+                "preview": preview,
+            }));
+        }
+    }
+    Ok(Value::Array(entries))
+}
+
+fn preview_len(doc: &Document) -> usize {
+    let Ok((records, _, _)) = prepare_linked(doc) else {
+        return 0;
     };
-    let placeholders = st.doc.data_merge.placeholders.clone();
-    Ok(fields_json(&src.fields, |name| placeholders.iter().filter(|ph| ph.field == name).count()))
+    let options = &doc.data_merge.options;
+    select_records(records.len(), &options.records, options.one, &options.range, options.limit).map(|idx| idx.len()).unwrap_or(0)
 }
 
 fn placeholder_add(s: &mut Session, p: &Value) -> Result<Value> {
@@ -166,85 +311,142 @@ fn placeholder_remove(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn options_cmd(s: &mut Session, p: &Value) -> Result<Value> {
-    s.edit(|d, _| {
+    s.edit(|d, sel| {
         apply_options(&mut d.data_merge.options, p).map_err(|e| bad("data.options", e))?;
         validate(&d.data_merge.options).map_err(|e| bad("data.options", e))?;
+        if d.data_merge.options.per_page == "multiple" {
+            let (removed, ids) = grid::release_all(d).map_err(|e| bad("data.options", e))?;
+            if removed > 0 {
+                *sel = Selection::items(ids);
+            }
+        }
         serde_json::to_value(&d.data_merge.options).map_err(|e| bad("data.options", e.to_string()))
     })
 }
 
 fn preview_cmd(s: &mut Session, p: &Value) -> Result<Value> {
-    let st = s.doc_mut()?;
-    let source = st.doc.data_merge.sources.first().cloned().ok_or_else(|| bad("data.preview", "select a data source"))?;
-    if source.rows.is_empty() {
-        return Err(bad("data.preview", "no records"));
-    }
-    let max = source.rows.len() as u64;
-    let record = p.get("record").and_then(Value::as_u64).unwrap_or(1).clamp(1, max);
-    let base = if let Some(stash) = &st.preview_stash {
-        stash.clone()
-    } else {
-        let current = st.doc.clone();
-        st.preview_stash = Some(current.clone());
-        current
+    let (records, options, doc_dir, grids) = {
+        let st = s.doc()?;
+        let (full, _, _) = prepare_linked(&st.doc).map_err(|e| bad("data.preview", e))?;
+        let options = st.doc.data_merge.options.clone();
+        let selected =
+            select_records(full.len(), &options.records, options.one, &options.range, options.limit).map_err(|e| bad("data.preview", e))?;
+        let records: Vec<CellRecord> = selected.iter().filter_map(|idx| full.get(*idx).cloned()).collect();
+        if records.is_empty() {
+            return Err(bad("data.preview", "no records"));
+        }
+        let grids = grid::grids_for_merge(&st.doc, &options.per_page).map_err(|e| bad("data.preview", e))?;
+        let doc_dir = st.path.as_deref().and_then(parent_dir);
+        (records, options, doc_dir, grids)
     };
-    let mut doc = (*base).clone();
-    let options = doc.data_merge.options.clone();
-    let maps = identity_map(&doc);
-    let row = source.rows.get((record as usize).saturating_sub(1)).cloned().unwrap_or_default();
-    let data_dir = source.path.as_deref().and_then(parent_dir);
-    let doc_dir = st.path.as_deref().and_then(parent_dir);
-    fill_row(&mut doc, &source.fields, &row, record as u32, &options, &maps, data_dir.as_deref(), doc_dir.as_deref());
+    let max = records.len() as u64;
+    let record = p.get("record").and_then(Value::as_u64).unwrap_or(1).clamp(1, max);
+    let doc = {
+        let st = s.doc_mut()?;
+        let base = if let Some(stash) = &st.preview_stash {
+            stash.clone()
+        } else {
+            let current = st.doc.clone();
+            st.preview_stash = Some(current.clone());
+            current
+        };
+        let mut doc = (*base).clone();
+        let start = (record as usize).saturating_sub(1);
+        if grids.is_empty() {
+            if let Some(rec) = records.get(start) {
+                let maps = identity_map(&doc);
+                let mode = match rec.source_id {
+                    Some(id) => FillMode::Source(id),
+                    None => FillMode::Named,
+                };
+                fill_row(&mut doc, &rec.fields, &rec.cells, rec.number, &options, &maps, rec.data_dir.as_deref(), doc_dir.as_deref(), mode);
+            }
+        } else {
+            let visits = grid::plan_preview(start, &grids, records.len());
+            let maps = identity_map(&doc);
+            let mut warnings = Vec::new();
+            let mut missing = Vec::new();
+            let mut parent = false;
+            grid::explode_cycle(
+                &mut doc,
+                &maps,
+                &records,
+                &visits,
+                Some(start),
+                &options,
+                doc_dir.as_deref(),
+                &mut warnings,
+                &mut missing,
+                &mut parent,
+            )?;
+        }
+        doc
+    };
+    let st = s.doc_mut()?;
     st.doc = Arc::new(doc);
     st.preview_record = Some(record as u32);
     st.revision = st.revision.saturating_add(1);
-    Ok(json!({"record": record}))
+    Ok(json!({"record": record, "count": max}))
 }
 
 fn merge_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     if p.get("spread").is_some() {
         return Err(bad("data.merge", "the spread parameter has been removed"));
     }
-    let (table, mut warnings, data_dir, doc_dir, options, selected, src, linked_status) = {
+    // A merged document has no fields left. Another click merges its template again.
+    use_merge_template(s)?;
+    let (mut warnings, doc_dir, options, chosen, src, statuses, grids) = {
         let st = s.doc()?;
-        let (table, status_warnings, data_dir, linked_status) = if payload_present(p) {
+        let (full, status_warnings, statuses) = if payload_present(p) {
             let (table, dir) = load_inline(p).map_err(|e| bad("data.merge", e))?;
-            (table, Vec::new(), dir, None)
+            let (records, warnings) = records_from_table(table, dir);
+            (records, warnings, Vec::new())
         } else {
-            let (table, warnings, dir, status) = linked_table(&st.doc).map_err(|e| bad("data.merge", e))?;
-            (table, warnings, dir, Some(status))
+            prepare_linked(&st.doc).map_err(|e| bad("data.merge", e))?
         };
         let mut options = st.doc.data_merge.options.clone();
         apply_options(&mut options, p).map_err(|e| bad("data.merge", e))?;
         validate(&options).map_err(|e| bad("data.merge", e))?;
-        let selected =
-            select_records(table.rows.len(), &options.records, options.one, &options.range, options.limit).map_err(|e| bad("data.merge", e))?;
-        if options.per_page == "multiple" && (st.doc.settings.facing_pages || st.doc.page_count() != 1) {
+        let grids = grid::grids_for_merge(&st.doc, &options.per_page).map_err(|e| bad("data.merge", e))?;
+        let selected = select_records(full.len(), &options.records, options.one, &options.range, options.limit).map_err(|e| bad("data.merge", e))?;
+        if grids.is_empty() && options.per_page == "multiple" && (st.doc.settings.facing_pages || st.doc.page_count() != 1) {
             return Err(bad("data.merge", "multiple records on a page need one page with facing pages off"));
         }
+        if !grids.is_empty() {
+            grid::plan_cycles(selected.len(), &grids).map_err(|e| bad("data.merge", e))?;
+        }
+        let chosen: Vec<CellRecord> = selected.iter().filter_map(|idx| full.get(*idx).cloned()).collect();
         let doc_dir = st.path.as_deref().and_then(parent_dir);
         let src = (*st.doc).clone();
-        (table, status_warnings, data_dir, doc_dir, options, selected, src, linked_status)
+        (status_warnings, doc_dir, options, chosen, src, statuses, grids)
     };
-    warnings.extend(table.warnings.iter().cloned());
     let mut merged = src.clone();
     let mut missing = Vec::new();
-    if options.per_page == "multiple" {
-        tile_records(&mut merged, &src, &table, &selected, &options, data_dir.as_deref(), doc_dir.as_deref(), &mut warnings, &mut missing)?;
+    if !grids.is_empty() {
+        let cycles = grid::plan_cycles(chosen.len(), &grids).map_err(|e| bad("data.merge", e))?;
+        let mut parent = false;
+        for (ci, visits) in cycles.iter().enumerate() {
+            let maps = if ci == 0 { identity_map(&merged) } else { append_copy(&mut merged, &src)? };
+            let origin = visits.first().and_then(|visit| visit.cells.first().copied()).flatten();
+            grid::explode_cycle(&mut merged, &maps, &chosen, visits, origin, &options, doc_dir.as_deref(), &mut warnings, &mut missing, &mut parent)?;
+        }
+    } else if options.per_page == "multiple" {
+        tile_records(&mut merged, &src, &chosen, &options, doc_dir.as_deref(), &mut warnings, &mut missing)?;
     } else {
-        copy_records(&mut merged, &src, &table, &selected, &options, data_dir.as_deref(), doc_dir.as_deref(), &mut warnings, &mut missing)?;
+        copy_records(&mut merged, &src, &chosen, &options, doc_dir.as_deref(), &mut warnings, &mut missing)?;
     }
     // Status is written only after every error return. The new document then becomes active,
     // so this template edit does not push an undo step. The fingerprint stays the last read.
-    if let Some(status) = linked_status {
-        remember_source_status(s, status);
-        set_source_status(&mut merged, status);
+    if !statuses.is_empty() {
+        remember_statuses(s, &statuses);
+        apply_statuses(&mut merged, &statuses);
     }
     merged.data_merge.placeholders.clear();
+    merged.data_merge.template_uid = s.active().map(|st| st.uid);
     merged.title = format!("{} merged", src.title);
     let pages = merged.page_count();
     let overset = overset_count(&merged);
-    let records = selected.len();
+    let records = chosen.len();
     let missing_json: Vec<Value> = missing.iter().map(|m| json!({"record": m.record, "field": m.field, "path": m.path})).collect();
     s.add_document(DocState::new(merged, None));
     Ok(json!({
@@ -259,22 +461,20 @@ fn merge_cmd(s: &mut Session, p: &Value) -> Result<Value> {
 fn copy_records(
     dst: &mut Document,
     src: &Document,
-    table: &Table,
-    selected: &[usize],
+    records: &[CellRecord],
     options: &MergeOptions,
-    data_dir: Option<&Path>,
     doc_dir: Option<&Path>,
     warnings: &mut Vec<String>,
     missing: &mut Vec<MissingImage>,
 ) -> Result<()> {
     let mut parent = false;
-    if let Some(&idx) = selected.first() {
+    if let Some(rec) = records.first() {
         let maps = identity_map(dst);
-        fill_at(dst, table, idx, options, &maps, data_dir, doc_dir, warnings, missing, &mut parent);
+        fill_record(dst, rec, options, &maps, doc_dir, warnings, missing, &mut parent);
     }
-    for &idx in selected.iter().skip(1) {
+    for rec in records.iter().skip(1) {
         let maps = append_copy(dst, src)?;
-        fill_at(dst, table, idx, options, &maps, data_dir, doc_dir, warnings, missing, &mut parent);
+        fill_record(dst, rec, options, &maps, doc_dir, warnings, missing, &mut parent);
     }
     Ok(())
 }
@@ -307,10 +507,8 @@ fn append_copy(dst: &mut Document, src: &Document) -> Result<Maps> {
 fn tile_records(
     dst: &mut Document,
     src: &Document,
-    table: &Table,
-    selected: &[usize],
+    records: &[CellRecord],
     options: &MergeOptions,
-    data_dir: Option<&Path>,
     doc_dir: Option<&Path>,
     warnings: &mut Vec<String>,
     missing: &mut Vec<MissingImage>,
@@ -325,7 +523,7 @@ fn tile_records(
         column_spacing: options.column_spacing,
         row_spacing: options.row_spacing,
         rows_first: options.arrange != "columns",
-        count: selected.len(),
+        count: records.len(),
     });
     if plan.one_per_page {
         warnings.push("Only one record fits on the page, so each record has its own page.".into());
@@ -342,10 +540,10 @@ fn tile_records(
     }
     let mut parent = false;
     for hit in plan.hits {
-        let Some(&idx) = selected.get(hit.index) else { continue };
+        let Some(rec) = records.get(hit.index) else { continue };
         if hit.index == 0 && hit.page == 0 && hit.col == 0 && hit.row == 0 {
             let maps = identity_map(dst);
-            fill_at(dst, table, idx, options, &maps, data_dir, doc_dir, warnings, missing, &mut parent);
+            fill_record(dst, rec, options, &maps, doc_dir, warnings, missing, &mut parent);
             continue;
         }
         let Some((dsi, _)) = dst.page_loc(hit.page) else { continue };
@@ -354,31 +552,32 @@ fn tile_records(
             let Some(it) = src.item(*id) else { continue };
             copy_item(dst, src, it, SpreadRef::Doc(dsi), Vec2::new(hit.dx, hit.dy), &mut maps)?;
         }
-        fill_at(dst, table, idx, options, &maps, data_dir, doc_dir, warnings, missing, &mut parent);
+        fill_record(dst, rec, options, &maps, doc_dir, warnings, missing, &mut parent);
     }
     Ok(())
 }
 
-fn fill_at(
+fn fill_record(
     doc: &mut Document,
-    table: &Table,
-    idx: usize,
+    rec: &CellRecord,
     options: &MergeOptions,
     maps: &Maps,
-    data_dir: Option<&Path>,
     doc_dir: Option<&Path>,
     warnings: &mut Vec<String>,
     missing: &mut Vec<MissingImage>,
     parent: &mut bool,
 ) {
-    let Some(row) = table.rows.get(idx) else { return };
-    let report = fill_row(doc, &table.fields, row, (idx as u32).saturating_add(1), options, maps, data_dir, doc_dir);
+    let mode = match rec.source_id {
+        Some(id) => FillMode::Source(id),
+        None => FillMode::Named,
+    };
+    let report = fill_row(doc, &rec.fields, &rec.cells, rec.number, options, maps, rec.data_dir.as_deref(), doc_dir, mode);
     absorb(report, warnings, missing, parent);
 }
 
 fn absorb(report: FillReport, warnings: &mut Vec<String>, missing: &mut Vec<MissingImage>, parent: &mut bool) {
     for w in report.warnings {
-        if w == PARENT_WARNING {
+        if w == fill::PARENT_WARNING {
             if *parent {
                 continue;
             }
@@ -436,7 +635,11 @@ fn overset_count(doc: &Document) -> usize {
 
 fn add_placeholder(d: &mut Document, sel: &Selection, p: &Value, name: &str) -> Result<Value> {
     let (source_id, field) = {
-        let source = d.data_merge.sources.first().ok_or_else(|| bad("data.placeholder.add", "select a data source"))?;
+        let source = if let Some(id) = p.get("source").and_then(Value::as_u64) {
+            d.data_merge.sources.iter().find(|src| src.id == id).ok_or_else(|| bad("data.placeholder.add", format!("unknown data source {id}")))?
+        } else {
+            d.data_merge.sources.iter().find(|src| src.enabled).ok_or_else(|| bad("data.placeholder.add", "no enabled data source"))?
+        };
         let field =
             source.fields.iter().find(|f| f.name == name).cloned().ok_or_else(|| bad("data.placeholder.add", format!("unknown field \"{name}\"")))?;
         (source.id, field)
@@ -645,10 +848,25 @@ pub(crate) fn resolve_sources_on_open(doc: &mut Document, doc_path: Option<&Path
 }
 
 fn read_source(p: &Value) -> std::result::Result<(DataSource, Value), String> {
+    if p.get("rows").is_some() || p.get("csv").is_some() || p.get("json").is_some() {
+        let (table, _) = load_inline(p)?;
+        let name = if p.get("json").is_some() {
+            str_param(p, "name").filter(|s| !s.is_empty()).unwrap_or("data.json")
+        } else if p.get("csv").is_some() {
+            str_param(p, "name").filter(|s| !s.is_empty()).unwrap_or("data.csv")
+        } else {
+            str_param(p, "name").filter(|s| !s.is_empty()).unwrap_or("rows")
+        };
+        return Ok(finish_source(table, name.to_string(), None, None));
+    }
     let sheet = sheet_param(p);
     let delimiter = delim_param(p)?;
     let (bytes, name, path) = take_file(p)?;
     let table = parse_file(&bytes, &name, delimiter, sheet.as_deref())?;
+    Ok(finish_source(table, name, path, sheet))
+}
+
+fn finish_source(table: Table, name: String, path: Option<String>, sheet: Option<String>) -> (DataSource, Value) {
     let fingerprint = path.as_deref().and_then(|path| fingerprint_of(Path::new(path)));
     let report = json!({
         "fields": field_pairs(&table.fields),
@@ -667,48 +885,153 @@ fn read_source(p: &Value) -> std::result::Result<(DataSource, Value), String> {
         fingerprint,
         status: SourceStatus::Ok,
         warnings: table.warnings,
+        enabled: true,
+        filter: SourceFilter::default(),
+        sort: Vec::new(),
     };
-    Ok((source, report))
+    (source, report)
 }
 
-fn linked_table(doc: &Document) -> std::result::Result<(Table, Vec<String>, Option<PathBuf>, SourceStatus), String> {
-    let src = doc.data_merge.sources.first().ok_or_else(|| "select a data source or pass csv or rows".to_string())?;
-    let mut warnings = Vec::new();
-    let status = if let Some(path) = &src.path {
-        let status = status_of(Path::new(path), src.fingerprint);
-        match status {
-            SourceStatus::Modified => warnings.push("The data file changed since it was read. This merge used the cached rows.".into()),
-            SourceStatus::Missing => warnings.push("The data file is missing. This merge used the cached rows.".into()),
-            SourceStatus::Ok => {}
-        }
-        status
-    } else {
-        src.status
+/// If this document was produced by a merge, switch to the template it came from.
+fn use_merge_template(s: &mut Session) -> Result<()> {
+    let found = {
+        let Some(uid) = s.active().and_then(|st| st.doc.data_merge.template_uid) else {
+            return Ok(());
+        };
+        s.documents().iter().position(|d| d.uid == uid)
     };
-    let data_dir = src.path.as_deref().and_then(parent_dir);
-    let table = Table { fields: src.fields.clone(), rows: src.rows.clone(), warnings: src.warnings.clone(), delimiter: src.delimiter };
-    Ok((table, warnings, data_dir, status))
+    let Some(idx) = found else {
+        return Err(bad("data.merge", "the template for this merged document is no longer open"));
+    };
+    s.set_active(idx);
+    Ok(())
 }
 
-fn set_source_status(doc: &mut Document, status: SourceStatus) -> bool {
-    let Some(source) = doc.data_merge.sources.first_mut() else {
-        return false;
-    };
-    if source.status == status {
-        return false;
+fn prepare_linked(doc: &Document) -> std::result::Result<(Vec<CellRecord>, Vec<String>, Vec<(u64, SourceStatus)>), String> {
+    if doc.data_merge.sources.is_empty() {
+        return Err("select a data source or pass csv or rows".into());
     }
-    source.status = status;
-    true
+    let mut records = Vec::new();
+    let mut warnings = Vec::new();
+    let mut statuses = Vec::new();
+    let mut any_enabled = false;
+    for src in &doc.data_merge.sources {
+        let status = if let Some(path) = &src.path {
+            let status = status_of(Path::new(path), src.fingerprint);
+            match status {
+                SourceStatus::Modified => warnings.push("The data file changed since it was read. This merge used the cached rows.".into()),
+                SourceStatus::Missing => warnings.push("The data file is missing. This merge used the cached rows.".into()),
+                SourceStatus::Ok => {}
+            }
+            status
+        } else {
+            src.status
+        };
+        statuses.push((src.id, status));
+        if !src.enabled {
+            continue;
+        }
+        any_enabled = true;
+        let mut order = filter_rows(&src.fields, &src.rows, &src.filter)?;
+        sort_rows(&src.fields, &src.rows, &mut order, &src.sort)?;
+        warnings.extend(src.warnings.iter().cloned());
+        let data_dir = src.path.as_deref().and_then(parent_dir);
+        for i in order {
+            let cells = src.rows.get(i).cloned().unwrap_or_default();
+            let number = (records.len() as u32).saturating_add(1);
+            records.push(CellRecord { source_id: Some(src.id), fields: src.fields.clone(), cells, data_dir: data_dir.clone(), number });
+        }
+    }
+    if !any_enabled {
+        return Err("no enabled data source".into());
+    }
+    if records.is_empty() {
+        return Err("no records".into());
+    }
+    Ok((records, warnings, statuses))
 }
 
-fn remember_source_status(s: &mut Session, status: SourceStatus) {
+fn records_from_table(table: Table, data_dir: Option<PathBuf>) -> (Vec<CellRecord>, Vec<String>) {
+    let warnings = table.warnings;
+    let fields = table.fields;
+    let records = table
+        .rows
+        .into_iter()
+        .enumerate()
+        .map(|(i, cells)| CellRecord {
+            source_id: None,
+            fields: fields.clone(),
+            cells,
+            data_dir: data_dir.clone(),
+            number: (i as u32).saturating_add(1),
+        })
+        .collect();
+    (records, warnings)
+}
+
+fn apply_statuses(doc: &mut Document, notes: &[(u64, SourceStatus)]) -> bool {
+    let mut changed = false;
+    for (id, status) in notes {
+        let Some(source) = doc.data_merge.sources.iter_mut().find(|src| src.id == *id) else { continue };
+        if source.status != *status {
+            source.status = *status;
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn remember_statuses(s: &mut Session, notes: &[(u64, SourceStatus)]) {
     let Some(st) = s.active_mut() else { return };
     let mut doc = (*st.doc).clone();
-    if !set_source_status(&mut doc, status) {
+    if !apply_statuses(&mut doc, notes) {
         return;
     }
     st.doc = Arc::new(doc);
     st.revision = st.revision.saturating_add(1);
+}
+
+fn source_index(sources: &[DataSource], id: Option<u64>) -> std::result::Result<usize, String> {
+    if let Some(id) = id {
+        sources.iter().position(|src| src.id == id).ok_or_else(|| format!("unknown data source {id}"))
+    } else if sources.len() == 1 {
+        Ok(0)
+    } else if sources.is_empty() {
+        Err("select a data source".into())
+    } else {
+        Err("pass id when more than one data source is linked".into())
+    }
+}
+
+fn parse_rules(value: Option<&Value>) -> std::result::Result<Vec<FilterRule>, String> {
+    let Some(value) = value else { return Ok(Vec::new()) };
+    let arr = value.as_array().ok_or_else(|| "rules must be an array".to_string())?;
+    let mut rules = Vec::new();
+    for rule in arr {
+        let field = rule.get("field").and_then(Value::as_str).ok_or_else(|| "a rule needs a field".to_string())?.to_string();
+        let op = rule.get("op").and_then(Value::as_str).ok_or_else(|| "a rule needs an operator".to_string())?.to_string();
+        if !matches!(op.as_str(), "equals" | "notEquals" | "contains" | "startsWith" | "empty" | "notEmpty") {
+            return Err(format!("unknown operator \"{op}\""));
+        }
+        let text = if matches!(op.as_str(), "empty" | "notEmpty") { String::new() } else { parse::cell_string(rule.get("value"))? };
+        rules.push(FilterRule { field, op, value: text });
+    }
+    Ok(rules)
+}
+
+fn parse_sort(value: Option<&Value>) -> std::result::Result<Vec<SortKey>, String> {
+    let Some(value) = value else { return Ok(Vec::new()) };
+    let arr = value.as_array().ok_or_else(|| "fields must be an array".to_string())?;
+    let mut keys = Vec::new();
+    for key in arr {
+        let field = key.get("field").and_then(Value::as_str).ok_or_else(|| "a sort field needs a field".to_string())?.to_string();
+        let direction = key.get("direction").and_then(Value::as_str).unwrap_or("asc").to_string();
+        if direction != "asc" && direction != "desc" {
+            return Err(format!("unknown direction \"{direction}\""));
+        }
+        keys.push(SortKey { field, direction });
+    }
+    Ok(keys)
 }
 
 fn load_inline(p: &Value) -> std::result::Result<(Table, Option<PathBuf>), String> {
@@ -721,6 +1044,10 @@ fn load_inline(p: &Value) -> std::result::Result<(Table, Option<PathBuf>), Strin
         let name = str_param(p, "name").unwrap_or("data.csv");
         return Ok((table_from_bytes(text.as_bytes(), name, delim_param(p)?)?, None));
     }
+    if p.get("json").is_some() {
+        let (table, _) = inline_json(p)?;
+        return Ok((table, None));
+    }
     let sheet = sheet_param(p);
     let delimiter = delim_param(p)?;
     let (bytes, name, path) = take_file(p)?;
@@ -729,7 +1056,18 @@ fn load_inline(p: &Value) -> std::result::Result<(Table, Option<PathBuf>), Strin
 }
 
 fn payload_present(p: &Value) -> bool {
-    p.get("rows").is_some() || p.get("csv").is_some() || p.get("bytes").is_some() || p.get("base64").is_some() || p.get("path").is_some()
+    p.get("rows").is_some()
+        || p.get("csv").is_some()
+        || p.get("json").is_some()
+        || p.get("bytes").is_some()
+        || p.get("base64").is_some()
+        || p.get("path").is_some()
+}
+
+fn inline_json(p: &Value) -> std::result::Result<(Table, String), String> {
+    let text = p.get("json").and_then(Value::as_str).ok_or_else(|| "json must be a string".to_string())?;
+    let name = str_param(p, "name").filter(|s| !s.is_empty()).unwrap_or("data.json").to_string();
+    Ok((table_from_json(text)?, name))
 }
 
 fn take_file(p: &Value) -> std::result::Result<(Vec<u8>, String, Option<String>), String> {
@@ -749,6 +1087,9 @@ fn parse_file(bytes: &[u8], name: &str, delimiter: Option<Delimiter>, sheet: Opt
     let ext = extension(name);
     if ext == "xls" || ext == "xlsm" {
         return Err(format!("{ext} workbooks are not supported"));
+    }
+    if ext == "json" {
+        return table_from_json_bytes(bytes, name);
     }
     if ext == "xlsx" {
         let grid = designcraft_textimport::xlsx_records(bytes, sheet).map_err(|e| e.to_string())?;
@@ -783,10 +1124,6 @@ fn sheet_param(p: &Value) -> Option<String> {
 
 fn field_pairs(fields: &[DataField]) -> Vec<Value> {
     fields.iter().map(|f| json!({"name": f.name, "kind": f.kind.as_str()})).collect()
-}
-
-fn fields_json(fields: &[DataField], uses: impl Fn(&str) -> usize) -> Value {
-    Value::Array(fields.iter().map(|f| json!({"name": f.name, "kind": f.kind.as_str(), "uses": uses(&f.name)})).collect())
 }
 
 fn apply_options(opt: &mut MergeOptions, p: &Value) -> std::result::Result<(), String> {
