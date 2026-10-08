@@ -50,10 +50,9 @@ harfrust = "0.13"
 vello_cpu = "0.2"
 vello_common = { version = "0.2", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "tiff", "bmp"] }
-# SVG (same usvg as krilla-svg) and Photoshop composites.
+# SVG (same usvg as krilla-svg).
 resvg = { version = "0.47", default-features = false, features = ["text"] }
 krilla-svg = "0.8"
-psd = "0.3"
 # Boolean operations on Bézier paths (Pathfinder).
 flo_curves = "0.8"
 # QR codes (Object › Generate QR Code); MIT.

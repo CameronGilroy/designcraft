@@ -9,7 +9,7 @@ description = "DesignCraft placed-graphic decoding: raster formats (PNG, JPEG, G
 workspace = true
 
 [dependencies]
+designcraft-color = { workspace = true }
 designcraft-fonts = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }
-psd = { workspace = true }
