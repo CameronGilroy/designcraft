@@ -1020,6 +1020,7 @@ dependencies = [
  "designcraft-fonts",
  "image",
  "resvg",
+ "tiff",
 ]
 
 [[package]]
@@ -1054,6 +1055,7 @@ dependencies = [
  "kurbo",
  "log",
  "thiserror 2.0.21",
+ "tiff",
 ]
 
 [[package]]
