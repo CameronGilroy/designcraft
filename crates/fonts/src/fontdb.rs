@@ -594,6 +594,13 @@ pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
                 }
             }
         }
+        // Microsoft Office bundles its fonts (Calibri, Cambria, …) inside each app; read them in
+        // place from the first installed one (they share the same set).
+        let office = ["Microsoft Word", "Microsoft Excel", "Microsoft PowerPoint", "Microsoft Outlook"]
+            .iter()
+            .map(|app| std::path::PathBuf::from(format!("/Applications/{app}.app/Contents/Resources/DFonts")))
+            .find(|p| p.is_dir());
+        dirs.extend(office);
     } else if cfg!(windows) {
         let root = std::env::var_os("WINDIR").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
         dirs.push(root.join("Fonts"));

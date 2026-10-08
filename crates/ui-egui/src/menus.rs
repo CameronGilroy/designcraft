@@ -135,7 +135,12 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("help.issues", "Report an Issue…", None, "{} — opens the GitHub issue tracker"),
     ("help.website", "ArtCraft Website…", None, "{} — opens https://getartcraft.com"),
     ("help.app", "ArtCraft App Page…", None, "{app} — opens https://getartcraft.com/apps/{app} (e.g. photocraft)"),
-    ("help.about", "About DesignCraft", None, "{open?: true} — the About splash with community links (open: false closes it)"),
+    (
+        "help.about",
+        "About DesignCraft",
+        None,
+        "{open?: true, tab?: \"about\"|\"contributors\"|\"models\"} — the About window: splash with community links, contributor and model credits (open: false closes it)",
+    ),
     ("window.toolsDoubleColumn", "Tools: Double Column", None, "{}"),
     (
         "window.workspace",
@@ -1279,6 +1284,12 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
         }
         "window.taskBar" => flag(&mut app.ui.task_bar),
         "help.about" => {
+            if let Some(tab) = p.get("tab").and_then(Value::as_str) {
+                let Some(i) = crate::about::ABOUT_TABS.iter().position(|t| t.eq_ignore_ascii_case(tab)) else {
+                    return Some(Err(format!("help.about: unknown tab `{tab}` (about, contributors, models)")));
+                };
+                app.ui.about_tab = u8::try_from(i).unwrap_or(0);
+            }
             app.ui.about = p.get("open").and_then(Value::as_bool).unwrap_or(true);
             Ok(json!(app.ui.about))
         }
@@ -2007,6 +2018,16 @@ mod tests {
     }
 
     #[test]
+    fn transform_menu_items_open_their_dialogs() {
+        for id in ["transform.move", "transform.scale", "transform.rotate", "transform.shear"] {
+            let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            activate(&mut app, id, &Value::Null);
+            let dialog = app.ui.dialog.as_ref().map(|d| d.id.clone());
+            assert_eq!(dialog.as_deref(), Some(format!("cmd:{id}").as_str()), "{id} opens its dialog");
+        }
+    }
+
+    #[test]
     fn snap_preferences_are_a_command() {
         let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         let r = run_ui(&mut app, "view.snapPreferences", &json!({"smartSpacing": false, "zone": 8})).unwrap().unwrap();
@@ -2257,6 +2278,43 @@ mod tests {
         );
         assert!(app.power_zoom.is_none());
         assert!((app.view().unwrap().zoom - z0).abs() < 1e-9, "back at the zoom it started from");
+    }
+
+    #[test]
+    fn middle_drag_pans_with_any_tool() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        let ctx = egui::Context::default();
+        let frame = |app: &mut crate::DesignApp, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0))),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                app.logic(&ui.ctx().clone());
+                app.ui(ui);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut app, vec![]);
+        frame(&mut app, vec![]);
+        // A drawing tool: a primary drag would make a frame, a middle drag must not.
+        app.select_tool("rectangleFrame");
+        let p = app.canvas_rect.unwrap().center();
+        let v0 = *app.view().unwrap();
+        let items = |app: &crate::DesignApp| app.session.active().unwrap().doc.spreads.iter().map(|s| s.items.len()).sum::<usize>();
+        let items0 = items(&app);
+        let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Middle, pressed, modifiers: Default::default() };
+        frame(&mut app, vec![egui::Event::PointerMoved(p), button(p, true)]);
+        for i in 1..=8 {
+            frame(&mut app, vec![egui::Event::PointerMoved(p + egui::vec2(10.0 * i as f32, 5.0 * i as f32))]);
+        }
+        frame(&mut app, vec![button(p + egui::vec2(80.0, 40.0), false)]);
+        let v = *app.view().unwrap();
+        assert!((v.zoom - v0.zoom).abs() < 1e-9, "panning keeps the zoom");
+        assert!(v.origin.x < v0.origin.x && v.origin.y < v0.origin.y, "dragging right/down moves the view: {v0:?} -> {v:?}");
+        assert_eq!(items(&app), items0, "the tool saw nothing");
     }
 
     #[test]

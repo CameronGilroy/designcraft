@@ -60,7 +60,7 @@ pub struct Kinsoku {
 impl Kinsoku {
     /// Explicitly supplied character sets take precedence over the fallback table.
     pub fn allows(&self, a: char, b: char) -> bool {
-        !self.no_end.contains(a) && !self.no_start.contains(b) && !(a == b && self.inseparable.contains(a))
+        !(self.no_end.contains(a) || self.no_start.contains(b) || (a == b && self.inseparable.contains(a)))
     }
 }
 

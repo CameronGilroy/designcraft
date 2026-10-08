@@ -2396,10 +2396,14 @@ pub fn command_fields(doc: &str) -> Vec<CommandField> {
     let ident = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !s.starts_with(|c: char| c.is_ascii_digit());
     let mut out = Vec::new();
     for part in parts {
+        // `key`, `key?`, `key: spec` or `key (spec)`: the key is the leading word.
         let part = part.trim();
-        let (k, spec) = match part.split_once(':') {
-            Some((k, v)) => (k.trim(), v.trim()),
-            None => (part, ""),
+        let k_end = part.find(|c: char| c.is_whitespace() || c == ':' || c == '(').unwrap_or(part.len());
+        let (k, rest) = part.split_at(k_end);
+        let rest = rest.trim_start();
+        let spec = match rest.strip_prefix(':') {
+            Some(v) => v.trim(),
+            None => rest.strip_prefix('(').and_then(|r| r.strip_suffix(')')).unwrap_or(rest).trim(),
         };
         let optional = k.ends_with('?');
         let key = k.trim_end_matches('?');
@@ -2660,6 +2664,18 @@ mod tests {
         assert!(f[4].boolean);
         assert!(command_fields("{}").is_empty());
         assert!(command_fields("no params").is_empty());
+        // A parenthetical after the key describes the value.
+        let f = command_fields("{angle (degrees, CCW), ids?}");
+        let keys: Vec<&str> = f.iter().map(|f| f.key.as_str()).collect();
+        assert_eq!(keys, ["angle", "ids"]);
+        assert!(!f[0].optional && f[1].optional);
+        assert_eq!(f[0].hint, "degrees, CCW");
+        let f = command_fields("{scaleX? (%), ref?: 0..8, ids?: parent items (default: all)}");
+        let keys: Vec<&str> = f.iter().map(|f| f.key.as_str()).collect();
+        assert_eq!(keys, ["scaleX", "ref", "ids"]);
+        assert!(f.iter().all(|f| f.optional));
+        assert_eq!(f[0].hint, "%");
+        assert_eq!(f[2].hint, "parent items (default: all)");
         // Every command with a "…" label parses without panicking.
         for c in designcraft_engine::command_specs() {
             let _ = command_fields(c.params);

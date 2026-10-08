@@ -269,6 +269,119 @@ fn imports_hand_written_fixture() {
     assert_eq!(a.name, "photo.jpg");
 }
 
+/// Hand-written inset encodings, independent of the exporter's four-item list.
+fn inset_fixture(preference: &str, object_styles: &str) -> Document {
+    let designmap = format!(
+        r#"<Document xmlns:idPkg="http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging" Self="d">
+          <RootObjectStyleGroup Self="ro">{object_styles}</RootObjectStyleGroup>
+          <idPkg:Spread src="Spreads/Spread_s.xml"/>
+        </Document>"#
+    );
+    let spread = format!(
+        r#"<idPkg:Spread xmlns:idPkg="http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging">
+          <Spread Self="s">
+            <Page Self="p" GeometricBounds="0 0 100 100" ItemTransform="1 0 0 1 0 0"/>
+            <TextFrame Self="f" AppliedObjectStyle="ObjectStyle/Padded">
+              <Properties><PathGeometry><GeometryPathType PathOpen="false"><PathPointArray>
+                <PathPointType Anchor="0 0"/><PathPointType Anchor="0 100"/>
+                <PathPointType Anchor="100 100"/><PathPointType Anchor="100 0"/>
+              </PathPointArray></GeometryPathType></PathGeometry></Properties>
+              {preference}
+            </TextFrame>
+          </Spread>
+        </idPkg:Spread>"#
+    );
+    import_idml(&zip_files(&[("designmap.xml", &designmap), ("Spreads/Spread_s.xml", &spread)])).unwrap()
+}
+
+fn frame_inset(d: &Document) -> [f64; 4] {
+    d.spreads[0].items[0].text_frame().unwrap().options.inset
+}
+
+fn inset_list(values: &[&str]) -> String {
+    let items = values.iter().map(|v| format!(r#"<ListItem type="unit">{v}</ListItem>"#)).collect::<String>();
+    format!(r#"<Properties><InsetSpacing type="list">{items}</InsetSpacing></Properties>"#)
+}
+
+#[test]
+fn imports_scalar_inset_properties_like_lists_and_attributes() {
+    let scalar =
+        inset_fixture(r#"<TextFramePreference><Properties><InsetSpacing type="unit"> 9 </InsetSpacing></Properties></TextFramePreference>"#, "");
+    let list = inset_fixture(&format!("<TextFramePreference>{}</TextFramePreference>", inset_list(&["9"; 4])), "");
+    let attribute = inset_fixture(r#"<TextFramePreference InsetSpacing="9"/>"#, "");
+    let untyped = inset_fixture(r#"<TextFramePreference><Properties><InsetSpacing>9</InsetSpacing></Properties></TextFramePreference>"#, "");
+    assert_eq!(frame_inset(&scalar), [9.0; 4]);
+    assert_eq!(frame_inset(&scalar), frame_inset(&list));
+    assert_eq!(frame_inset(&scalar), frame_inset(&attribute));
+    assert_eq!(frame_inset(&scalar), frame_inset(&untyped));
+    assert_eq!(scalar.spreads[0].items[0].text_area(), Rect::new(9.0, 9.0, 91.0, 91.0));
+    let round_trip = import_idml(&export_idml(&scalar)).unwrap();
+    assert_eq!(frame_inset(&round_trip), [9.0; 4]);
+}
+
+#[test]
+fn inset_property_keeps_precedence_over_attribute() {
+    for (property, expected) in [
+        (r#"<Properties><InsetSpacing type="unit">9</InsetSpacing></Properties>"#.to_string(), [9.0; 4]),
+        (inset_list(&["1", "2", "3", "4"]), [1.0, 2.0, 3.0, 4.0]),
+        (inset_list(&["1", "2", "3"]), [0.0; 4]),
+        (r#"<Properties><InsetSpacing type="unit">invalid</InsetSpacing></Properties>"#.to_string(), [0.0; 4]),
+    ] {
+        let d = inset_fixture(&format!(r#"<TextFramePreference InsetSpacing="42">{property}</TextFramePreference>"#), "");
+        assert_eq!(frame_inset(&d), expected, "{property}");
+    }
+}
+
+#[test]
+fn inset_spacing_rejects_malformed_and_nonfinite_values() {
+    let mut preferences = vec![
+        String::new(),
+        "<TextFramePreference/>".to_string(),
+        r#"<TextFramePreference><Properties><InsetSpacing type="list">9</InsetSpacing></Properties></TextFramePreference>"#.to_string(),
+        r#"<TextFramePreference><Properties><InsetSpacing type="unit"><Other>9</Other></InsetSpacing></Properties></TextFramePreference>"#
+            .to_string(),
+    ];
+    for value in ["", "invalid", "NaN", "inf", "-inf", "1e309"] {
+        preferences.push(format!(r#"<TextFramePreference InsetSpacing="{value}"/>"#));
+        preferences
+            .push(format!(r#"<TextFramePreference><Properties><InsetSpacing type="unit">{value}</InsetSpacing></Properties></TextFramePreference>"#));
+        preferences.push(format!("<TextFramePreference>{}</TextFramePreference>", inset_list(&["1", value, "3", "4"])));
+    }
+    for values in [&[][..], &["9"][..], &["1", "2", "3"][..], &["1", "2", "3", "4", "5"][..], &["1", "bad", "2", "3", "4"][..]] {
+        preferences.push(format!("<TextFramePreference>{}</TextFramePreference>", inset_list(values)));
+    }
+    preferences.push(format!("<TextFramePreference>{}</TextFramePreference>", inset_list(&["1", "<Other>2</Other>", "3", "4"])));
+    for preference in preferences {
+        assert_eq!(frame_inset(&inset_fixture(&preference, "")), [0.0; 4], "{preference}");
+    }
+}
+
+#[test]
+fn inset_spacing_preserves_finite_signed_values_and_edge_order() {
+    for value in ["0", "-2.5", " 4.5 "] {
+        let expected = [value.trim().parse::<f64>().unwrap(); 4];
+        for preference in [
+            format!(r#"<TextFramePreference InsetSpacing="{value}"/>"#),
+            format!(r#"<TextFramePreference><Properties><InsetSpacing type="unit">{value}</InsetSpacing></Properties></TextFramePreference>"#),
+            format!("<TextFramePreference>{}</TextFramePreference>", inset_list(&[value; 4])),
+        ] {
+            assert_eq!(frame_inset(&inset_fixture(&preference, "")), expected, "{preference}");
+        }
+    }
+    let d = inset_fixture(&format!("<TextFramePreference>{}</TextFramePreference>", inset_list(&["1", "-2", "3.5", "4"])), "");
+    assert_eq!(frame_inset(&d), [1.0, -2.0, 3.5, 4.0], "top, left, bottom, right");
+}
+
+#[test]
+fn imports_scalar_insets_in_object_style_without_replacing_frame_override() {
+    let styles = r#"<ObjectStyle Self="ObjectStyle/Padded" Name="Padded" EnableTextFrameGeneralOptions="true">
+      <TextFramePreference><Properties><InsetSpacing type="unit">9</InsetSpacing></Properties></TextFramePreference>
+    </ObjectStyle>"#;
+    let d = inset_fixture(r#"<TextFramePreference InsetSpacing="3"/>"#, styles);
+    assert_eq!(d.styles.object.iter().find(|s| s.name == "Padded").unwrap().text_frame.as_ref().unwrap().inset, [9.0; 4]);
+    assert_eq!(frame_inset(&d), [3.0; 4]);
+}
+
 #[test]
 fn rejects_non_idml() {
     assert!(import_idml(b"not a zip").is_err());
@@ -381,6 +494,40 @@ fn round_trips_tables() {
     assert!((bt.rows[2].height - 30.0).abs() < 1e-6);
     assert!((bt.columns[0].width - 50.0).abs() < 1e-6);
     assert_eq!(bt.options.alt_rows.as_ref().map(|a| a.first_color.as_str()), Some("Brand"));
+}
+
+#[test]
+fn imports_and_round_trips_explicit_cell_border_overrides() {
+    // Hand-written IDML: the outer cell edge may explicitly suppress or replace the
+    // table border. An absent/zero priority keeps the table border's precedence.
+    let story = r#"<idPkg:Story xmlns:idPkg="http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging">
+<Story Self="s1"><ParagraphStyleRange><CharacterStyleRange>
+<Table HeaderRowCount="0" FooterRowCount="0" TopBorderStrokeWeight="2">
+  <Row Name="0" MinimumHeight="24"/>
+  <Column Name="0" SingleColumnWidth="60"/><Column Name="1" SingleColumnWidth="60"/>
+  <Cell Name="0:0" TopEdgeStrokeColor="Swatch/None" TopEdgeStrokePriority="1"
+        LeftEdgeStrokeColor="Color/Brand" LeftEdgeStrokeWeight="3" LeftEdgeStrokePriority="2"
+        BottomEdgeStrokeWeight="0" BottomEdgeStrokePriority="0" RightEdgeStrokeColor="Swatch/None">
+    <ParagraphStyleRange><CharacterStyleRange><Content>A</Content></CharacterStyleRange></ParagraphStyleRange>
+  </Cell>
+  <Cell Name="1:0"><ParagraphStyleRange><CharacterStyleRange><Content>B</Content></CharacterStyleRange></ParagraphStyleRange></Cell>
+</Table></CharacterStyleRange></ParagraphStyleRange></Story></idPkg:Story>"#;
+    let d = import_idml(&fixture_with_story(story)).unwrap();
+    d.check().unwrap();
+    let table = d.stories.values().flat_map(|s| s.tables.values()).next().unwrap();
+    let cell = table.cell(0, 0).unwrap();
+    assert_eq!(cell.border_overrides, [true, true, false, false]);
+    assert!(!cell.strokes[0].is_visible(), "explicit None is retained");
+    assert_eq!(cell.strokes[1].color, "Brand");
+    assert_eq!(cell.strokes[1].weight, 3.0);
+    assert_eq!(table.options.border.weight, 2.0);
+    assert_eq!(table.cell(0, 1).unwrap().border_overrides, [false; 4]);
+
+    let back = import_idml(&export_idml(&d)).unwrap();
+    let roundtrip = back.stories.values().flat_map(|s| s.tables.values()).next().unwrap();
+    assert_eq!(roundtrip.cell(0, 0).unwrap().border_overrides, cell.border_overrides);
+    assert_eq!(roundtrip.cell(0, 0).unwrap().strokes, cell.strokes);
+    assert_eq!(roundtrip.cell(0, 1).unwrap().border_overrides, [false; 4]);
 }
 
 #[test]

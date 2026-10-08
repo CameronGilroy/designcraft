@@ -207,11 +207,9 @@ pub fn export_pdf_with_report(doc: &Document, cache: &Cache, opts: &PdfOptions) 
     // Transparency blends in the document's blend space: CMYK for print (and always in PDF/X).
     let mut warnings = ex.warnings;
     if !ex.rgb_only && (doc.settings.blend_space == designcraft_doc::BlendSpace::Cmyk || opts.standard == Standard::PdfX4) {
+        // The rewrite matches krilla's exact output; in PDF/X-4, `check_pdfx4` reports any
+        // group that got past it, with its page.
         crate::pdfx::cmyk_group_spaces(&mut bytes);
-        // The rewrite matches krilla's exact output; say so if a group got past it.
-        if opts.standard == Standard::PdfX4 && crate::pdfx::has_rgb_groups(&bytes) {
-            warnings.push("PDF/X-4: some transparency groups still blend in RGB".into());
-        }
     }
     // Form fields (Buttons and Forms) and, for interactive PDF, video and sound; not in PDF/X.
     let fields = crate::forms::collect(doc, &sheets);

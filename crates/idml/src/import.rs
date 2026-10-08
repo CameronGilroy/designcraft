@@ -1548,6 +1548,9 @@ impl<'r> Importer<'r> {
             for (i, side) in ["TopEdge", "LeftEdge", "BottomEdge", "RightEdge"].iter().enumerate() {
                 let base = cell.strokes[i].clone();
                 cell.strokes[i] = stroke(self, ce, side, &base);
+                // A positive edge priority records a local cell override, including an
+                // explicit None stroke. Keep it when this edge meets the table perimeter.
+                cell.border_overrides[i] = ce.num(&format!("{side}StrokePriority")).is_some_and(|priority| priority > 0.0);
             }
             if let Some(slot) = t.cell_mut(r, c) {
                 *slot = cell;
@@ -2350,13 +2353,8 @@ fn text_frame_options(e: &El) -> TextFrameOptions {
         o.column_width = v;
     }
     o.balance_columns = e.get("VerticalBalanceColumns") == Some("true");
-    if let Some(l) = e.prop_el("InsetSpacing") {
-        let v: Vec<f64> = l.find_all("ListItem").filter_map(|i| i.text_content().trim().parse().ok()).collect();
-        if v.len() == 4 {
-            o.inset = [v[0], v[1], v[2], v[3]];
-        }
-    } else if let Some(v) = e.num("InsetSpacing") {
-        o.inset = [v; 4];
+    if let Some(inset) = inset_spacing(e) {
+        o.inset = inset;
     }
     if let Some(v) = e.get("VerticalJustification") {
         o.vertical_justification = names::vj_in(v);
@@ -2378,6 +2376,32 @@ fn text_frame_options(e: &El) -> TextFrameOptions {
         o.auto_size_ref = names::REF_POINTS.iter().position(|p| *p == v).unwrap_or(1) as u8;
     }
     o
+}
+
+/// A scalar applies to every edge; a list is top, left, bottom, right. Keep the
+/// existing property-element precedence over the legacy scalar attribute, even
+/// when the property is malformed. Finite negative insets remain supported.
+fn inset_spacing(e: &El) -> Option<[f64; 4]> {
+    let number = |s: &str| s.trim().parse::<f64>().ok().filter(|v| v.is_finite());
+    let Some(property) = e.prop_el("InsetSpacing") else {
+        return e.get("InsetSpacing").and_then(number).map(|v| [v; 4]);
+    };
+    let mut items = property.elements();
+    if property.get("type") == Some("list") || property.find("ListItem").is_some() {
+        let mut inset = [0.0; 4];
+        for edge in &mut inset {
+            let item = items.next()?;
+            if item.local() != "ListItem" || item.elements().next().is_some() {
+                return None;
+            }
+            *edge = number(&item.text_content())?;
+        }
+        items.next().is_none().then_some(inset)
+    } else if items.next().is_none() {
+        number(&property.text_content()).map(|v| [v; 4])
+    } else {
+        None
+    }
 }
 
 fn path_of(pg: &El) -> PathData {

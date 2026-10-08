@@ -328,7 +328,14 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     // Cursor.
     if let Some(p) = resp.hover_pos().filter(|p| screen.contains(*p)) {
         let space = ui.input(|i| i.key_down(egui::Key::Space)) && !app.session.wants_text();
-        let c = if space { Cursor::Hand } else { app.session.cursor(xf.to_canvas(p), ui.input(|i| mods(i, false)), app.view_info()) };
+        let middle = ui.input(|i| i.pointer.middle_down());
+        let c = if middle {
+            Cursor::HandGrab
+        } else if space {
+            Cursor::Hand
+        } else {
+            app.session.cursor(xf.to_canvas(p), ui.input(|i| mods(i, false)), app.view_info())
+        };
         ui.ctx().set_cursor_icon(cursor_icon(c));
     }
 }
@@ -1345,9 +1352,10 @@ fn handle_input(app: &mut DesignApp, ui: &mut egui::Ui, resp: &egui::Response, r
         }
     }
     // Space-drag = hand (unless a tool drag is under way: then Space is a modifier, e.g. Live
-    // Distribute while resizing).
+    // Distribute while resizing). Middle-drag pans too, with any tool; tools only
+    // see the primary button.
     let tool_drag: bool = ui.data(|d| d.get_temp(egui::Id::new(("canvas_pointer_down", app.pane)))).unwrap_or(false);
-    if space && !tool_drag && resp.dragged() {
+    if !tool_drag && ((space && resp.dragged()) || resp.dragged_by(egui::PointerButton::Middle)) {
         let d = xf.unrotate_delta(resp.drag_delta());
         if let Some(v) = app.view_mut() {
             v.origin = Point::new(v.origin.x - d.x as f64 / v.zoom, v.origin.y - d.y as f64 / v.zoom);
