@@ -701,11 +701,19 @@ fn round_trips_frames_with_pasted_in_items() {
 fn vertical_story_orientation_round_trips() {
     let mut d = Document::new(&NewDocument::default());
     let lid = d.default_layer();
-    let (fid, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(72.0, 72.0, 200.0, 400.0), lid, "縦書き", ParaFormat::default()).unwrap();
-    d.item_mut(fid).unwrap().text_frame_mut().unwrap().options.vertical = true;
+    let (a, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(72.0, 72.0, 200.0, 400.0), lid, "縦書き", ParaFormat::default()).unwrap();
+    let (b, _) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(300.0, 72.0, 428.0, 400.0), lid, "", ParaFormat::default()).unwrap();
+    d.thread(a, b).unwrap();
+    d.add_text_frame(SpreadRef::Doc(0), Rect::new(450.0, 72.0, 550.0, 400.0), lid, "横", ParaFormat::default()).unwrap();
+    d.story_mut(sid).unwrap().vertical = true;
+    // Orientation and column direction are separate settings of the story.
+    d.story_mut(sid).unwrap().direction = designcraft_doc::TextDirection::RightToLeft;
     let back = import_idml(&export_idml(&d)).unwrap();
-    let frame = back.spreads[0].items.iter().find_map(|i| i.text_frame()).unwrap();
-    assert!(frame.options.vertical);
+    use designcraft_doc::TextDirection::{LeftToRight, RightToLeft};
+    let directions: Vec<_> = back.stories.values().map(|s| (s.frames.len(), s.vertical, s.direction)).collect();
+    assert!(directions.contains(&(2, true, RightToLeft)) && directions.contains(&(1, false, LeftToRight)), "{directions:?}");
+    let frames: Vec<bool> = back.spreads[0].items.iter().map(|i| back.frame_vertical(i)).collect();
+    assert_eq!(frames, [true, true, false]);
 }
 
 #[test]

@@ -340,6 +340,12 @@ pub struct DocSettings {
     pub overprint_black: bool,
     /// Type › Track Changes: edits are recorded as inserted / deleted text.
     pub track_changes: bool,
+    /// Preferences › Composition › Draw Missing Glyphs from Fallback Fonts: characters the
+    /// applied font lacks are drawn from other fonts. Off (InDesign's behaviour, and new
+    /// documents'), they are drawn as the font's missing-glyph box and Preflight lists them.
+    /// Documents saved before the setting existed read as on, the way they were drawn.
+    #[serde(default = "yes")]
+    pub glyph_fallback: bool,
 }
 
 impl Default for DocSettings {
@@ -371,6 +377,7 @@ impl Default for DocSettings {
             blend_space: BlendSpace::Cmyk,
             overprint_black: true,
             track_changes: false,
+            glyph_fallback: false,
         }
     }
 }
@@ -515,6 +522,11 @@ pub struct Document {
     #[serde(default)]
     pub modified: i64,
     pub next_id: u64,
+    /// While the document is open, the font scope of the fonts it brought (its `Document Fonts`
+    /// folder): composition, export and the font menus look its fonts up there. 0: none. Not
+    /// saved.
+    #[serde(skip)]
+    pub font_scope: u32,
 }
 
 /// What a hyperlink is attached to.

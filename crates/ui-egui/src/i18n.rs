@@ -1916,6 +1916,17 @@ const TABLE: &[(&str, [&str; 5])] = &[
             "在两端对齐的阿拉伯语文本中",
         ],
     ),
+    ("Korean Line Breaks:", ["Korean Line Breaks:", "Korean Line Breaks:", "Korean Line Breaks:", "Korean Line Breaks:", "韩文换行："]),
+    (
+        "Between syllables (not only at spaces)",
+        [
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "Between syllables (not only at spaces)",
+            "在音节之间（不仅在空格处）",
+        ],
+    ),
     ("Binding:", ["Binding:", "Binding:", "Binding:", "Binding:", "装订方向："]),
     ("Ruby:", ["Ruby:", "Ruby:", "Ruby:", "Ruby:", "注音："]),
     (
@@ -2548,6 +2559,27 @@ const TABLE: &[(&str, [&str; 5])] = &[
     ("Interface", ["Interface", "Interface", "Interface", "Interface", "界面"]),
     ("Advanced Type", ["Advanced Type", "Advanced Type", "Advanced Type", "Advanced Type", "高级文字"]),
     ("Composition", ["Composition", "Composition", "Composition", "Composition", "排版"]),
+    (
+        "Show Font Names in English",
+        [
+            "Schriftnamen auf Englisch anzeigen",
+            "Afficher les noms de police en anglais",
+            "Mostrar nombres de fuentes en inglés",
+            "フォント名を英語で表示",
+            "以英文显示字体名称",
+        ],
+    ),
+    ("Missing Glyphs", ["Fehlende Glyphen", "Glyphes manquants", "Glifos que faltan", "欠落グリフ", "缺失字形"]),
+    (
+        "Draw Missing Glyphs from Fallback Fonts",
+        [
+            "Fehlende Glyphen aus Ersatzschriften zeichnen",
+            "Dessiner les glyphes manquants avec des polices de substitution",
+            "Dibujar los glifos que faltan con fuentes alternativas",
+            "欠落グリフを代替フォントで表示",
+            "用后备字体绘制缺失字形",
+        ],
+    ),
     ("Units & Increments", ["Units & Increments", "Units & Increments", "Units & Increments", "Units & Increments", "单位与增量"]),
     ("Grids", ["Grids", "Grids", "Grids", "Grids", "网格"]),
     ("Guides & Pasteboard", ["Guides & Pasteboard", "Guides & Pasteboard", "Guides & Pasteboard", "Guides & Pasteboard", "参考线与粘贴板"]),

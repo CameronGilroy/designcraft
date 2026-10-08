@@ -93,6 +93,7 @@ fn compose_cell(doc: &Document, story: &Story, w: f64, opts: &ComposeOptions, le
         id: ItemId(0),
         area: Rect::new(0.0, 0.0, w.max(1.0), 1.0e6),
         opts: TextFrameOptions::default(),
+        vertical: false,
         exclusions: vec![],
         page_name: opts.page_name.clone(),
         page: opts.page,

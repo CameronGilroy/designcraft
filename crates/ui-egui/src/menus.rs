@@ -412,8 +412,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:endnote.insert",
             "cmd:math.insert",
             ">Story Direction",
-            "cmd:object.textFrameOptions|Horizontal|{\"vertical\": false}",
-            "cmd:object.textFrameOptions|Vertical|{\"vertical\": true}",
+            "cmd:type.storyDirection|Horizontal|{\"vertical\": false}",
+            "cmd:type.storyDirection|Vertical|{\"vertical\": true}",
             "<",
             "cmd:type.tateChuYoko",
             "ui:app.rubyDialog",
@@ -955,6 +955,7 @@ pub fn run_ui(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value, 
                 let doc = app.session.execute("document.preferences", &json!({})).unwrap_or_default();
                 f["horizontalUnits"] = doc["horizontalUnits"].clone();
                 f["overprintBlack"] = doc["overprintBlack"].clone();
+                f["glyphFallback"] = doc["glyphFallback"].clone();
                 for k in ["superscriptSize", "superscriptPosition", "subscriptSize", "subscriptPosition"] {
                     f[format!("adv.{k}")] = json!(format!("{}", doc["advancedType"][k].as_f64().unwrap_or(0.0)));
                 }
@@ -1692,6 +1693,15 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "window.toolsDoubleColumn" => app.ui.tools_double_column,
         "view.togglePreview" => app.ui.screen_mode == crate::ScreenMode::Preview,
         "window.brightness" => params.get("brightness").and_then(Value::as_str) == Some(app.ui.brightness.id()),
+        "type.storyDirection" => {
+            let st = app.session.active()?;
+            let sid = st
+                .selection
+                .text
+                .map(|t| t.story)
+                .or_else(|| st.selection.items.iter().find_map(|i| st.doc.item(*i)?.text_frame().map(|t| t.story)))?;
+            st.doc.story(sid)?.vertical == params.get("vertical").and_then(Value::as_bool)?
+        }
         _ => return None,
     })
 }
@@ -2150,6 +2160,15 @@ mod tests {
             app.run("app.language", json!({"lang": lang})).unwrap();
             frame(&mut app);
         }
+    }
+
+    #[test]
+    fn story_direction_is_checked() {
+        let mut app = crate::DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.session.execute("file.new", &json!({})).unwrap();
+        app.session.execute("frame.create", &json!({"rect": [72, 72, 200, 400], "content": "text", "text": "縦", "vertical": true})).unwrap();
+        assert_eq!(checked(&app, "type.storyDirection", &json!({"vertical": true})), Some(true));
+        assert_eq!(checked(&app, "type.storyDirection", &json!({"vertical": false})), Some(false));
     }
 
     #[test]

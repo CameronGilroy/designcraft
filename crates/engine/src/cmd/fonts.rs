@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use designcraft_doc::{CharAttrs, Document, Story};
+use designcraft_fonts::FontSource;
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, cmd, has_doc, str_param};
@@ -12,7 +13,7 @@ use crate::{Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "font.list", "Fonts in Document", [], None, "{} → [{family, style, characters, missing, styleMissing}] (missing first)", has_doc, |s, _| {
+        cmd!(query "font.list", "Fonts in Document", [], None, "{} → [{family, style, characters, missing, styleMissing, source: bundled|installed|document|added (null when missing)}] (missing first)", has_doc, |s, _| {
             Ok(Value::Array(list(&s.doc()?.doc)))
         }),
         cmd!(
@@ -43,7 +44,7 @@ fn for_each_story(d: &Document, f: &mut dyn FnMut(&Story)) {
 }
 
 fn list(d: &Document) -> Vec<Value> {
-    let db = designcraft_fonts::FontDb::global();
+    let db = designcraft_fonts::FontDb::global().scoped(d.font_scope);
     let mut used: BTreeMap<(String, String), usize> = BTreeMap::new();
     for_each_story(d, &mut |st| {
         let ranges = st.para_ranges();
@@ -73,7 +74,16 @@ fn list(d: &Document) -> Vec<Value> {
         .map(|((family, style), n)| {
             let missing = !db.has_family(&family);
             let style_missing = !missing && !db.styles(&family).iter().any(|s| s.eq_ignore_ascii_case(&style));
-            (missing || style_missing, json!({"family": family, "style": style, "characters": n, "missing": missing, "styleMissing": style_missing}))
+            let source = (!missing).then(|| match db.face(&family, &style).source {
+                FontSource::Bundled => "bundled",
+                FontSource::Installed(_) => "installed",
+                FontSource::Document(_) => "document",
+                FontSource::Memory => "added",
+            });
+            (
+                missing || style_missing,
+                json!({"family": family, "style": style, "characters": n, "missing": missing, "styleMissing": style_missing, "source": source}),
+            )
         })
         .collect();
     out.sort_by_key(|(m, _)| !*m);

@@ -30,7 +30,7 @@ use designcraft_doc::{
     Align, Composer, Document, FirstBaseline, GridAlign, ItemId, ParaProps, SpanColumns, StartParagraph, Story, StoryId, TabAlign, TextFrameOptions,
     VerticalJustification, WrapMode, story,
 };
-use designcraft_fonts::FontDb;
+use designcraft_fonts::{FontDb, ScopedFonts};
 use designcraft_geom::{Point, Rect};
 
 use crate::breaker::{Break, Spacing};
@@ -115,15 +115,29 @@ pub struct PlacedGlyph {
 }
 
 impl PlacedGlyph {
-    /// In a vertical frame, the turn that sets this glyph upright (about its em box centre, or
-    /// across the line in a tate-chu-yoko group), applied after drawing it at `x` on `baseline`.
+    /// In a vertical frame, the turn that sets this glyph upright, applied after drawing it at `x`
+    /// on `baseline`: it hangs from its vertical origin ([`designcraft_fonts::FontFace::v_origin`],
+    /// centred across) at `x` on the line's centre, the middle of the font's em box; a tate-chu-yoko
+    /// group sits across that centre.
     pub fn vertical_xf(&self, baseline: f64) -> Option<designcraft_geom::Affine> {
         let turn = -std::f64::consts::FRAC_PI_2;
+        // The em box centre above the baseline, in ems.
+        let (top, bottom) = self.face.em_box();
+        let centre = (top + bottom) / 2.0 / self.face.units_per_em();
         if let Some([along, across, em]) = self.tcy {
-            let c = Point::new(self.x + along, baseline + self.y - em * 0.38);
+            let c = Point::new(self.x + along, baseline + self.y - em * centre);
             return Some(designcraft_geom::Affine::rotate_about(turn, c) * designcraft_geom::Affine::translate((c.x + across - self.x, 0.0)));
         }
-        self.upright.then(|| designcraft_geom::Affine::rotate_about(turn, Point::new(self.x + self.adv / 2.0, baseline + self.y - self.adv * 0.38)))
+        if !self.upright {
+            return None;
+        }
+        // Turning about c takes the glyph's vertical origin (half across, `origin` up) to the
+        // centre point at `x`: c is where the two points' perpendicular bisector meets the turn.
+        let half = self.face.advance(self.gid) / 2.0 * self.sx;
+        let origin = self.face.v_origin(self.gid) * self.sy;
+        let mid = centre * self.face.units_per_em() * self.sy;
+        let c = Point::new(self.x + (origin - mid + half) / 2.0, baseline + self.y + (half - mid - origin) / 2.0);
+        Some(designcraft_geom::Affine::rotate_about(turn, c))
     }
 }
 
@@ -263,6 +277,9 @@ pub struct FrameSpec {
     /// Text area (inner space, after inset).
     pub area: Rect,
     pub opts: TextFrameOptions,
+    /// Lines run top to bottom and follow each other right to left (the story is vertical); the
+    /// area is the turned box.
+    pub vertical: bool,
     pub exclusions: Vec<Exclusion>,
     pub page_name: Option<String>,
     /// Absolute document page the frame is on (None on parent pages).
@@ -384,7 +401,8 @@ pub fn frame_specs(doc: &Document, sid: StoryId) -> Vec<FrameSpec> {
             None => (item.text_area(), tf.options.clone()),
         };
         // Vertical type: composed in the turned box; wraps and page rects turned with it.
-        let (area, exclusions, grid, page_rect) = if tf.options.vertical && tf.options.path.is_none() {
+        let vertical = doc.frame_vertical(item);
+        let (area, exclusions, grid, page_rect) = if vertical {
             let v = designcraft_doc::vertical_text_xf(area).inverse();
             let ex = exclusions.into_iter().map(|e| Exclusion { rect: v.transform_rect_bbox(e.rect), ..e }).collect();
             let pr = page_rect.map(|(a, b)| (v.transform_rect_bbox(a), v.transform_rect_bbox(b)));
@@ -396,6 +414,7 @@ pub fn frame_specs(doc: &Document, sid: StoryId) -> Vec<FrameSpec> {
             id: fid,
             area,
             opts,
+            vertical,
             exclusions: if tf.options.path.is_some() { vec![] } else { exclusions },
             page_name,
             page,
@@ -424,6 +443,7 @@ pub fn compose(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &Compo
 }
 
 fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &ComposeOptions, db: &FontDb) -> ComposedStory {
+    let db = &db.scoped(doc.font_scope);
     let mut out = ComposedStory { story: story.id, rev: story.rev, text_len: story.text.len(), ..Default::default() };
     let mut styles_tab: Vec<RunStyle> = Vec::new();
     let mut missing_fonts: HashMap<String, bool> = HashMap::new();
@@ -431,7 +451,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
         .iter()
         .map(|f| {
             let mut columns = f.columns();
-            if story.direction == designcraft_doc::TextDirection::RightToLeft && !f.opts.vertical {
+            if story.direction == designcraft_doc::TextDirection::RightToLeft && !f.vertical {
                 columns.reverse();
             }
             columns
@@ -440,7 +460,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
     out.frames = frames
         .iter()
         .zip(&cols)
-        .map(|(f, columns)| FrameText { frame: f.id, vertical: f.opts.vertical, columns: columns.clone(), ..Default::default() })
+        .map(|(f, columns)| FrameText { frame: f.id, vertical: f.vertical, columns: columns.clone(), ..Default::default() })
         .collect();
     let mut cur = Cursor { fi: 0, col: 0, last_baseline: None, last_descent: 0.0, last_reference: 0.0, pending: 0.0 };
     let para_ranges = story.para_ranges();
@@ -533,7 +553,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
             section_marker: None,
             vars: var_values,
             hidden_conditions: doc.conditions.iter().filter(|c| !c.visible).map(|c| c.name.clone()).collect(),
-            vertical: cur_frame.is_some_and(|f| f.opts.vertical),
+            vertical: cur_frame.is_some_and(|f| f.vertical),
             ..Default::default()
         };
         if !story.endnotes.is_empty() {
@@ -564,7 +584,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
         }
         let sub_objects = sub.objects.clone();
         let mut table = StyleTable { styles: &mut styles_tab, missing: &mut missing_fonts };
-        let env = shape::TypeEnv { auto_leading: pp.auto_leading, adv: doc.settings.advanced_type };
+        let env = shape::TypeEnv { auto_leading: pp.auto_leading, adv: doc.settings.advanced_type, glyph_fallback: doc.settings.glyph_fallback };
         let mut sp = shape::shape_para(
             db,
             &doc.styles,
@@ -634,28 +654,30 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
                 );
             }
         }
+        // List labels take the default super/subscript settings.
+        let label_env = shape::TypeEnv { adv: Default::default(), ..env };
         match pp.list_type {
             designcraft_doc::ListType::Numbers if !pp.list_name.is_empty() => {
                 // A named list: carries on past other paragraphs (and from earlier stories).
                 let n = named_numbers.get(pi).copied().flatten().unwrap_or(1);
                 let label = format!("{}.{}", pp.number_style.format(n), pp.list_separator);
-                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
+                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, label_env, &mut table);
             }
             designcraft_doc::ListType::Numbers => {
                 list_counter = pp.start_at.map_or(list_counter + 1, |s| s.max(1));
                 let label = format!("{}.{}", pp.number_style.format(list_counter), pp.list_separator);
-                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
+                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, label_env, &mut table);
             }
             designcraft_doc::ListType::Bullets => {
                 let label = format!("{}{}", pp.bullet_char, pp.list_separator);
-                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, &pp, &mut table);
+                prepend_label(db, &mut sp.glyphs, &label, prange.start, &base_chars, label_env, &mut table);
             }
             designcraft_doc::ListType::None => list_counter = 0,
         }
         if pi == 0
             && let Some(label) = &opts.label
         {
-            prepend_label(db, &mut sp.glyphs, label, prange.start, &base_chars, &pp, &mut table);
+            prepend_label(db, &mut sp.glyphs, label, prange.start, &base_chars, label_env, &mut table);
         }
         let mut glyphs = sp.glyphs;
         let bidi_text = bidi::paragraph_text(&mut glyphs, &story.text);
@@ -824,7 +846,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
                 let last = k + 1 == breaks.len();
                 let (mut placed, end_x, ratio) =
                     layout_line(&glyphs, s, e, b.hyphen, lx0, lx1, col.x0, &pp, &spacing, last, b.forced && !last, f.left_page, &bidi_info);
-                ruby::annotate(&styles_tab, &mut placed);
+                ruby::annotate(db, &styles_tab, &mut placed, doc.settings.glyph_fallback);
                 let range_end = if last { prange.end } else { glyphs.get(g0 + b.next).map(|g| g.byte).unwrap_or(prange.end) };
                 let range_start = glyphs.get(s).map(|g| g.byte).unwrap_or(prange.start).min(range_end);
                 let range_start = if line_no == 0 { prange.start } else { range_start };
@@ -1128,6 +1150,7 @@ fn spacing_for(pp: &ParaProps, base_size: f64) -> Spacing {
         ragged_stretch: base_size * 2.0,
         hyph_zone: if pp.align.is_justified() { 0.0 } else { pp.hyph_zone },
         optical: pp.optical_margin,
+        korean_char_breaks: pp.korean_char_breaks,
     }
 }
 
@@ -1146,7 +1169,8 @@ fn apply_desired_spacing(glyphs: &mut [Glyph], pp: &ParaProps) {
         if let Some(next) = right.first() {
             let a = g.ch;
             let b = next.ch;
-            let cjk = upright_in_vertical(a) || upright_in_vertical(b);
+            // A kinsoku set rules where CJK text may break; Korean still breaks at spaces.
+            let cjk = breaker::cjk_pair(g, next, pp.korean_char_breaks);
             if g.break_after != Some(false) {
                 if let Some(set) = &pp.kinsoku {
                     if !set.allows(a, b) {
@@ -1406,13 +1430,12 @@ fn line_metrics(
     s: usize,
     base_leading: f64,
     base_size: f64,
-    db: &FontDb,
+    db: &ScopedFonts<'_>,
     base: &designcraft_doc::CharProps,
 ) -> (f64, f64, f64) {
-    let _ = db;
     let src: &[Glyph] = if line.is_empty() { all.get(s..(s + 1).min(all.len())).unwrap_or(&[]) } else { line };
     if src.is_empty() {
-        let face = FontDb::global().face(&base.font_family, &base.font_style);
+        let face = db.face(&base.font_family, &base.font_style);
         let k = base_size / face.upem;
         return (face.ascent * k, face.descent * k, base_leading);
     }
@@ -1958,39 +1981,26 @@ fn place(g: &Glyph, x: f64) -> PlacedGlyph {
         byte: g.byte,
         len: g.len,
         visible,
-        upright: upright_in_vertical(g.ch),
+        upright: g.upright,
         tcy: g.tcy,
         rtl: false,
     }
 }
 
 fn prepend_label(
-    db: &FontDb,
+    db: &ScopedFonts<'_>,
     glyphs: &mut Vec<Glyph>,
     label: &str,
     at: usize,
     base: &designcraft_doc::CharProps,
-    pp: &ParaProps,
+    env: shape::TypeEnv,
     table: &mut StyleTable<'_>,
 ) {
     // Shape the label as a tiny standalone story so it uses the paragraph's base character style.
     let mut tmp = Story::new(StoryId(0));
     tmp.insert(0, label);
     let styles = designcraft_doc::Styles::default();
-    let shaped = shape::shape_para(
-        db,
-        &styles,
-        &tmp,
-        0,
-        0..label.len(),
-        base,
-        shape::TypeEnv { auto_leading: pp.auto_leading, adv: Default::default() },
-        &SubstCtx::default(),
-        table,
-        &[],
-        &[],
-        &[],
-    );
+    let shaped = shape::shape_para(db, &styles, &tmp, 0, 0..label.len(), base, env, &SubstCtx::default(), table, &[], &[], &[]);
     let mut pre: Vec<Glyph> = shaped
         .glyphs
         .into_iter()
@@ -2008,9 +2018,11 @@ type LimitsKey = (usize, usize, usize, bool);
 
 /// Mark glyphs after which a hyphen may be inserted (dictionary/pattern points within the
 /// paragraph's limits; words with discretionary hyphens break only there).
-/// Whether a language uses the English hyphenation and spelling dictionaries.
+/// Whether a language (a name or locale code, see [`designcraft_doc::language_tag`]) uses the
+/// English hyphenation and spelling dictionaries.
 pub fn is_english(language: &str) -> bool {
-    language.starts_with("English")
+    // InDesign's English names first: composition asks this for every run.
+    language.starts_with("English") || designcraft_doc::language_tag(language).is_some_and(|t| designcraft_doc::language_subtag(t) == "en")
 }
 
 /// Byte ranges of paragraph `prange` set in a language other than English (no English
