@@ -1419,7 +1419,11 @@ impl Exporter<'_> {
 
     /// Draw a placed graphic, inside its clipping path when it has one. `hidden` is the
     /// placed PDF's layer choice: `None` keeps the file's defaults, `Some(&[])` shows every layer.
+    /// Retained IDML graphic-layer options are not applied when drawing, so they warn here.
     pub(crate) fn graphic(&mut self, s: &mut Surface, g: &designcraft_doc::Graphic, hidden: Option<&[String]>) {
+        if g.layer_options.as_ref().is_some_and(designcraft_doc::GraphicLayerOptions::has_visibility_overrides) {
+            self.warn(designcraft_doc::GRAPHIC_LAYER_RENDERING_WARNING);
+        }
         match g.clip_region().map(|(region, even_odd)| (to_path(&region), even_odd)) {
             Some((Some(clip), even_odd)) => {
                 s.push_clip_path(&clip, if even_odd { &FillRule::EvenOdd } else { &FillRule::NonZero });
@@ -2008,6 +2012,7 @@ mod image_content_cache_tests {
                 crop: [0.0; 4],
                 wrap: Default::default(),
                 fill: Default::default(),
+                layer_options: None,
             };
             ex.graphic_unclipped(&mut surface, &graphic, hidden.as_deref());
             assert!(ex.layer_error.is_none());
@@ -2292,6 +2297,7 @@ mod eps_tests {
             designcraft_geom::shapes::rectangle(Rect::new(72.0, 72.0, 272.0, 172.0)),
         );
         item.content = Content::Graphic(designcraft_doc::Graphic {
+            layer_options: None,
             asset: aid,
             size: (2.0, 1.0),
             xf: Affine::translate((72.0, 72.0)) * Affine::scale(100.0),

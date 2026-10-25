@@ -2053,6 +2053,7 @@ mod tests {
         let mut it =
             Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(100.0, 100.0, 200.0, 200.0)));
         it.content = designcraft_doc::Content::Graphic(designcraft_doc::Graphic {
+            layer_options: None,
             asset: aid,
             size: (100.0, 100.0),
             xf: Affine::translate((100.0, 100.0)),
@@ -2107,6 +2108,7 @@ mod tests {
         let mut it =
             Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(100.0, 100.0, 200.0, 200.0)));
         it.content = designcraft_doc::Content::Graphic(designcraft_doc::Graphic {
+            layer_options: None,
             asset: aid,
             size: (100.0, 100.0),
             xf: Affine::translate((100.0, 100.0)),
