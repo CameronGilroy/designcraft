@@ -787,3 +787,91 @@ fn pages_keeps_its_panel_menu_in_the_docking_layout() {
     assert!(h.query_by_label("Close Panel").is_none());
     assert!(h.query_by_label("Panel Options…").is_none(), "the panel's own commands stay in its panel menu");
 }
+
+fn harness_flyout(app: DesignApp, size: egui::Vec2) -> Harness<'static, DesignApp> {
+    let mut ready = false;
+    let mut harness = Harness::builder().with_size(size).with_step_dt(1.0 / 60.0).build_ui_state(
+        move |ui, app: &mut DesignApp| {
+            if !ready {
+                crate::theme::install_fonts(ui.ctx(), &app.ui.language);
+                crate::theme::apply(ui.ctx(), &crate::theme::Tokens::for_brightness(crate::theme::Brightness::MediumDark));
+                ready = true;
+                return;
+            }
+            crate::dock::show(app, ui);
+            egui::CentralPanel::default().show(ui, |_| {});
+            crate::dock::flyout(app, ui.ctx());
+        },
+        app,
+    );
+    harness.run_steps(4);
+    harness
+}
+
+#[test]
+fn effects_attaches_beside_the_icon_bar_instead_of_staying_afloat() {
+    let mut app = app();
+    app.run("window.panel.float", json!({"panel":"effects","x":180.0,"y":160.0,"width":300.0,"height":420.0})).unwrap();
+    assert!(app.ui.docking.as_ref().unwrap().floating.iter().any(|group| group.panels == ["effects"]));
+    attach_beside(&mut app, "effects").unwrap();
+    let layout = app.ui.docking.as_ref().unwrap();
+    assert!(!layout.contains(&"effects".into()));
+    assert!(layout.contains(&"properties".into()), "the expanded dock stays");
+    assert_eq!(app.ui.open_panel.as_deref(), Some("effects"));
+}
+
+/// Dropping the floating Effects window on the gutter left of the icon bar docks it there,
+/// flush with the bar, instead of leaving it over the page.
+#[test]
+fn dragging_effects_onto_the_right_icon_bar_docks_it_flush() {
+    let mut app = app();
+    app.run("window.panel.float", json!({"panel":"effects","x":180.0,"y":160.0,"width":300.0,"height":420.0})).unwrap();
+    let mut h = harness_flyout(app, vec2(1280.0, 800.0));
+    let tab = h.query_all_by_label("Effects").find(|node| node.rect().height() <= 45.0).expect("effects tab").rect();
+    let bar = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("shared-panel-icons")).expect("icon bar").outer_rect;
+    drag(&mut h, tab.center(), egui::pos2(bar.left() - 16.0, bar.center().y));
+    h.run_steps(4);
+    assert_eq!(h.state().ui.open_panel.as_deref(), Some("effects"), "releasing on the bar docks Effects");
+    let layout = h.state().ui.docking.clone().unwrap();
+    assert!(!layout.floating.iter().any(|group| group.panels.iter().any(|panel| panel == "effects")));
+    assert!(layout.contains(&"properties".into()));
+    let flyout = h.ctx.memory(|memory| memory.area_rect(egui::Id::new("panel_flyout"))).expect("attached flyout");
+    let bar = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("shared-panel-icons")).unwrap().outer_rect;
+    assert!((flyout.right() - bar.left()).abs() < 8.0, "flyout {flyout:?} should meet bar {bar:?}");
+    assert!(flyout.height() < 180.0, "attached panel hugs its content, got {}", flyout.height());
+    let icon = h.ctx.data(|data| data.get_temp::<egui::Rect>(egui::Id::new(("icon-row", "effects")))).expect("effects icon");
+    assert!((icon.top() - flyout.top()).abs() < 12.0, "flyout {flyout:?} should line up with icon {icon:?}");
+}
+
+/// The title is at the left of the window. Dropping so the window meets the bar docks it even
+/// when that title, and the pointer, are still over the page.
+#[test]
+fn dropping_effects_against_the_bar_docks_it_when_the_pointer_is_still_over_the_page() {
+    let mut app = app();
+    app.run("window.panel.float", json!({"panel": "effects", "x": 180.0, "y": 160.0, "width": 300.0, "height": 420.0})).unwrap();
+    let mut h = harness_flyout(app, vec2(1280.0, 800.0));
+    let tab = h.query_all_by_label("Effects").find(|node| node.rect().height() <= 45.0).expect("effects tab").rect();
+    let bar = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("shared-panel-icons")).expect("icon bar").outer_rect;
+    let group = h
+        .state()
+        .ui
+        .docking
+        .as_ref()
+        .and_then(|layout| layout.floating.iter().find(|group| group.panels.iter().any(|panel| panel == "effects")))
+        .expect("floating effects")
+        .rect;
+    let grab_x = tab.center().x - group[0];
+    let pointer_x = bar.left() - 8.0 + grab_x - group[2];
+    assert!(pointer_x < bar.left() - 48.0, "pointer {pointer_x} should be left of the gutter at {}", bar.left() - 48.0);
+    drag(&mut h, tab.center(), egui::pos2(pointer_x, bar.center().y));
+    h.run_steps(4);
+    assert_eq!(h.state().ui.open_panel.as_deref(), Some("effects"), "the window edge docks Effects");
+    let layout = h.state().ui.docking.clone().unwrap();
+    assert!(!layout.floating.iter().any(|group| group.panels.iter().any(|panel| panel == "effects")));
+    let flyout = h.ctx.memory(|memory| memory.area_rect(egui::Id::new("panel_flyout"))).expect("attached flyout");
+    let bar = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("shared-panel-icons")).unwrap().outer_rect;
+    assert!((flyout.right() - bar.left()).abs() < 8.0, "flyout {flyout:?} should meet bar {bar:?}");
+    assert!(flyout.height() < 180.0, "attached panel hugs its content, got {}", flyout.height());
+    let icon = h.ctx.data(|data| data.get_temp::<egui::Rect>(egui::Id::new(("icon-row", "effects")))).expect("effects icon");
+    assert!((icon.top() - flyout.top()).abs() < 12.0, "flyout {flyout:?} should line up with icon {icon:?}");
+}

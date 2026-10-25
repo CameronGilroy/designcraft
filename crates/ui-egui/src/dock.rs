@@ -132,56 +132,68 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
     // Collapsed icon strip (37 pt) to the left of the panel stack; a workspace's iconic groups
     // (Essentials Classic) show their names.
     let groups = app.ui.icon_groups.clone();
-    egui::Panel::right("icon_column").exact_size(icon_column_width(app)).resizable(false).frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| {
-        if dock_header(ui, &t, "«").clicked() {
-            app.ui.dock_expanded = true;
-        }
-        ui.add_space(4.0);
-        match &groups {
-            Some(groups) => {
-                for (i, group) in groups.iter().enumerate() {
-                    if i > 0 {
-                        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 7.0), Sense::hover());
-                        ui.painter().line_segment([r.left_center(), r.right_center()], Stroke::new(1.0, t.border));
-                    }
-                    for (id, label, icon) in group.iter().filter_map(|id| panel_entry(id)) {
-                        let on = app.ui.open_panel.as_deref() == Some(id) || app.ui.floating.iter().any(|(p, _)| p == id);
-                        let (r, response) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click_and_drag());
-                        if on {
-                            ui.painter().rect_filled(r.shrink2(vec2(3.0, 1.0)), 3.0, t.tool_active);
-                        } else if response.hovered() {
-                            ui.painter().rect_filled(r.shrink2(vec2(3.0, 1.0)), 3.0, t.hover);
+    let icon_rect = egui::Panel::right("icon_column")
+        .exact_size(icon_column_width(app))
+        .resizable(false)
+        .frame(egui::Frame::NONE.fill(t.panel))
+        .show(ui, |ui| {
+            if dock_header(ui, &t, "«").clicked() {
+                app.ui.dock_expanded = true;
+            }
+            ui.add_space(4.0);
+            match &groups {
+                Some(groups) => {
+                    for (i, group) in groups.iter().enumerate() {
+                        if i > 0 {
+                            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 7.0), Sense::hover());
+                            ui.painter().line_segment([r.left_center(), r.right_center()], Stroke::new(1.0, t.border));
                         }
-                        icons::paint(ui.painter(), egui::Rect::from_min_size(r.min + vec2(8.0, 4.0), vec2(18.0, 18.0)), icon, t.icon);
-                        crate::rtl::paint(
-                            ui.painter(),
-                            r.left_center() + vec2(32.0, 0.0),
-                            egui::Align2::LEFT_CENTER,
-                            crate::i18n::tr(&app.ui.language, label),
-                            semibold(11.5),
-                            t.text,
-                        );
-                        remember_icon(ui, id, r);
-                        icon_clicked(app, ui, id, &response);
+                        for (id, label, icon) in group.iter().filter_map(|id| panel_entry(id)) {
+                            let on = app.ui.open_panel.as_deref() == Some(id) || app.ui.floating.iter().any(|(p, _)| p == id);
+                            let (r, response) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click_and_drag());
+                            if on {
+                                ui.painter().rect_filled(r.shrink2(vec2(3.0, 1.0)), 3.0, t.tool_active);
+                            } else if response.hovered() {
+                                ui.painter().rect_filled(r.shrink2(vec2(3.0, 1.0)), 3.0, t.hover);
+                            }
+                            icons::paint(ui.painter(), egui::Rect::from_min_size(r.min + vec2(8.0, 4.0), vec2(18.0, 18.0)), icon, t.icon);
+                            crate::rtl::paint(
+                                ui.painter(),
+                                r.left_center() + vec2(32.0, 0.0),
+                                egui::Align2::LEFT_CENTER,
+                                crate::i18n::tr(&app.ui.language, label),
+                                semibold(11.5),
+                                t.text,
+                            );
+                            remember_icon(ui, id, r);
+                            icon_clicked(app, ui, id, &response);
+                        }
                     }
                 }
+                None => {
+                    ui.vertical_centered(|ui| {
+                        for (id, label, icon) in ICON_PANELS {
+                            let on = app.ui.open_panel.as_deref() == Some(*id) || app.ui.floating.iter().any(|(p, _)| p == id);
+                            let response =
+                                icons::button(ui, icon, 28.0, on, crate::i18n::tr(&app.ui.language, label)).interact(Sense::click_and_drag());
+                            remember_icon(ui, id, response.rect);
+                            icon_clicked(app, ui, id, &response);
+                            ui.add_space(1.0);
+                        }
+                    });
+                }
             }
-            None => {
-                ui.vertical_centered(|ui| {
-                    for (id, label, icon) in ICON_PANELS {
-                        let on = app.ui.open_panel.as_deref() == Some(*id) || app.ui.floating.iter().any(|(p, _)| p == id);
-                        let response = icons::button(ui, icon, 28.0, on, crate::i18n::tr(&app.ui.language, label)).interact(Sense::click_and_drag());
-                        remember_icon(ui, id, response.rect);
-                        icon_clicked(app, ui, id, &response);
-                        ui.add_space(1.0);
-                    }
-                });
-            }
-        }
-    });
-    if side_column_width(app) > 0.0 {
-        history_column(app, ui, &t);
-    }
+        })
+        .response
+        .rect;
+    // The flyout sits against whichever column is furthest left: the named icons, or History beside them.
+    let bar = if side_column_width(app) > 0.0 {
+        let history = history_column(app, ui, &t);
+        if history.min.x < icon_rect.min.x { history } else { icon_rect }
+    } else {
+        icon_rect
+    };
+    remember_right_bar(ui.ctx(), bar);
 }
 
 /// Width of the icon column: icons only, or icons with names for a workspace's groups.
@@ -219,30 +231,54 @@ fn toggle_open(app: &mut DesignApp, ui: &egui::Ui, id: &str) {
     }
 }
 
-fn history_column(app: &mut DesignApp, ui: &mut egui::Ui, t: &Tokens) {
-    egui::Panel::right("history_column").exact_size(37.0).resizable(false).frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| {
-        if dock_header(ui, t, "«").clicked() {
-            toggle_open(app, ui, "history");
-        }
-        ui.add_space(4.0);
-        ui.vertical_centered(|ui| {
-            let on = app.ui.open_panel.as_deref() == Some("history") || app.ui.floating.iter().any(|(panel, _)| panel == "history");
-            let response =
-                icons::button(ui, "panel-history", 28.0, on, crate::i18n::tr(&app.ui.language, "History")).interact(Sense::click_and_drag());
-            remember_icon(ui, "history", response.rect);
-            icon_clicked(app, ui, "history", &response);
-        });
-    });
+fn history_column(app: &mut DesignApp, ui: &mut egui::Ui, t: &Tokens) -> egui::Rect {
+    egui::Panel::right("history_column")
+        .exact_size(37.0)
+        .resizable(false)
+        .frame(egui::Frame::NONE.fill(t.panel))
+        .show(ui, |ui| {
+            if dock_header(ui, t, "«").clicked() {
+                toggle_open(app, ui, "history");
+            }
+            ui.add_space(4.0);
+            ui.vertical_centered(|ui| {
+                let on = app.ui.open_panel.as_deref() == Some("history") || app.ui.floating.iter().any(|(panel, _)| panel == "history");
+                let response =
+                    icons::button(ui, "panel-history", 28.0, on, crate::i18n::tr(&app.ui.language, "History")).interact(Sense::click_and_drag());
+                remember_icon(ui, "history", response.rect);
+                icon_clicked(app, ui, "history", &response);
+            });
+        })
+        .response
+        .rect
 }
 
 /// Where an icon was drawn, so its flyout can sit beside that row.
-fn remember_icon(ui: &egui::Ui, id: &str, rect: egui::Rect) {
+pub(crate) fn remember_icon(ui: &egui::Ui, id: &str, rect: egui::Rect) {
     ui.ctx().data_mut(|data| data.insert_temp(egui::Id::new(("icon-row", id)), rect));
+}
+
+/// The right icon bar for this frame, so a flyout and a drop can meet its left edge.
+pub(crate) fn remember_right_bar(ctx: &egui::Context, rect: egui::Rect) {
+    if rect.width() > 1.0 && rect.height() > 1.0 && rect.min.x.is_finite() && rect.min.y.is_finite() {
+        ctx.data_mut(|data| data.insert_temp(egui::Id::new("right-icon-bar"), rect));
+    }
+}
+
+/// Icon bar drawn last frame (during a drag) or earlier this frame (when the flyout opens).
+pub(crate) fn right_bar(ctx: &egui::Context) -> Option<egui::Rect> {
+    ctx.data(|data| data.get_temp(egui::Id::new("right-icon-bar")))
+}
+
+/// The icon bar, plus a gutter on its left. Releasing a floating panel here docks it.
+pub(crate) fn beside_bar_zone(bar: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_max(egui::pos2(bar.min.x - 48.0, bar.min.y), bar.max)
 }
 
 /// Top of the flyout: the first icon in the group, or this panel's own icon.
 fn flyout_y(ctx: &egui::Context, anchor: &str) -> f32 {
     ctx.data(|data| data.get_temp::<egui::Rect>(egui::Id::new(("icon-row", anchor))).map(|rect| rect.min.y))
+        .or_else(|| right_bar(ctx).map(|rect| rect.min.y))
         .or_else(|| ctx.memory(|memory| memory.area_rect(egui::Id::new("icon_column")).map(|rect| rect.min.y)))
         .unwrap_or(120.0)
 }
@@ -270,9 +306,6 @@ fn dock_header(ui: &mut egui::Ui, t: &Tokens, chevron: &str) -> egui::Response {
 /// Dragging the header pulls the panel off the dock. A later click on the canvas closes it;
 /// the click that opened it does not, because that id was not yet remembered.
 pub fn flyout(app: &mut DesignApp, ctx: &egui::Context) {
-    if app.ui.docking.is_some() {
-        return;
-    }
     let remembered = ctx.data(|data| data.get_temp::<String>(egui::Id::new("flyout-open-id")));
     let Some(id) = app.ui.open_panel.clone() else {
         if remembered.is_some() {
@@ -286,8 +319,11 @@ pub fn flyout(app: &mut DesignApp, ctx: &egui::Context) {
     let grouped = members.len() > 1;
     let width = if grouped { 312.0 } else { 268.0 };
     let screen = ctx.content_rect();
-    let dock_w = if app.ui.dock_expanded { ctx.memory(|m| m.area_rect(egui::Id::new("dock")).map(|r| r.width())).unwrap_or(280.0) } else { 0.0 };
-    let x = (screen.max.x - icon_column_width(app) - side_column_width(app) - dock_w - width).max(screen.min.x);
+    // Flush with the icon bar's left edge. The expanded dock, when it is open, stays to the right of that bar.
+    let x = right_bar(ctx).map(|bar| (bar.min.x - width).max(screen.min.x)).unwrap_or_else(|| {
+        let dock_w = if app.ui.dock_expanded { ctx.memory(|m| m.area_rect(egui::Id::new("dock")).map(|r| r.width())).unwrap_or(280.0) } else { 0.0 };
+        (screen.max.x - icon_column_width(app) - side_column_width(app) - dock_w - width).max(screen.min.x)
+    });
     let anchor = members.first().copied().unwrap_or(id.as_str());
     let y = flyout_y(ctx, anchor);
     let pos = egui::pos2(x, y);
@@ -308,7 +344,8 @@ pub fn flyout(app: &mut DesignApp, ctx: &egui::Context) {
                 return;
             }
             let room = (screen.max.y - pos.y - 48.0).clamp(80.0, 640.0);
-            // History hugs its rows. A long list still scrolls, and the footer stays under them.
+            // Each panel hugs its content. History sizes from its rows. The others scroll only
+            // once the body is taller than the space left beside the icon.
             let (body_h, margin) =
                 if shown == "history" { (history_flyout_body(app, room.min(480.0)), egui::Margin::ZERO) } else { (room, egui::Margin::same(10)) };
             egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
@@ -524,15 +561,15 @@ pub fn float_panel(app: &mut DesignApp, id: &str, at: egui::Pos2) {
     }
 }
 
-/// Put a floating panel back in the dock's icon column.
+/// Put a floating panel on the left of the right icon bar, in line with its icon.
 pub fn dock_panel(app: &mut DesignApp, id: &str) {
-    if app.ui.docking.is_some() && !float_only(id) {
-        if let Some(Err(error)) = crate::panel_docking::command(app, "window.panel.dock", &serde_json::json!({"panel":id})) {
-            app.status(error);
-        }
+    if float_only(id) {
+        app.ui.floating.retain(|(p, _)| p != id);
         return;
     }
-    app.ui.floating.retain(|(p, _)| p != id);
+    if let Err(error) = crate::panel_docking::attach_beside(app, id) {
+        app.status(error);
+    }
 }
 
 /// Floating panels: movable, resizable windows; "Dock" returns one to the icon column.
@@ -599,12 +636,18 @@ pub fn floating(app: &mut DesignApp, ctx: &egui::Context) {
             });
         });
         // Remember where it was left.
+        let dropped_on_bar = r.as_ref().is_some_and(|r| {
+            r.response.drag_stopped()
+                && ctx
+                    .input(|input| input.pointer.interact_pos())
+                    .is_some_and(|point| right_bar(ctx).is_some_and(|bar| beside_bar_zone(bar).contains(point)))
+        });
         if let Some(r) = r
             && let Some(f) = app.ui.floating.iter_mut().find(|(p, _)| *p == id)
         {
             f.1 = [r.response.rect.min.x, r.response.rect.min.y];
         }
-        if !open || dock {
+        if !open || dock || dropped_on_bar {
             dock_panel(app, &id);
         }
     }

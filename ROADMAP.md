@@ -12,6 +12,7 @@
 
 DesignCraft aims at full Adobe InDesign parity — and to be better: faster, open (documented JSON format + IDML), scriptable by agents (MCP), and available on the web.
 
+- **2026-10-25** · A floating panel docks flush to the left of the right icon bar, in line with its icon. No readiness percentage change.
 - **2026-10-25** · History panel lists every undo state, jumps to one, deletes later states, clears the list, and makes a new document from a state. Icon groups in a workspace open as one flyout attached beside that group, with a tab per panel, until the header is dragged free. No readiness percentage change.
 - **2026-10-24** · Explicit PDF layer choices, including all-on, are checked with one actual
   rewrite per distinct source before editing; reset to file defaults bypasses the check. Native

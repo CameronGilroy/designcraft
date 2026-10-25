@@ -505,7 +505,7 @@ pub(crate) fn show(app: &mut DesignApp, ui: &mut egui::Ui) -> bool {
             &mut PanelContent(app),
         )
     };
-    let output = if layout.root.is_some() {
+    let mut output = if layout.root.is_some() {
         egui::Panel::right("shared-panel-dock")
             .default_size(310.0)
             .size_range(220.0..=720.0)
@@ -516,10 +516,10 @@ pub(crate) fn show(app: &mut DesignApp, ui: &mut egui::Ui) -> bool {
     } else {
         draw(ui)
     };
-    if let Some(panel) = output.focused {
+    if let Some(panel) = output.focused.take() {
         app.ui.docking_opened = Some(panel);
     }
-    if let Some(error) = output.error {
+    if let Some(error) = output.error.take() {
         app.ui.status = error.to_string();
     }
     if ui.input(|input| input.pointer.any_released()) {
@@ -528,13 +528,149 @@ pub(crate) fn show(app: &mut DesignApp, ui: &mut egui::Ui) -> bool {
         }
         ui.ctx().data_mut(|data| data.remove::<LegacyDrag>(egui::Id::new("designcraft-panel-docking").with("legacy-origin")));
     }
+    let dropped = bar_drop(app, ui, &mut output);
     for action in output.actions {
         if let Err(error) = app.run("window.panel.layout", json!({"action": action})) {
             app.ui.status = error;
         }
     }
+    if let Some(panel) = dropped
+        && let Err(error) = attach_beside(app, &panel)
+    {
+        app.ui.status = error;
+    }
     icon_rail(app, ui);
     true
+}
+
+/// A floating panel released against the icon bar docks there.
+///
+/// The title is the drag handle, and it sits at the left of the window. The pointer is often
+/// still over the page when the window's right edge meets the bar, so the window rectangle is
+/// what has to arrive. Releasing in the gutter just left of the icons docks too. A drop on the
+/// expanded stack, to the right of the icons, stays with that stack.
+fn bar_drop(app: &DesignApp, ui: &egui::Ui, output: &mut craft_ui::docking::DockOutput<String>) -> Option<String> {
+    let bar = crate::dock::right_bar(ui.ctx())?;
+    let zone = crate::dock::beside_bar_zone(bar);
+    let pointer = ui.input(|input| input.pointer.interact_pos());
+    let in_zone = pointer.is_some_and(|point| zone.contains(point));
+    let released = ui.input(|input| input.pointer.any_released());
+    let dragging = output.group_drag.is_some() || ui.input(|input| input.pointer.primary_down() && input.pointer.is_decidedly_dragging());
+    let mut placed = placed_windows(output);
+    if let Some((panel, _)) = &output.group_drop
+        && !placed.iter().any(|(id, _)| id == panel)
+        && let Some(rect) = floating_window(app, panel)
+    {
+        placed.push((panel.clone(), rect));
+    }
+    let arrived = placed.iter().find(|(id, rect)| !crate::dock::float_only(id) && window_meets_bar(*rect, bar)).map(|(id, _)| id.clone());
+    if app.ui.docking.is_some() && (arrived.is_some() || (in_zone && dragging)) {
+        paint_bar_preview(ui, bar, arrived.as_deref().or(output.group_drag.as_deref()));
+    }
+    if !released {
+        return None;
+    }
+    let panel = arrived.or_else(|| gutter_panel(output, in_zone))?;
+    if crate::dock::float_only(&panel) {
+        return None;
+    }
+    output.actions.retain(|action| match action {
+        Action::Float { panel: id, .. } | Action::Move { panel: id, .. } | Action::MoveFloating { panel: id, .. } => id != &panel,
+        _ => true,
+    });
+    output.group_drop = None;
+    Some(panel)
+}
+
+/// Windows this frame actually moved: a torn-off tab (`Float`) or a title drag (`MoveFloating`
+/// while a group drag is active). A corner resize also emits `MoveFloating` and must not dock.
+fn placed_windows(output: &craft_ui::docking::DockOutput<String>) -> Vec<(String, egui::Rect)> {
+    let moving = output.group_drag.is_some() || output.group_drop.is_some();
+    let mut placed = Vec::new();
+    for action in &output.actions {
+        let Some((panel, rect)) = action_window(action, moving) else { continue };
+        if let Some(slot) = placed.iter_mut().find(|(id, _)| id == &panel) {
+            slot.1 = rect;
+        } else {
+            placed.push((panel, rect));
+        }
+    }
+    placed
+}
+
+fn action_window(action: &Action<String>, moving: bool) -> Option<(String, egui::Rect)> {
+    let (panel, rect) = match action {
+        Action::Float { panel, rect } => (panel, rect),
+        Action::MoveFloating { panel, rect } if moving => (panel, rect),
+        _ => return None,
+    };
+    let [x, y, width, height] = *rect;
+    if ![x, y, width, height].into_iter().all(f32::is_finite) || width <= 1.0 || height <= 1.0 {
+        return None;
+    }
+    Some((panel.clone(), egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, height))))
+}
+
+fn floating_window(app: &DesignApp, panel: &str) -> Option<egui::Rect> {
+    let group = app.ui.docking.as_ref()?.floating.iter().find(|group| group.panels.iter().any(|id| id == panel))?;
+    let [x, y, width, height] = group.rect;
+    if ![x, y, width, height].into_iter().all(f32::is_finite) || width <= 1.0 || height <= 1.0 {
+        return None;
+    }
+    Some(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, height)))
+}
+
+/// The right edge is against the icon bar, or overlapping it, without the window sitting
+/// entirely on the expanded stack past the icons.
+fn window_meets_bar(window: egui::Rect, bar: egui::Rect) -> bool {
+    if window.bottom() <= bar.top() || window.top() >= bar.bottom() {
+        return false;
+    }
+    let gap = bar.min.x - window.max.x;
+    gap <= 96.0 && gap > -window.width() * 0.7
+}
+
+/// Pointer released on the icons or in the gutter beside them.
+fn gutter_panel(output: &craft_ui::docking::DockOutput<String>, in_zone: bool) -> Option<String> {
+    if !in_zone {
+        return None;
+    }
+    output.group_drop.as_ref().map(|(panel, _)| panel.clone()).or_else(|| {
+        output.actions.iter().find_map(|action| match action {
+            Action::Float { panel, .. } | Action::Move { panel, .. } => Some(panel.clone()),
+            _ => None,
+        })
+    })
+}
+
+fn paint_bar_preview(ui: &egui::Ui, bar: egui::Rect, panel: Option<&str>) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    let width = 268.0;
+    let top = panel.map(|id| flyout_top(ui.ctx(), id)).unwrap_or(bar.min.y);
+    let height = (bar.max.y - top - 12.0).clamp(120.0, 480.0);
+    let preview = egui::Rect::from_min_size(egui::pos2((bar.min.x - width).max(0.0), top), egui::vec2(width, height));
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("beside-bar-preview")));
+    painter.rect(preview, 0.0, t.accent.gamma_multiply(0.18), egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
+}
+
+fn flyout_top(ctx: &egui::Context, id: &str) -> f32 {
+    ctx.data(|data| data.get_temp::<egui::Rect>(egui::Id::new(("icon-row", id))).map(|rect| rect.min.y))
+        .or_else(|| crate::dock::right_bar(ctx).map(|rect| rect.min.y))
+        .unwrap_or(120.0)
+}
+
+/// Take `panel` out of any floating window or tab group and open it against the icon bar.
+pub(crate) fn attach_beside(app: &mut DesignApp, raw: &str) -> Result<(), String> {
+    let panel = normalize(raw).ok_or_else(|| "panel must name a registered panel".to_string())?;
+    if crate::dock::float_only(panel) {
+        return Err("panel does not dock".into());
+    }
+    if app.ui.docking.as_ref().is_some_and(|layout| layout.contains(&panel.to_string())) {
+        change(app, "close", &json!({"panel": panel}))?;
+    }
+    app.ui.floating.retain(|(id, _)| id != panel);
+    app.ui.open_panel = Some(panel.to_string());
+    Ok(())
 }
 
 fn icon_rail(app: &mut DesignApp, ui: &mut egui::Ui) {
@@ -553,10 +689,13 @@ fn icon_rail(app: &mut DesignApp, ui: &mut egui::Ui) {
                         continue;
                     }
 
+                    let on = app.ui.open_panel.as_deref() == Some(id);
                     let response =
-                        crate::icons::button(ui, icon, 28.0, false, crate::i18n::tr(&app.ui.language, label)).interact(egui::Sense::click_and_drag());
+                        crate::icons::button(ui, icon, 28.0, on, crate::i18n::tr(&app.ui.language, label)).interact(egui::Sense::click_and_drag());
+                    crate::dock::remember_icon(ui, id, response.rect);
+                    // A click opens the panel beside this icon. Dragging it still starts a dock gesture.
                     if response.clicked() {
-                        let _ = app.run("window.panel.activate", json!({"panel":id}));
+                        app.ui.open_panel = if on { None } else { Some(id.to_string()) };
                     }
                     legacy_tab(app, ui, id, &response);
                 }
@@ -564,7 +703,7 @@ fn icon_rail(app: &mut DesignApp, ui: &mut egui::Ui) {
         })
         .response
         .rect;
-    let _ = column;
+    crate::dock::remember_right_bar(ui.ctx(), column);
 }
 
 pub(crate) fn legacy_tab(app: &mut DesignApp, ui: &mut egui::Ui, panel: &str, response: &egui::Response) {
@@ -643,6 +782,14 @@ pub(crate) fn panel_menu(app: &mut DesignApp, ui: &mut egui::Ui, panel: &str) {
     tab_commands(app, ui, panel);
     ui.separator();
     let language = app.ui.language.clone();
+    let floating_now = app.ui.floating.iter().any(|(id, _)| id == panel)
+        || app.ui.docking.as_ref().is_some_and(|layout| layout.floating.iter().any(|group| group.panels.iter().any(|id| id == panel)));
+    if floating_now && ui.button(crate::rtl::widget(ui, crate::i18n::tr(&language, "Dock panel"))).clicked() {
+        if let Err(error) = attach_beside(app, panel) {
+            app.status(error);
+        }
+        ui.close();
+    }
     if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&language, "Float Panel"))).clicked() {
         if let Err(error) = app.run("window.panel.float", json!({"panel": panel})) {
             app.status(error);
@@ -683,10 +830,23 @@ impl craft_ui::docking::DockContent<String> for PanelContent<'_> {
     }
     fn panel_menu(&mut self, ui: &mut egui::Ui, id: &String) {
         // The docking surface adds Float Panel and Group with after these, so a tab's menu lists
-        // what the classic dock's does.
+        // what the classic dock's does. A floating tab can also dock against the icon bar.
         if let Some(panel) = normalize(id) {
             tab_commands(self.0, ui, panel);
             ui.separator();
+            let floating_now = self.0.ui.floating.iter().any(|(existing, _)| existing == panel)
+                || self
+                    .0
+                    .ui
+                    .docking
+                    .as_ref()
+                    .is_some_and(|layout| layout.floating.iter().any(|group| group.panels.iter().any(|existing| existing == panel)));
+            if floating_now && ui.button(crate::rtl::widget(ui, crate::i18n::tr(&self.0.ui.language, "Dock panel"))).clicked() {
+                if let Err(error) = attach_beside(self.0, panel) {
+                    self.0.status(error);
+                }
+                ui.close();
+            }
         }
     }
     fn group_header_width(&self, _: &[String], _: &String, _: bool) -> f32 {

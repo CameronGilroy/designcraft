@@ -47,7 +47,7 @@ basics of editing fail for too many users on Windows and Linux.
 | Quick Apply | ✓ | ✓ | ✓ | |
 | Numeric fields: units, arithmetic, scrubbing | ✓ | 21 pt spinner fields with arithmetic | ✓ | |
 | Colour fields: hex, picker from any swatch field | ✓ | ✓ | ~ | hex entry and picker issues (#323, #190) |
-| Panels: Pages, Layers, Swatches, Color, Stroke, Character, Paragraph, Styles, Links, Effects, Text Wrap, Align, Pathfinder, Table, Index, TOC, Hyperlinks, Bookmarks, Articles, Tags, Notes, Track Changes, Object States, Buttons and Forms, Preflight, Data Merge, Library, Scripts, Glyphs, Info, Tabs, Story, History | ✓ | all present; an icon group opens as one flyout attached beside that group, with a tab per panel, and floats when its header is dragged | ~ | Navigator, Trap Presets, Animation, Timing missing; pull-down panels can't scroll on Linux (#267) |
+| Panels: Pages, Layers, Swatches, Color, Stroke, Character, Paragraph, Styles, Links, Effects, Text Wrap, Align, Pathfinder, Table, Index, TOC, Hyperlinks, Bookmarks, Articles, Tags, Notes, Track Changes, Object States, Buttons and Forms, Preflight, Data Merge, Library, Scripts, Glyphs, Info, Tabs, Story, History | ✓ | all present; an icon group opens as one flyout attached beside that group, with a tab per panel, and floats when its header is dragged. Dropping a floating panel on the right icon bar docks it flush to the left of that bar, in line with its icon | ~ | Navigator, Trap Presets, Animation, Timing missing; pull-down panels can't scroll on Linux (#267) |
 | Dialogs: New Document, Document Setup, Preferences (all pages), Paragraph/Character/Object/Table/Cell Style Options, Export PDF, Print, Package, Find/Change | ✓ | present | ~ | generated command dialogs fill the long tail; depth varies |
 | Workspaces | Essentials, Essentials Classic, Advanced, Book, Digital Publishing, Interactive for PDF, Printing and Proofing, Review, Typography, Touch | ✓ named workspaces (Essentials Classic: Control panel and iconic panel groups) + custom; Window › Workspace; no Review or Touch | ~ | tab bar overlaps menus in Book/Advanced (#182) |
 | Story Editor | ✓ | ✓ | ~ | style-name column, depth ruler missing |
@@ -122,7 +122,7 @@ covers checking the sampled and redefined settings in the styles tutorial (2:45 
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-25 | minor | Panels row: History panel. An icon group opens as one flyout attached beside that group, with a tab per panel. |
+| 2026-10-25 | minor | Panels row: a floating panel docks flush to the left of the right icon bar. History panel. An icon group opens as one flyout attached beside that group, with a tab per panel. |
 | 2026-10-24 | minor | Panels row: Story panel (Optical Margin Alignment and its size) |
 | 2026-10-21 | minor | Chrome row: the text Control panel's A/¶ modes; Properties row: ••• expands Character and Paragraph in place |
 | 2026-10-11 | minor | Live corners row to ✓: widget, diamonds, drag, Shift-drag, Alt-click shape cycling (#186) |
