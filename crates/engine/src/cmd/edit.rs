@@ -6,7 +6,7 @@ use designcraft_doc::{ItemId, Selection, SpreadRef};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bool_or, cmd, has_doc, has_selection, ids_param, ok};
-use crate::{HistoryEntry, Result, Session};
+use crate::{Result, Session};
 
 fn can_undo(s: &Session) -> std::result::Result<(), String> {
     s.active().filter(|d| !d.history.undo.is_empty()).map(|_| ()).ok_or_else(|| "nothing to undo".into())
@@ -211,29 +211,12 @@ fn strip_objects(st: &designcraft_doc::Story) -> designcraft_doc::Story {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(noundo "edit.undo", "Undo", ["Edit"], Some("Cmd+Z"), "{}", can_undo, |s, _| {
-            let st = s.doc_mut()?;
-            let e = st.history.undo.pop().ok_or_else(|| super::bad("edit.undo", "nothing to undo"))?;
-            st.history.redo.push(HistoryEntry { label: e.label.clone(), doc: st.doc.clone(), selection: st.selection.clone() });
-            let mut doc = e.doc;
-            super::rulers::keep_zero_point(&st.doc, &mut doc);
-            st.doc = doc;
-            st.selection = e.selection;
-            st.bump_revision();
-            // Pending typing overrides belong to the current edit state, not a restored snapshot.
-            s.typing_format = None;
-            Ok(json!({"undone": e.label}))
+            let label = super::history::undo_once(s)?;
+            Ok(json!({"undone": label}))
         }),
         cmd!(noundo "edit.redo", "Redo", ["Edit"], Some("Cmd+Shift+Z"), "{}", can_redo, |s, _| {
-            let st = s.doc_mut()?;
-            let e = st.history.redo.pop().ok_or_else(|| super::bad("edit.redo", "nothing to redo"))?;
-            st.history.undo.push(HistoryEntry { label: e.label.clone(), doc: st.doc.clone(), selection: st.selection.clone() });
-            let mut doc = e.doc;
-            super::rulers::keep_zero_point(&st.doc, &mut doc);
-            st.doc = doc;
-            st.selection = e.selection;
-            st.bump_revision();
-            s.typing_format = None;
-            Ok(json!({"redone": e.label}))
+            let label = super::history::redo_once(s)?;
+            Ok(json!({"redone": label}))
         }),
         cmd!(noundo "selection.set", "Select", [], None, "{ids: [id], add?: bool, content?: bool}", has_doc, |s, p| {
             let ids = ids_param(p, "ids").unwrap_or_default();

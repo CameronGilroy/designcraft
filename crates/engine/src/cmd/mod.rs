@@ -17,6 +17,7 @@ mod endnotes;
 mod export;
 mod file;
 pub(crate) mod find;
+mod history;
 pub use edit::copied_objects_text;
 pub use find::same_find_domain;
 pub(crate) mod flex;
@@ -172,6 +173,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(interchange::specs());
         v.extend(export::specs());
         v.extend(edit::specs());
+        v.extend(history::specs());
         v.extend(paste_svg::specs());
         v.extend(endnotes::specs());
         v.extend(editorial::specs());

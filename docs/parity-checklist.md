@@ -16,12 +16,12 @@ of in-scope menu items (75% against the documented menu tree) (see [target-app-p
 bound.
 
 <!-- SUMMARY -->
-**Weighted breadth parity: 99%** over 277 features.
+**Weighted breadth parity: 99%** over 278 features.
 
 | Priority | Features | Done | Partial | Missing | Parity |
 |---|---|---|---|---|---|
 | P0 | 102 | 100 | 2 | 0 | 99% |
-| P1 | 99 | 99 | 0 | 0 | 100% |
+| P1 | 100 | 100 | 0 | 0 | 100% |
 | P2 | 76 | 72 | 4 | 0 | 97% |
 
 | Area | Parity |
@@ -323,6 +323,7 @@ Open P0 items: Vector/page formats (PDF/AI/SVG/EPS place), Export to PDF (print)
 | View & navigation | Rotate spread view | P2 | D |
 | View & navigation | Find/zoom to object | P1 | D |
 | Undo, history, saving | Unlimited undo/redo | P0 | D |
+| Undo, history, saving | History panel | P1 | D |
 | Undo, history, saving | Revert | P0 | D |
 | Undo, history, saving | Save / Save As / Save a Copy | P0 | D |
 | Accessibility | Tagged PDF export | P2 | D |

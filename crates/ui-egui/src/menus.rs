@@ -893,6 +893,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:window.panel|Track Changes|{\"panel\": \"trackChanges\"}",
             "<",
             "ui:window.panel|Effects|{\"panel\": \"effects\"}",
+            "ui:window.panel|History|{\"panel\": \"history\"}",
             "ui:window.panel|Info|{\"panel\": \"info\"}",
             ">Interactive",
             "ui:window.panel|Bookmarks|{\"panel\": \"bookmarks\"}",
@@ -980,14 +981,14 @@ pub const CLASSIC_GROUPS: &[&[&str]] = &[
     &["gradient"],
 ];
 
-/// The Typography preset's available panels in the order observed in InDesign's workspace.
-/// CC Libraries has no corresponding DesignCraft panel, and where the Story panel sits in it is
-/// not recorded, so these groups leave it out.
+/// The Typography preset's panels in the order observed in InDesign's workspace.
+/// CC Libraries and Style Packs are Adobe cloud features and have no DesignCraft panel.
+/// Story leads the group with Hyperlinks and Effects.
 pub const TYPOGRAPHY_GROUPS: &[&[&str]] = &[
     &["pages", "layers", "swatches"],
     &["glyphs", "textWrap"],
     &["stroke", "gradient"],
-    &["hyperlinks", "effects"],
+    &["story", "hyperlinks", "effects"],
     &["paragraph", "paragraphStyles"],
     &["character", "characterStyles"],
 ];
@@ -5618,8 +5619,17 @@ mod tests {
         assert!(app.ui.open_panel.is_none());
         let groups = app.ui.icon_groups.clone().unwrap();
         assert_eq!(groups[0], ["pages", "layers", "swatches"]);
+        assert_eq!(groups[3], ["story", "hyperlinks", "effects"]);
         assert_eq!(groups[4], ["paragraph", "paragraphStyles"]);
         assert_eq!(groups[5], ["character", "characterStyles"]);
+        assert_eq!(crate::dock::icon_group_ids(&groups, "swatches"), vec!["pages", "layers", "swatches"]);
+        assert!(crate::dock::icon_group_ids(&groups, "history").is_empty());
+        assert_eq!(crate::dock::side_column_width(&app), 37.0);
+        assert_eq!(crate::dock::panel_label("history"), "History");
+        run_ui(&mut app, "window.panel", &json!({"panel": "history"})).unwrap().unwrap();
+        assert_eq!((app.ui.open_panel.as_deref(), app.ui.dock_expanded), (Some("history"), false));
+        run_ui(&mut app, "window.panel", &json!({"panel": "history"})).unwrap().unwrap();
+        assert!(app.ui.open_panel.is_none());
         for panel in ["pages", "paragraphStyles", "characterStyles"] {
             run_ui(&mut app, "window.panel", &json!({"panel":panel})).unwrap().unwrap();
             assert_eq!(app.ui.open_panel.as_deref(), Some(panel));
@@ -5632,6 +5642,7 @@ mod tests {
         run_ui(&mut app, "window.workspace", &json!({"name":"Essentials"})).unwrap().unwrap();
         assert!(app.ui.icon_groups.is_none());
         assert!(app.ui.dock_expanded);
+        assert_eq!(crate::dock::side_column_width(&app), 0.0);
     }
 
     #[test]

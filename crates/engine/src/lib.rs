@@ -72,6 +72,8 @@ pub struct History {
     pub undo: Vec<HistoryEntry>,
     pub redo: Vec<HistoryEntry>,
     pub limit: usize,
+    /// Name of the oldest row after the undo limit drops it, or after Clear History.
+    pub origin: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -747,8 +749,10 @@ impl Session {
 fn push_undo(st: &mut DocState, e: HistoryEntry) {
     st.history.undo.push(e);
     st.history.redo.clear();
-    if st.history.undo.len() > st.history.limit.max(1) {
-        st.history.undo.remove(0);
+    let cap = st.history.limit.max(1);
+    while st.history.undo.len() > cap {
+        let dropped = st.history.undo.remove(0);
+        st.history.origin = Some(dropped.label);
     }
 }
 

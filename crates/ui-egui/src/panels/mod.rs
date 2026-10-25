@@ -6,6 +6,7 @@ mod font_menu;
 pub use font_menu::{FontPick, SAMPLES as FONT_SAMPLES, font_menu_body};
 pub mod datamerge;
 pub mod glyphs;
+pub mod history;
 pub mod interactive;
 pub mod layers;
 pub mod library;

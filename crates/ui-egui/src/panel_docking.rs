@@ -606,7 +606,22 @@ pub(crate) fn three_line_menu(app: &mut DesignApp, ui: &mut egui::Ui, panel: &st
         crate::panels::pages::panel_menu(app, ui);
         ui.separator();
     }
+    if panel == "history" {
+        crate::panels::history::panel_menu(app, ui);
+        ui.separator();
+    }
     panel_menu(app, ui, panel);
+}
+
+/// The three-line button at `rect`, opening [`three_line_menu`] for `panel`.
+pub(crate) fn header_menu(app: &mut DesignApp, ui: &mut egui::Ui, rect: egui::Rect, panel: &str) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    let menu = ui.interact(rect, ui.id().with(("header-menu", panel)), egui::Sense::click_and_drag());
+    if menu.hovered() {
+        ui.painter().rect_filled(rect, 3.0, t.hover);
+    }
+    crate::icons::paint(ui.painter(), rect, "menu", t.icon);
+    egui::Popup::menu(&menu).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| three_line_menu(app, ui, panel));
 }
 
 /// The three-line button at the right of a tab strip, for the panel in front.
