@@ -705,6 +705,7 @@ fn inline_picture_item(
             wrap: Default::default(),
             clip: None,
             fill: Default::default(),
+            layer_options: None,
         };
         (w, h, Some(graphic))
     } else {
